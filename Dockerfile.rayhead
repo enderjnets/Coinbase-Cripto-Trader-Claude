@@ -1,0 +1,46 @@
+# Bittrader Ray Head Node - Docker Image
+# Compatible con Workers en macOS, Windows y Linux
+
+FROM python:3.9.6-slim
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    apt-transport-https \
+    ca-certificates \
+    procps \
+    net-tools \
+    iputils-ping \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Tailscale
+RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null && \
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list && \
+    apt-get update && \
+    apt-get install -y tailscale && \
+    rm -rf /var/lib/apt/lists/*
+
+# Instalar Ray 2.51.2
+RUN pip install --no-cache-dir ray[default]==2.51.2
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Script de inicio
+COPY start_ray_head.sh /app/
+RUN chmod +x /app/start_ray_head.sh
+
+# Exponer puertos
+# 6379: GCS (Ray Head)
+# 8265: Dashboard (opcional)
+# 10001-10100: Puertos de Ray workers
+EXPOSE 6379 8265 10001-10100
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD ray status || exit 1
+
+# Comando de inicio
+CMD ["/app/start_ray_head.sh"]
