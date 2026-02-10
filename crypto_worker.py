@@ -217,24 +217,31 @@ def execute_backtest(strategy_params):
                     best_pnl=pnl
                 )
 
-    best_genome, best_pnl = miner.run(progress_callback=progress_callback)
+    best_genome, best_pnl, best_metrics = miner.run(
+        progress_callback=progress_callback, return_metrics=True
+    )
 
     execution_time = time.time() - start_time
 
-    # Calcular métricas adicionales
-    # TODO: Implementar cálculo de Sharpe y max drawdown
+    # Extract real metrics from miner
+    trades = best_metrics.get('Total Trades', 0)
+    win_rate_pct = best_metrics.get('Win Rate %', 0.0)
+    win_rate = win_rate_pct / 100.0 if win_rate_pct > 1 else win_rate_pct
+    sharpe_ratio = best_metrics.get('Sharpe Ratio', 0.0)
+    max_drawdown = best_metrics.get('Max Drawdown', 0.0)
 
     result = {
         'pnl': best_pnl,
-        'trades': 10,  # TODO: Obtener del miner
-        'win_rate': 0.65,  # TODO: Obtener del miner
-        'sharpe_ratio': 1.5,  # TODO: Calcular
-        'max_drawdown': 0.15,  # TODO: Calcular
+        'trades': trades,
+        'win_rate': round(win_rate, 4),
+        'sharpe_ratio': round(sharpe_ratio, 4),
+        'max_drawdown': round(max_drawdown, 4),
         'execution_time': execution_time
     }
 
     print(f"✅ Backtest completado en {execution_time:.0f}s")
     print(f"   PnL: ${best_pnl:,.2f}")
+    print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
 
     return result
 

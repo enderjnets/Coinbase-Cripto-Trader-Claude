@@ -343,21 +343,22 @@ class StrategyMiner:
 
         return fitness_scores
 
-    def run(self, progress_callback=None, cancel_event=None):
+    def run(self, progress_callback=None, cancel_event=None, return_metrics=False):
         """Main Evolution Loop."""
-        
+
         # DEBUG LOGGER
         def debug_log(msg):
             with open("miner_debug.log", "a") as f:
                 f.write(f"{datetime.now()} - {msg}\n")
-        
+
         debug_log("🚀 Strategy Miner RUN started.")
-        
+
         # 1. Initialize Population
         debug_log(f"Generating initial population ({self.pop_size})...")
         population = [self.generate_random_genome() for _ in range(self.pop_size)]
         best_genome = None
         best_pnl = -float('inf')
+        best_metrics = {}
         
         for gen in range(self.generations):
             if cancel_event and cancel_event.is_set():
@@ -408,6 +409,7 @@ class StrategyMiner:
             if current_best[1] > best_pnl:
                 best_pnl = current_best[1]
                 best_genome = current_best[0]
+                best_metrics = current_best[2] if len(current_best) > 2 else {}
 
             if progress_callback:
                 # current_best is (genome, pnl, metrics)
@@ -436,6 +438,8 @@ class StrategyMiner:
             population = next_pop
             
         debug_log("✅ Mining Complete.")
+        if return_metrics:
+            return best_genome, best_pnl, best_metrics
         return best_genome, best_pnl
 
     def _evaluate_local(self, population, progress_cb, cancel_event=None):
@@ -471,15 +475,40 @@ class StrategyMiner:
                     total_pnl = trades['pnl'].sum()
                     wins = len(trades[trades['pnl'] > 0])
                     win_rate = (wins / total_trades * 100) if total_trades > 0 else 0.0
+
+                    # Compute Max Drawdown from cumulative PnL
+                    cum_pnl = trades['pnl'].cumsum()
+                    peak = cum_pnl.cummax()
+                    drawdown = (peak - cum_pnl)
+                    # Normalize by (initial_balance + peak) to get percentage
+                    max_dd = (drawdown / (10000.0 + peak)).max() if peak.max() > 0 else 0.0
+
+                    # Compute Sharpe Ratio from per-trade returns
+                    if 'pnl_pct' in trades.columns and total_trades > 1:
+                        ret_mean = trades['pnl_pct'].mean()
+                        ret_std = trades['pnl_pct'].std()
+                        sharpe = (ret_mean / ret_std) * (252 ** 0.5) if ret_std > 1e-10 else 0.0
+                    elif total_trades > 1:
+                        # Fallback: compute returns from pnl / cost_basis ($1000)
+                        rets = trades['pnl'] / 1000.0
+                        ret_mean = rets.mean()
+                        ret_std = rets.std()
+                        sharpe = (ret_mean / ret_std) * (252 ** 0.5) if ret_std > 1e-10 else 0.0
+                    else:
+                        sharpe = 0.0
                 else:
                     total_pnl = -10000
                     win_rate = 0.0
+                    max_dd = 0.0
+                    sharpe = 0.0
 
                 results.append({
                     'metrics': {
                         'Total PnL': total_pnl,
                         'Total Trades': total_trades,
-                        'Win Rate %': win_rate
+                        'Win Rate %': win_rate,
+                        'Sharpe Ratio': round(sharpe, 4),
+                        'Max Drawdown': round(max_dd, 4)
                     }
                 })
             except Exception as e:
@@ -488,7 +517,9 @@ class StrategyMiner:
                     'metrics': {
                         'Total PnL': -10000,
                         'Total Trades': 0,
-                        'Win Rate %': 0.0
+                        'Win Rate %': 0.0,
+                        'Sharpe Ratio': 0.0,
+                        'Max Drawdown': 0.0
                     }
                 })
 
