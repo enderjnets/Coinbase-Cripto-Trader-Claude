@@ -13,8 +13,8 @@ Sistema de trading algorítmico distribuido para Coinbase con optimización auto
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/TU_USUARIO/coinbase-cripto-trader-claude.git
-cd coinbase-cripto-trader-claude
+git clone https://github.com/enderjnets/Coinbase-Cripto-Trader-Claude.git
+cd Coinbase-Cripto-Trader-Claude
 
 # Instalar dependencias
 pip install -r requirements.txt
