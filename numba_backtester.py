@@ -293,6 +293,8 @@ if HAS_NUMBA:
             total_pnl: float64
             num_trades: int64
             wins: int64
+            max_drawdown: float64
+            sharpe_ratio: float64
         """
         n = len(close)
         sl_pct = genome_encoded[0]
@@ -312,6 +314,10 @@ if HAS_NUMBA:
         total_pnl = 0.0
         num_trades = 0
         wins = 0
+        peak_balance = balance
+        max_drawdown = 0.0
+        sum_ret = 0.0
+        sum_ret_sq = 0.0
 
         # Main loop - starts at 200 to ensure indicator warmup
         for i in range(200, n):
@@ -351,6 +357,17 @@ if HAS_NUMBA:
                     num_trades += 1
                     if trade_pnl > 0.0:
                         wins += 1
+
+                    # Track metrics for sharpe and drawdown
+                    ret = trade_pnl / cost_basis
+                    sum_ret += ret
+                    sum_ret_sq += ret * ret
+                    if balance > peak_balance:
+                        peak_balance = balance
+                    if peak_balance > 0.0:
+                        dd = (peak_balance - balance) / peak_balance
+                        if dd > max_drawdown:
+                            max_drawdown = dd
 
                     position_active = False
 
@@ -429,7 +446,28 @@ if HAS_NUMBA:
             if trade_pnl > 0.0:
                 wins += 1
 
-        return total_pnl, num_trades, wins
+            # Track metrics for sharpe and drawdown
+            ret = trade_pnl / cost_basis
+            sum_ret += ret
+            sum_ret_sq += ret * ret
+            if balance > peak_balance:
+                peak_balance = balance
+            if peak_balance > 0.0:
+                dd = (peak_balance - balance) / peak_balance
+                if dd > max_drawdown:
+                    max_drawdown = dd
+
+        # Compute Sharpe Ratio
+        sharpe_ratio = 0.0
+        if num_trades > 1:
+            mean_ret = sum_ret / num_trades
+            var = (sum_ret_sq / num_trades) - (mean_ret * mean_ret)
+            if var < 1e-10:
+                var = 1e-10
+            std = var ** 0.5
+            sharpe_ratio = (mean_ret / std) * (252.0 ** 0.5)
+
+        return total_pnl, num_trades, wins, max_drawdown, sharpe_ratio
 
 
 # ============================================================================
@@ -485,7 +523,7 @@ def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None
         if cancel_event and cancel_event.is_set():
             return []
 
-        total_pnl, num_trades, num_wins = _fast_backtest(
+        total_pnl, num_trades, num_wins, max_dd, sharpe = _fast_backtest(
             close, high, low, indicators, genomes_encoded[i], fee_rate
         )
 
@@ -499,7 +537,9 @@ def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None
             'metrics': {
                 'Total PnL': round(total_pnl, 2),
                 'Total Trades': num_trades,
-                'Win Rate %': round(win_rate, 2)
+                'Win Rate %': round(win_rate, 2),
+                'Sharpe Ratio': round(sharpe, 4),
+                'Max Drawdown': round(max_dd, 4)
             }
         })
 
@@ -539,7 +579,7 @@ def warmup_jit():
     genome[6] = 30.0          # value: 30
     genome[7] = OP_LT         # RSI_14 < 30
 
-    _fast_backtest(close, high, low, indicators, genome, 0.004)
+    _fast_backtest(close, high, low, indicators, genome, 0.004)  # returns 5 values now
 
 
 # ============================================================================
@@ -585,7 +625,7 @@ def validate_against_original(df, genome, verbose=True):
     except ImportError:
         fee_rate = 0.004
 
-    numba_pnl, numba_trades, numba_wins = _fast_backtest(close, high, low, indicators, encoded, fee_rate)
+    numba_pnl, numba_trades, numba_wins, _, _ = _fast_backtest(close, high, low, indicators, encoded, fee_rate)
     t_numba = time.time() - t0
 
     numba_pnl = round(numba_pnl, 2)
