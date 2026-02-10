@@ -1,0 +1,142 @@
+═══════════════════════════════════════════════════════════════
+   🚀 INICIO RÁPIDO - CONFIGURACIÓN INVERTIDA
+═══════════════════════════════════════════════════════════════
+
+VERSIONES: Head v4.0 | Worker v2.6
+FECHA: 2026-01-26
+
+═══════════════════════════════════════════════════════════════
+📋 PASOS RÁPIDOS (5 MINUTOS)
+═══════════════════════════════════════════════════════════════
+
+1️⃣ EN MACBOOK AIR - DETENER HEAD ACTUAL
+-----------------------------------------
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+.venv/bin/ray stop
+
+
+2️⃣ EN MACBOOK PRO - INSTALAR HEAD NODE
+----------------------------------------
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/Head_Node_Installer_Package"
+./setup_head_macbook_pro.sh
+
+# ⚠️ IMPORTANTE: Copiar la IP de Tailscale que muestra al final
+# Ejemplo: 100.123.45.67
+
+
+3️⃣ EN MACBOOK PRO - INICIAR RAY HEAD
+--------------------------------------
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+# Reemplazar <IP_TAILSCALE> con la IP del paso anterior
+.venv/bin/ray start --head \
+  --port=6379 \
+  --node-ip-address=<IP_TAILSCALE> \
+  --include-dashboard=false \
+  --num-cpus=12
+
+# Verificar
+.venv/bin/ray status
+# Debe mostrar: 1 node, 12.0 CPU
+
+
+4️⃣ EN MACBOOK AIR - INSTALAR WORKER MÓVIL
+-------------------------------------------
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/Worker_Installer_Package"
+./install.sh
+
+# Cuando pregunte HEAD_IP: ingresar la IP del paso 2
+# El instalador configurará todo automáticamente
+
+
+5️⃣ VERIFICAR CLUSTER COMPLETO
+-------------------------------
+
+# En MacBook Pro:
+.venv/bin/ray status
+
+# Debe mostrar:
+#   Active: 2 nodes
+#   0.0/22.0 CPU  ← ¡22 CPUs!
+
+
+6️⃣ EJECUTAR TEST
+------------------
+
+# En MacBook Pro:
+.venv/bin/python test_miner_quick.py
+
+# Resultado esperado:
+#   ⚙️  CPUs: 22
+#   ⏱️  Tiempo: ~30-35 segundos
+#   ✅ Sin crashes SIGSEGV
+
+
+═══════════════════════════════════════════════════════════════
+✅ VERIFICACIÓN EXITOSA
+═══════════════════════════════════════════════════════════════
+
+SI TODO FUNCIONÓ CORRECTAMENTE:
+  ✅ Test completa en ~30-35 segundos (antes 51 seg)
+  ✅ CPUs: 22 (12 Head + 10 Worker)
+  ✅ Sin crashes SIGSEGV
+  ✅ Worker se reconecta automáticamente si cambias de WiFi
+
+AHORA PUEDES:
+  • Ejecutar Strategy Miner completo (más rápido)
+  • Llevar MacBook Air contigo (Worker se reconecta solo)
+  • Usar MacBook Pro como Head estable 24/7
+
+
+═══════════════════════════════════════════════════════════════
+📚 DOCUMENTACIÓN COMPLETA
+═══════════════════════════════════════════════════════════════
+
+CONFIGURACION_INVERTIDA.txt
+  → Guía completa de la nueva arquitectura
+
+GUIA_WORKER_MOVIL.txt
+  → Cómo funciona el Worker Móvil y cómo usarlo
+
+USAR_MACBOOK_PRO_COMO_HEAD.txt
+  → Instrucciones detalladas paso a paso
+
+IMPLEMENTACION_COMPLETADA_v4.0_v2.6.txt
+  → Resumen técnico completo de la implementación
+
+Worker_Installer_Package/CAMBIOS_V2.6.txt
+  → Changelog del Worker v2.6
+
+
+═══════════════════════════════════════════════════════════════
+🔧 TROUBLESHOOTING RÁPIDO
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA: Worker no se conecta
+SOLUCIÓN:
+  1. Verificar Tailscale: tailscale status
+  2. Verificar ping: ping <HEAD_IP>
+  3. Ver logs: tail -f ~/.bittrader_worker/worker.log
+
+PROBLEMA: Ray no inicia en MacBook Pro
+SOLUCIÓN:
+  1. Verificar Python: /usr/local/bin/python3.9 --version
+  2. Verificar Tailscale: tailscale ip -4
+  3. Ver logs: tail -f /tmp/ray/session_latest/logs/raylet.out
+
+PROBLEMA: Test muy lento o 0 trades
+SOLUCIÓN:
+  1. Verificar CPUs: ray status
+  2. Verificar dataset: ls -lh data/BTC-USD_FIVE_MINUTE.csv
+  3. Ver logs del test
+
+
+═══════════════════════════════════════════════════════════════
+
+¡LISTO PARA USAR! 🚀
+
+═══════════════════════════════════════════════════════════════
