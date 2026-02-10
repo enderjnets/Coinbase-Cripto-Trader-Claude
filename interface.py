@@ -24,7 +24,7 @@ COORDINATOR_DB = os.path.join(BASE_DIR, "coordinator.db")
 from backtester import Backtester
 from coinbase_client import CoinbaseClient
 from scanner import MarketScanner
-from schwab_client import SchwabClient
+# from schwab_client import SchwabClient  # TEMPORAL: archivo eliminado
 
 # Page Config
 st.set_page_config(
@@ -1092,24 +1092,17 @@ if broker_selection != st.session_state['active_broker_name']:
     st.rerun()
 
 is_crypto = "Coinbase" in broker_selection
-is_stocks = "Schwab" in broker_selection
+is_stocks = False  # TEMPORAL: Schwab deshabilitado
 
 # Select Broker Client
-if is_stocks:
-    try:
-        broker_client = SchwabClient()
-        # st.toast("Schwab Client Active", icon="🏦")
-    except Exception as e:
-        st.error(f"Failed to initialize Schwab Client: {e}")
-        broker_client = CoinbaseClient() # Fallback
-else:
-    broker_client = CoinbaseClient()
+# Schwab deshabilitado temporalmente
+broker_client = CoinbaseClient()
 
 # Initialize Components with Broker
 bt = Backtester(broker_client=broker_client)
 scanner = MarketScanner(broker_client=broker_client)
 
-st.title(f"⚡ {'Schwab Pro Trader' if is_stocks else 'Coinbase Crypto Bot'}")
+st.title(f"⚡ 'Coinbase Crypto Bot'  # TEMPORAL")
 
 # --- Navigation ---
 nav_mode = st.sidebar.radio(
@@ -1121,67 +1114,62 @@ nav_mode = st.sidebar.radio(
 if nav_mode == "⚡ Bitcoin Spot Pro":
     st.subheader("Bitcoin Spot Pro 🚀 (BTC-USDC)")
     
-    if is_stocks:
-        st.warning("⚠️ You are in 'Charles Schwab' mode. Bitcoin Spot Pro requires Coinbase.")
-        if st.button("Switch to Coinbase"):
-            st.session_state.broker_choice = "Coinbase (Crypto)"
-            st.rerun()
-    else:
-        tab_swing, tab_grid, tab_calc = st.tabs(["📉 Swing Trader", "🕸️ Grid Bot", "🧮 Position Calculator"])
-        
-        with tab_swing:
-            st.markdown("### Intraday Swing (H1/H4)")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("BTC Price", "$95,432.10", "+1.2%") # Mock
-            with col2:
-                st.metric("Market Regime", "Lateral / Range", "Neutral")
-                
-            st.info("ℹ️ Strategy: Bollinger Bands (20,2) + RSI(<30) Reversion")
-            if st.button("Analyze Swing Setup"):
-                st.write("Fetching H1 data...")
-                from btc_spot_strategy import BitcoinSpotStrategy
-                strat = BitcoinSpotStrategy(None)
-                st.success("Analysis Complete: No Signal (RSI=45)")
-                
-            # --- STRATEGY CONTROL ---
-            st.divider()
+    # Bitcoin Spot Pro functionality
+    tab_swing, tab_grid, tab_calc = st.tabs(["📉 Swing Trader", "🕸️ Grid Bot", "🧮 Position Calculator"])
+    
+    with tab_swing:
+        st.markdown("### Intraday Swing (H1/H4)")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("BTC Price", "$95,432.10", "+1.2%") # Mock
+        with col2:
+            st.metric("Market Regime", "Lateral / Range", "Neutral")
             
-            # Check if this specific strategy matches the active one
+        st.info("ℹ️ Strategy: Bollinger Bands (20,2) + RSI(<30) Reversion")
+        if st.button("Analyze Swing Setup"):
+            st.write("Fetching H1 data...")
             from btc_spot_strategy import BitcoinSpotStrategy
+            strat = BitcoinSpotStrategy(None)
+            st.success("Analysis Complete: No Signal (RSI=45)")
             
+            # --- STRATEGY CONTROL ---
+        st.divider()
+        
+            # Check if this specific strategy matches the active one
+        from btc_spot_strategy import BitcoinSpotStrategy
+        
             # Helper to check if current strategy is BTC Spot
-            is_btc_strat_active = isinstance(bot_instance.strategy, BitcoinSpotStrategy)
-            
-            col_ctrl_1, col_ctrl_2 = st.columns([2, 1])
-            with col_ctrl_1:
-                st.markdown("### 🤖 Strategy Activation")
-                if is_btc_strat_active and bot_instance.is_running:
-                     st.success("✅ Bitcoin Spot Pro Strategy is RUNNING")
-                     if st.button("Stop Strategy", key="stop_btc"):
-                         bot_instance.is_running = False
-                         st.rerun()
-                else:
-                     st.warning("Strategy is STOPPED or another strategy is active.")
-                     if st.button("🚀 START Bitcoin Spot Strategy", key="start_btc"):
+        is_btc_strat_active = isinstance(bot_instance.strategy, BitcoinSpotStrategy)
+        
+        col_ctrl_1, col_ctrl_2 = st.columns([2, 1])
+        with col_ctrl_1:
+            st.markdown("### 🤖 Strategy Activation")
+            if is_btc_strat_active and bot_instance.is_running:
+                 st.success("✅ Bitcoin Spot Pro Strategy is RUNNING")
+                 if st.button("Stop Strategy", key="stop_btc"):
+                     bot_instance.is_running = False
+                     st.rerun()
+            else:
+                 st.warning("Strategy is STOPPED or another strategy is active.")
+                 if st.button("🚀 START Bitcoin Spot Strategy", key="start_btc"):
                          # Initialize and assign strategy
                          # Ensure we are using the Coinbase bot (active one in this view)
-                         cb_bot = st.session_state['bots']['Coinbase']
-                         cb_bot.strategy = BitcoinSpotStrategy(cb_bot.broker)
-                         cb_bot.is_running = True
-                         
+                     cb_bot = st.session_state['bots']['Coinbase']
+                     cb_bot.strategy = BitcoinSpotStrategy(cb_bot.broker)
+                     cb_bot.is_running = True
+                     
                          # Ensure thread is running
-                         if 'Coinbase' not in st.session_state['bot_threads'] or \
-                            st.session_state['bot_threads']['Coinbase'] is None or \
-                            not st.session_state['bot_threads']['Coinbase'].is_alive():
-                                
-                            t = threading.Thread(target=run_bot_thread, args=(cb_bot,), daemon=True)
-                            t.start()
-                            st.session_state['bot_threads']['Coinbase'] = t
+                     if 'Coinbase' not in st.session_state['bot_threads'] or \
+                        st.session_state['bot_threads']['Coinbase'] is None or \
+                        not st.session_state['bot_threads']['Coinbase'].is_alive():
                             
-                         st.toast("Bitcoin Strategy Activated!", icon="🚀")
-                         time.sleep(1)
-                         st.rerun()
+                        t = threading.Thread(target=run_bot_thread, args=(cb_bot,), daemon=True)
+                        t.start()
+                        st.session_state['bot_threads']['Coinbase'] = t
+                        
+                     st.toast("Bitcoin Strategy Activated!", icon="🚀")
+                     time.sleep(1)
+                     st.rerun()
 
 
         with tab_grid:
@@ -1331,19 +1319,11 @@ status_placeholder = st.sidebar.empty()
 
 st.sidebar.markdown("---")
 with st.sidebar.expander("🔑 API Credentials"):
-    if is_stocks:
-        st.subheader("Charles Schwab")
-        schwab_key = st.text_input("App Key", value="", type="password")
-        schwab_secret = st.text_input("App Secret", value="", type="password")
-        if st.button("Save Schwab Keys"):
-            # Placeholder for saving mechanism
-            st.toast("Keys Saved (Session Only)", icon="💾")
-    else:
-        st.subheader("Coinbase Advanced")
-        cb_key = st.text_input("API Key Name", value="", type="password")
-        cb_secret = st.text_input("Private Key", value="", type="password")
-        if st.button("Save Coinbase Keys"):
-            st.toast("Keys Saved (Session Only)", icon="💾")
+    st.subheader("Coinbase Advanced")
+    cb_key = st.text_input("API Key Name", value="", type="password")
+    cb_secret = st.text_input("Private Key", value="", type="password")
+    if st.button("Save Coinbase Keys"):
+        st.toast("Keys Saved (Session Only)", icon="💾")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 Data Management")
@@ -1547,15 +1527,12 @@ elif nav_mode == "🧪 Backtester":
     with col_b1:
         st.subheader("1. Configuration")
         
-        if is_stocks:
-            bt_product = st.text_input("Ticker Symbol", value="NVDA").upper()
-        else:
-            # Dropdown for Product ID (Crypto)
-            available_products = load_products()
-            default_idx = 0
-            if "BTC-USD" in available_products:
-                default_idx = available_products.index("BTC-USD")
-            bt_product = st.selectbox("Product ID", available_products, index=default_idx)
+        # Schwab deshabilitado - usar crypto
+        available_products = load_products()
+        default_idx = 0
+        if "BTC-USD" in available_products:
+            default_idx = available_products.index("BTC-USD")
+        bt_product = st.selectbox("Product ID", available_products, index=default_idx)
             
         # Strategy Selector
         st.subheader("Strategy Selection")
