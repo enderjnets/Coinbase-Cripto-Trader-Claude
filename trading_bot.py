@@ -16,7 +16,7 @@ class TradingBot:
         
         # Initialize Broker Interface
         if self.broker_type == "SCHWAB":
-            from schwab_client import SchwabClient
+            # from schwab_client import SchwabClient  # TEMPORAL
             try:
                 self.broker = SchwabClient()
             except:
