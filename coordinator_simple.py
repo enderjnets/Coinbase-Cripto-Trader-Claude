@@ -220,6 +220,9 @@ HTML = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>Strategy Miner</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <style>
         body {{ font-family: sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 20px; margin: 0; }}
         h1 {{ text-align: center; background: linear-gradient(90deg, #00d4ff, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
@@ -231,13 +234,16 @@ HTML = f"""<!DOCTYPE html>
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }}
         th {{ background: rgba(124, 58, 237, 0.3); }}
-        .active {{ background: #10b981; padding: 3px 10px; border-radius: 10px; }}
-        .inactive {{ background: #ef4444; padding: 3px 10px; border-radius: 10px; }}
+        .active {{ background: #10b981; padding: 3px 10px; border-radius: 10px; color: white; }}
+        .inactive {{ background: #ef4444; padding: 3px 10px; border-radius: 10px; color: white; }}
         .btn {{ background: linear-gradient(90deg, #00d4ff, #7c3aed); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; margin: 5px; }}
         .btn:hover {{ opacity: 0.9; }}
         .actions {{ text-align: center; margin: 20px 0; }}
         .range-bar {{ height: 20px; background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444); border-radius: 10px; margin: 10px 0; }}
         .metric {{ font-size: 0.9em; color: #94a3b8; }}
+        .status-active {{ color: #10b981; }}
+        .status-inactive {{ color: #ef4444; }}
+        .worker-count {{ font-size: 0.8em; color: #94a3b8; }}
     </style>
 </head>
 <body>
@@ -283,55 +289,75 @@ HTML = f"""<!DOCTYPE html>
         <div id="distribution"></div>
     </div>
     <div class="section">
-        <h2>🏆 Leaderboard</h2>
+        <h2>🏆 Leaderboard (Top 10)</h2>
         <table id="leaderboard"></table>
     </div>
     <div class="section">
-        <h2>📊 Workers Activos</h2>
+        <h2>📊 Workers (Todos)</h2>
+        <div class="worker-count" id="worker-count">Cargando...</div>
         <table id="workers"></table>
     </div>
     <script>
         const DIST_TOTAL = {DIST_TOTAL};
+        const LOAD_INTERVAL = 15000;  // 15 segundos
         
         async function load() {{
-            let s = await fetch('/api/status').then(r => r.json());
-            document.getElementById('wu-total').textContent = s.work_units.total;
-            document.getElementById('wu-completed').textContent = s.work_units.completed;
-            document.getElementById('wu-workers').textContent = s.workers.active;
-            
-            if (s.best_strategy && s.best_strategy.pnl) {{
-                document.getElementById('wu-best').textContent = '$' + s.best_strategy.pnl.toFixed(2);
-                document.getElementById('best-pnl').textContent = '$' + s.best_strategy.pnl.toFixed(2);
-                document.getElementById('best-trades').textContent = s.best_strategy.trades;
-                document.getElementById('best-winrate').textContent = (s.best_strategy.win_rate * 100).toFixed(1) + '%';
-                document.getElementById('best-sharpe').textContent = s.best_strategy.sharpe_ratio.toFixed(2);
-                document.getElementById('best-drawdown').textContent = (s.best_strategy.max_drawdown * 100).toFixed(1) + '%';
+            try {{
+                let s = await fetch('/api/status').then(r => r.json());
+                document.getElementById('wu-total').textContent = s.work_units.total;
+                document.getElementById('wu-completed').textContent = s.work_units.completed;
+                document.getElementById('wu-workers').textContent = s.workers.active;
+                
+                if (s.best_strategy && s.best_strategy.pnl) {{
+                    document.getElementById('wu-best').textContent = '$' + s.best_strategy.pnl.toFixed(2);
+                    document.getElementById('best-pnl').textContent = '$' + s.best_strategy.pnl.toFixed(2);
+                    document.getElementById('best-trades').textContent = s.best_strategy.trades;
+                    document.getElementById('best-winrate').textContent = (s.best_strategy.win_rate * 100).toFixed(1) + '%';
+                    document.getElementById('best-sharpe').textContent = s.best_strategy.sharpe_ratio.toFixed(2);
+                    document.getElementById('best-drawdown').textContent = (s.best_strategy.max_drawdown * 100).toFixed(1) + '%';
+                }}
+                
+                // Distribution
+                let dist = await fetch('/api/distribution').then(r => r.json());
+                let distHtml = '';
+                dist.distribution.forEach(d => {{
+                    let pct = (d.count / DIST_TOTAL) * 100;
+                    distHtml += '<div style="display:flex;justify-content:space-between;margin-top:10px;">';
+                    distHtml += '<span>' + d.range + '</span><span>$' + d.avg.toFixed(2) + ' avg (' + d.count + ' estrategias)</span></div>';
+                    distHtml += '<div class="range-bar" style="width:' + Math.min(pct * 3, 100) + '%"></div>';
+                }});
+                document.getElementById('distribution').innerHTML = distHtml || '<p>Sin datos aún</p>';
+                
+                // Leaderboard
+                let lb = await fetch('/api/leaderboard').then(r => r.json());
+                let lbHtml = '<tr><th>#</th><th>Maquina</th><th>WUs</th><th>Horas</th><th>Estado</th></tr>';
+                lb.leaderboard.slice(0, 10).forEach((w, i) => {{
+                    lbHtml += '<tr><td>' + (i+1) + '</td><td>' + w.friendly_name + '</td><td><b>' + w.work_units + '</b></td><td>' + w.execution_time_hours + 'h</td><td><span class="' + w.status + '">' + w.status + '</span></td></tr>';
+                }});
+                document.getElementById('leaderboard').innerHTML = lbHtml;
+                
+                // All Workers (both active and inactive)
+                let ws = await fetch('/api/workers').then(r => r.json());
+                let activeCount = ws.workers.filter(w => w.status === 'active').length;
+                let inactiveCount = ws.workers.filter(w => w.status === 'inactive').length;
+                document.getElementById('worker-count').textContent = '🟢 ' + activeCount + ' activos | 🔴 ' + inactiveCount + ' inactivos';
+                
+                let wsHtml = '<tr><th>Maquina</th><th>WUs</th><th>Última Actividad</th><th>Estado</th></tr>';
+                ws.workers.forEach(w => {{
+                    let mins = w.last_seen_minutes_ago.toFixed(0);
+                    let timeStr = mins < 60 ? mins + ' min' : (mins / 60).toFixed(1) + ' horas';
+                    wsHtml += '<tr>';
+                    wsHtml += '<td>' + w.friendly_name + '</td>';
+                    wsHtml += '<td>' + w.work_units_completed + '</td>';
+                    wsHtml += '<td>' + timeStr + '</td>';
+                    wsHtml += '<td><span class="' + w.status + '">' + w.status + '</span></td>';
+                    wsHtml += '</tr>';
+                }});
+                document.getElementById('workers').innerHTML = wsHtml || '<tr><td colspan="4">Cargando...</td></tr>';
+                
+            }} catch (e) {{
+                console.error('Error loading data:', e);
             }}
-            
-            // Distribution
-            let dist = await fetch('/api/distribution').then(r => r.json());
-            let distHtml = '';
-            dist.distribution.forEach(d => {{
-                let pct = (d.count / DIST_TOTAL) * 100;
-                distHtml += '<div style="display:flex;justify-content:space-between;margin-top:10px;">';
-                distHtml += '<span>' + d.range + '</span><span>$' + d.avg.toFixed(2) + ' avg (' + d.count + ' estrategias)</span></div>';
-                distHtml += '<div class="range-bar" style="width:' + Math.min(pct * 3, 100) + '%"></div>';
-            }});
-            document.getElementById('distribution').innerHTML = distHtml || '<p>Sin datos aún</p>';
-            
-            let lb = await fetch('/api/leaderboard').then(r => r.json());
-            let lbHtml = '<tr><th>#</th><th>Maquina</th><th>WUs</th><th>Horas</th><th>Estado</th></tr>';
-            lb.leaderboard.slice(0, 10).forEach((w, i) => {{
-                lbHtml += '<tr><td>' + (i+1) + '</td><td>' + w.friendly_name + '</td><td><b>' + w.work_units + '</b></td><td>' + w.execution_time_hours + 'h</td><td><span class="' + w.status + '">' + w.status + '</span></td></tr>';
-            }});
-            document.getElementById('leaderboard').innerHTML = lbHtml;
-            
-            let ws = await fetch('/api/workers').then(r => r.json());
-            let wsHtml = '<tr><th>Maquina</th><th>WUs</th><th>Minutos</th></tr>';
-            ws.workers.filter(w => w.status === 'active').forEach(w => {{
-                wsHtml += '<tr><td>' + w.friendly_name + '</td><td>' + w.work_units_completed + '</td><td>' + w.last_seen_minutes_ago.toFixed(0) + ' min</td></tr>';
-            }});
-            document.getElementById('workers').innerHTML = wsHtml || '<tr><td colspan="3">Cargando...</td></tr>';
         }}
         
         async function generateReport() {{
@@ -340,7 +366,9 @@ HTML = f"""<!DOCTYPE html>
             win.document.write('<pre style="background:#1a1a2e;color:white;padding:20px;font-size:12px;">' + JSON.stringify(report, null, 2) + '</pre>');
         }}
         
-        load(); setInterval(load, 30000);
+        // Load immediately and then periodically
+        load();
+        setInterval(load, LOAD_INTERVAL);
     </script>
 </body>
 </html>"""
