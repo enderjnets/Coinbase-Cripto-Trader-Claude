@@ -8,7 +8,8 @@ import json
 from datetime import datetime
 
 app = Flask(__name__)
-DATABASE = 'coordinator.db'
+# Usar la ruta completa de la base de datos
+DATABASE = '/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/coordinator.db'
 
 def get_db():
     conn = sqlite3.connect(DATABASE)
@@ -20,7 +21,7 @@ def analyze_results():
     conn = get_db()
     c = conn.cursor()
     
-    # Stats generales
+    # Stats generales - excluir valores hardcoded
     c.execute("""
         SELECT 
             COUNT(*) as total,
@@ -30,10 +31,11 @@ def analyze_results():
             MIN(pnl) as min_pnl,
             AVG(pnl) filter (where pnl > 0) as avg_positive
         FROM results
+        WHERE NOT (trades = 10 AND win_rate = 0.65 AND sharpe_ratio = 1.5 AND max_drawdown = 0.15)
     """)
     stats = dict(c.fetchone())
     
-    # Distribución por PnL
+    # Distribución por PnL - excluir hardcoded
     c.execute("""
         SELECT 
             CASE 
@@ -47,17 +49,19 @@ def analyze_results():
             AVG(pnl) as avg
         FROM results
         WHERE pnl > 0
+          AND NOT (trades = 10 AND win_rate = 0.65 AND sharpe_ratio = 1.5 AND max_drawdown = 0.15)
         GROUP BY range
         ORDER BY avg DESC
     """)
     distribution = [dict(row) for row in c.fetchall()]
     
-    # Mejores estrategias
+    # Mejores estrategias - excluir hardcoded
     c.execute("""
         SELECT r.pnl, r.trades, r.win_rate, r.sharpe_ratio, r.max_drawdown,
                w.strategy_params, r.worker_id
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
+        WHERE NOT (r.trades = 10 AND r.win_rate = 0.65 AND r.sharpe_ratio = 1.5 AND r.max_drawdown = 0.15)
         ORDER BY r.pnl DESC
         LIMIT 20
     """)
@@ -89,6 +93,7 @@ def analyze_results():
         FROM work_units w
         JOIN results r ON w.id = r.work_unit_id
         WHERE r.pnl > 0
+          AND NOT (r.trades = 10 AND r.win_rate = 0.65 AND r.sharpe_ratio = 1.5 AND r.max_drawdown = 0.15)
         GROUP BY w.id
         ORDER BY avg_pnl DESC
         LIMIT 10
@@ -108,11 +113,12 @@ def analyze_results():
             'avg_positive': row['avg_positive']
         })
     
-    # Workers performance
+    # Workers performance - excluir hardcoded
     c.execute("""
         SELECT worker_id, COUNT(*) as results, AVG(pnl) as avg_pnl, MAX(pnl) as max_pnl
         FROM results
         WHERE pnl > 0
+          AND NOT (trades = 10 AND win_rate = 0.65 AND sharpe_ratio = 1.5 AND max_drawdown = 0.15)
         GROUP BY worker_id
         ORDER BY avg_pnl DESC
         LIMIT 10
@@ -195,32 +201,43 @@ def generate_recommendations(data):
     recommendations.append({
         'priority': 'BAJA',
         'area': 'Risk Level',
-        'suggestion': 'Prueba risk_level=HIGH para estrategias más agresivas, o LOW para保守的 (conservadoras).'
+        'suggestion': 'Prueba risk_level=HIGH para estrategias más agresivas, o LOW para conservadoras.'
     })
     
     return recommendations
 
-HTML = """<!DOCTYPE html>
+# Calcular total para la barra de distribución
+try:
+    conn_temp = sqlite3.connect(DATABASE)
+    c_temp = conn_temp.cursor()
+    c_temp.execute("SELECT COUNT(*) FROM results WHERE pnl > 0 AND NOT (trades = 10 AND win_rate = 0.65 AND sharpe_ratio = 1.5 AND max_drawdown = 0.15)")
+    DIST_TOTAL = c_temp.fetchone()[0]
+    conn_temp.close()
+except:
+    DIST_TOTAL = 1
+
+HTML = f"""<!DOCTYPE html>
 <html>
 <head>
     <title>Strategy Miner</title>
     <style>
-        body { font-family: sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 20px; margin: 0; }
-        h1 { text-align: center; background: linear-gradient(90deg, #00d4ff, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 30px 0; }
-        .stat { background: rgba(255,255,255,0.1); border-radius: 15px; padding: 25px; text-align: center; }
-        .stat-value { font-size: 2em; font-weight: bold; }
-        .section { background: rgba(255,255,255,0.05); border-radius: 15px; padding: 20px; margin: 20px 0; }
-        .section h2 { margin-top: 0; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        th { background: rgba(124, 58, 237, 0.3); }
-        .active { background: #10b981; padding: 3px 10px; border-radius: 10px; }
-        .inactive { background: #ef4444; padding: 3px 10px; border-radius: 10px; }
-        .btn { background: linear-gradient(90deg, #00d4ff, #7c3aed); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; margin: 5px; }
-        .btn:hover { opacity: 0.9; }
-        .actions { text-align: center; margin: 20px 0; }
-        .range-bar { height: 20px; background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444); border-radius: 10px; margin: 10px 0; }
+        body {{ font-family: sans-serif; background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 20px; margin: 0; }}
+        h1 {{ text-align: center; background: linear-gradient(90deg, #00d4ff, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 30px 0; }}
+        .stat {{ background: rgba(255,255,255,0.1); border-radius: 15px; padding: 25px; text-align: center; }}
+        .stat-value {{ font-size: 2em; font-weight: bold; }}
+        .section {{ background: rgba(255,255,255,0.05); border-radius: 15px; padding: 20px; margin: 20px 0; }}
+        .section h2 {{ margin-top: 0; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }}
+        th {{ background: rgba(124, 58, 237, 0.3); }}
+        .active {{ background: #10b981; padding: 3px 10px; border-radius: 10px; }}
+        .inactive {{ background: #ef4444; padding: 3px 10px; border-radius: 10px; }}
+        .btn {{ background: linear-gradient(90deg, #00d4ff, #7c3aed); border: none; color: white; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; margin: 5px; }}
+        .btn:hover {{ opacity: 0.9; }}
+        .actions {{ text-align: center; margin: 20px 0; }}
+        .range-bar {{ height: 20px; background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444); border-radius: 10px; margin: 10px 0; }}
+        .metric {{ font-size: 0.9em; color: #94a3b8; }}
     </style>
 </head>
 <body>
@@ -228,12 +245,38 @@ HTML = """<!DOCTYPE html>
     <div class="actions">
         <button class="btn" onclick="generateReport()">📊 Generar Reporte Completo</button>
         <button class="btn" onclick="window.open('/api/report', '_blank')">📄 Ver Reporte JSON</button>
+        <button class="btn" onclick="location.reload()">🔄 Refrescar</button>
     </div>
     <div class="stats">
         <div class="stat"><div class="stat-value" id="wu-total">-</div><div>Total WUs</div></div>
         <div class="stat"><div class="stat-value" id="wu-completed">-</div><div>Completados</div></div>
         <div class="stat"><div class="stat-value" id="wu-workers">-</div><div>Workers</div></div>
         <div class="stat"><div class="stat-value" id="wu-best">$0</div><div>Best PnL</div></div>
+    </div>
+    <div class="section">
+        <h2>📊 Best Strategy (Métricas Reales)</h2>
+        <div id="best-metrics" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; padding: 15px;">
+            <div style="background: rgba(16, 185, 129, 0.2); padding: 15px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 1.8em; font-weight: bold; color: #10b981;" id="best-pnl">$0</div>
+                <div class="metric">PnL</div>
+            </div>
+            <div style="background: rgba(59, 130, 246, 0.2); padding: 15px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 1.8em; font-weight: bold; color: #3b82f6;" id="best-trades">0</div>
+                <div class="metric">Trades</div>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.2); padding: 15px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 1.8em; font-weight: bold; color: #f59e0b;" id="best-winrate">0%</div>
+                <div class="metric">Win Rate</div>
+            </div>
+            <div style="background: rgba(139, 92, 246, 0.2); padding: 15px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 1.8em; font-weight: bold; color: #8b5cf6;" id="best-sharpe">0.00</div>
+                <div class="metric">Sharpe</div>
+            </div>
+            <div style="background: rgba(239, 68, 68, 0.2); padding: 15px; border-radius: 10px; text-align: center;">
+                <div style="font-size: 1.8em; font-weight: bold; color: #ef4444;" id="best-drawdown">0%</div>
+                <div class="metric">Max Drawdown</div>
+            </div>
+        </div>
     </div>
     <div class="section">
         <h2>📈 Distribución PnL</h2>
@@ -248,43 +291,54 @@ HTML = """<!DOCTYPE html>
         <table id="workers"></table>
     </div>
     <script>
-        async function load() {
+        const DIST_TOTAL = {DIST_TOTAL};
+        
+        async function load() {{
             let s = await fetch('/api/status').then(r => r.json());
             document.getElementById('wu-total').textContent = s.work_units.total;
             document.getElementById('wu-completed').textContent = s.work_units.completed;
             document.getElementById('wu-workers').textContent = s.workers.active;
-            if (s.best_strategy && s.best_strategy.pnl) document.getElementById('wu-best').textContent = '$' + s.best_strategy.pnl.toFixed(2);
+            
+            if (s.best_strategy && s.best_strategy.pnl) {{
+                document.getElementById('wu-best').textContent = '$' + s.best_strategy.pnl.toFixed(2);
+                document.getElementById('best-pnl').textContent = '$' + s.best_strategy.pnl.toFixed(2);
+                document.getElementById('best-trades').textContent = s.best_strategy.trades;
+                document.getElementById('best-winrate').textContent = (s.best_strategy.win_rate * 100).toFixed(1) + '%';
+                document.getElementById('best-sharpe').textContent = s.best_strategy.sharpe_ratio.toFixed(2);
+                document.getElementById('best-drawdown').textContent = (s.best_strategy.max_drawdown * 100).toFixed(1) + '%';
+            }}
             
             // Distribution
             let dist = await fetch('/api/distribution').then(r => r.json());
             let distHtml = '';
-            dist.distribution.forEach(d => {
-                let pct = (d.count / """ + str(sum([d['count'] for d in []])) + """) * 100;
-                distHtml += '<div><span>' + d.range + '</span><span>$' + d.avg.toFixed(2) + ' avg</span></div>';
-                distHtml += '<div class="range-bar" style="width:' + pct * 2 + '%"></div>';
-            });
-            document.getElementById('distribution').innerHTML = distHtml;
+            dist.distribution.forEach(d => {{
+                let pct = (d.count / DIST_TOTAL) * 100;
+                distHtml += '<div style="display:flex;justify-content:space-between;margin-top:10px;">';
+                distHtml += '<span>' + d.range + '</span><span>$' + d.avg.toFixed(2) + ' avg (' + d.count + ' estrategias)</span></div>';
+                distHtml += '<div class="range-bar" style="width:' + Math.min(pct * 3, 100) + '%"></div>';
+            }});
+            document.getElementById('distribution').innerHTML = distHtml || '<p>Sin datos aún</p>';
             
             let lb = await fetch('/api/leaderboard').then(r => r.json());
             let lbHtml = '<tr><th>#</th><th>Maquina</th><th>WUs</th><th>Horas</th><th>Estado</th></tr>';
-            lb.leaderboard.slice(0, 10).forEach((w, i) => {
+            lb.leaderboard.slice(0, 10).forEach((w, i) => {{
                 lbHtml += '<tr><td>' + (i+1) + '</td><td>' + w.friendly_name + '</td><td><b>' + w.work_units + '</b></td><td>' + w.execution_time_hours + 'h</td><td><span class="' + w.status + '">' + w.status + '</span></td></tr>';
-            });
+            }});
             document.getElementById('leaderboard').innerHTML = lbHtml;
             
             let ws = await fetch('/api/workers').then(r => r.json());
             let wsHtml = '<tr><th>Maquina</th><th>WUs</th><th>Minutos</th></tr>';
-            ws.workers.filter(w => w.status === 'active').forEach(w => {
+            ws.workers.filter(w => w.status === 'active').forEach(w => {{
                 wsHtml += '<tr><td>' + w.friendly_name + '</td><td>' + w.work_units_completed + '</td><td>' + w.last_seen_minutes_ago.toFixed(0) + ' min</td></tr>';
-            });
+            }});
             document.getElementById('workers').innerHTML = wsHtml || '<tr><td colspan="3">Cargando...</td></tr>';
-        }
+        }}
         
-        async function generateReport() {
+        async function generateReport() {{
             let report = await fetch('/api/report').then(r => r.json());
             let win = window.open('', '_blank');
-            win.document.write('<pre style="background:#1a1a2e;color:white;padding:20px;">' + JSON.stringify(report, null, 2) + '</pre>');
-        }
+            win.document.write('<pre style="background:#1a1a2e;color:white;padding:20px;font-size:12px;">' + JSON.stringify(report, null, 2) + '</pre>');
+        }}
         
         load(); setInterval(load, 30000);
     </script>
@@ -305,11 +359,18 @@ def status():
     completed = c.fetchone()['completed']
     c.execute("SELECT COUNT(*) as active FROM workers WHERE (julianday('now') - last_seen) < (10.0/1440.0)")
     active = c.fetchone()['active']
-    c.execute("SELECT pnl, trades, win_rate, sharpe_ratio, max_drawdown FROM results WHERE is_canonical=1 ORDER BY pnl DESC LIMIT 1")
+    
+    # Buscar mejor estrategia con métricas REALES (excluir hardcoded)
+    c.execute("""
+        SELECT pnl, trades, win_rate, sharpe_ratio, max_drawdown 
+        FROM results 
+        WHERE pnl > 0 
+          AND NOT (trades = 10 AND win_rate = 0.65 AND sharpe_ratio = 1.5 AND max_drawdown = 0.15)
+        ORDER BY pnl DESC 
+        LIMIT 1
+    """)
     best = c.fetchone()
-    if not best:
-        c.execute("SELECT pnl, trades, win_rate, sharpe_ratio, max_drawdown FROM results WHERE pnl > 0 ORDER BY pnl DESC LIMIT 1")
-        best = c.fetchone()
+    
     conn.close()
     best_data = {}
     if best:
@@ -344,6 +405,7 @@ def distribution():
             AVG(pnl) as avg
         FROM results
         WHERE pnl > 0
+          AND NOT (trades = 10 AND win_rate = 0.65 AND sharpe_ratio = 1.5 AND max_drawdown = 0.15)
         GROUP BY range
         ORDER BY avg DESC
     """)
@@ -408,5 +470,6 @@ def workers():
     return jsonify({'workers': ws})
 
 if __name__ == '__main__':
-    print("🧬 Dashboard: http://localhost:5005")
+    print(f"🧬 Dashboard: http://localhost:5005")
+    print(f"📁 DB: {DATABASE}")
     app.run(host='0.0.0.0', port=5005, debug=False)
