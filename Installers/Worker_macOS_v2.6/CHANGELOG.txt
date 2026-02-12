@@ -1,0 +1,99 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                                                                          ║
+║            BITTRADER WORKER INSTALLER - CHANGELOG (macOS)                ║
+║                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.6 - January 28, 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ENHANCEMENTS:
+  ✓ Improved network change detection for mobile workers
+  ✓ Enhanced Google Drive code synchronization with fallback patterns
+  ✓ Better Tailscale integration with automatic reconnection
+  ✓ Optimized daemon with faster retry logic for mobile workers (30s vs 60s)
+  ✓ Updated documentation with bilingual support (English/Spanish)
+
+BUG FIXES:
+  • Fixed reconnection delays on network changes
+  • Improved daemon stability during VPN transitions
+  • Better handling of missing code files
+
+COMPATIBILITY:
+  ✓ Works with Head Node v4.0
+  ✓ Ray 2.51.2
+  ✓ Python 3.9.6
+  ✓ macOS 12+ (Monterey and higher)
+
+TESTED WITH:
+  ✓ MacBook Air (10 CPUs) - Mobile worker
+  ✓ Tailscale VPN connection
+  ✓ 297,000 candles processed
+  ✓ 80 parallel evaluations
+  ✓ Zero crashes during 48+ hour tests
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.5 - January 2026
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEW FEATURES:
+  ✓ Mobile worker mode detection (MacBook Air optimization)
+  ✓ Automatic Python 3.9.6 installation
+  ✓ Smart retry delays based on device type
+  ✓ Enhanced logging for mobile scenarios
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.4 - December 2025
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEW FEATURES:
+  ✓ Smart CPU throttling (2 CPUs active, full when idle)
+  ✓ Status indicator with macOS notifications
+  ✓ Battery-aware processing
+  ✓ Desktop status shortcuts
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.3 - November 2025
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEW FEATURES:
+  ✓ Google Drive code synchronization
+  ✓ Automatic project directory detection
+  ✓ Universal mode fallback
+  ✓ Code verification on startup
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.2 - October 2025
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEW FEATURES:
+  ✓ Tailscale VPN support
+  ✓ LAN/WAN mode detection
+  ✓ Automatic auth key integration
+  ✓ Enhanced connectivity monitoring
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.1 - September 2025
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEW FEATURES:
+  ✓ Virtual environment isolation
+  ✓ LaunchAgent auto-start
+  ✓ Persistent daemon with reconnection
+  ✓ Comprehensive verification script
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERSION 2.0 - August 2025
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INITIAL RELEASE:
+  ✓ Basic Ray worker installation
+  ✓ Manual connection to Head Node
+  ✓ Simple logging
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For the latest version, check the Documentation folder.
+
+Last Updated: January 28, 2026

@@ -1,0 +1,391 @@
+#!/usr/bin/env python3
+"""
+CRYPTO WORKER - Cliente del Sistema Distribuido
+Compatible con macOS, Windows y Linux
+
+Este worker:
+- Contacta al coordinator para obtener trabajo
+- Ejecuta backtests de estrategias
+- Envía resultados al coordinator
+- Implementa checkpoints para recuperación
+- Funciona completamente offline (excepto para sync con coordinator)
+
+Autor: Strategy Miner Team
+Fecha: 30 Enero 2026
+"""
+
+import requests
+import time
+import socket
+import platform
+import os
+import sys
+import json
+from datetime import datetime
+import pandas as pd
+try:
+    import ray
+    HAS_RAY = True
+except ImportError:
+    HAS_RAY = False
+from strategy_miner import StrategyMiner
+
+# ============================================================================
+# CONFIGURACIÓN
+# ============================================================================
+
+# URL del coordinator (cambiar según tu configuración)
+COORDINATOR_URL = os.getenv('COORDINATOR_URL', "http://100.118.215.73:5000")
+
+# Instancia del worker (para múltiples workers en la misma máquina)
+WORKER_INSTANCE = os.getenv('WORKER_INSTANCE', '1')
+
+# ID único de este worker (incluye instancia si hay múltiples)
+WORKER_ID = f"{socket.gethostname()}_{platform.system()}_W{WORKER_INSTANCE}"
+
+# Intervalo de polling (segundos)
+POLL_INTERVAL = 30
+
+# Archivo de checkpoint
+CHECKPOINT_FILE = f"worker_checkpoint_{WORKER_ID}.json"
+
+# Directorio de datos
+DATA_FILE = "data/BTC-USD_FIVE_MINUTE.csv"
+
+# CPUs a reservar (ajustado para múltiples workers)
+# Si hay N workers, cada uno usa total_cpus/N
+RESERVED_CPUS = 1  # Se ajusta dinámicamente más abajo
+
+# ============================================================================
+# CHECKPOINT SYSTEM
+# ============================================================================
+
+def save_checkpoint(work_id, generation, best_genome, best_pnl):
+    """Guarda checkpoint del trabajo actual"""
+    checkpoint = {
+        'work_id': work_id,
+        'generation': generation,
+        'best_genome': best_genome,
+        'best_pnl': best_pnl,
+        'timestamp': time.time(),
+        'worker_id': WORKER_ID
+    }
+
+    with open(CHECKPOINT_FILE, 'w') as f:
+        json.dump(checkpoint, f, indent=2)
+
+def load_checkpoint():
+    """Carga checkpoint si existe"""
+    if os.path.exists(CHECKPOINT_FILE):
+        try:
+            with open(f, 'r') as f:
+                return json.load(f)
+        except:
+            return None
+    return None
+
+def clear_checkpoint():
+    """Elimina checkpoint después de completar trabajo"""
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+
+# ============================================================================
+# COORDINATOR COMMUNICATION
+# ============================================================================
+
+def get_work():
+    """
+    Solicita trabajo al coordinator
+
+    Returns:
+        Dict con work_id y strategy_params, o None si no hay trabajo
+    """
+    try:
+        response = requests.get(
+            f"{COORDINATOR_URL}/api/get_work",
+            params={'worker_id': WORKER_ID},
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            if data.get('work_id'):
+                return data
+
+        return None
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error contactando coordinator: {e}")
+        return None
+
+def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time):
+    """
+    Envía resultado al coordinator
+
+    Returns:
+        True si se envió exitosamente, False en caso contrario
+    """
+    try:
+        response = requests.post(
+            f"{COORDINATOR_URL}/api/submit_result",
+            json={
+                'work_id': work_id,
+                'worker_id': WORKER_ID,
+                'pnl': pnl,
+                'trades': trades,
+                'win_rate': win_rate,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown,
+                'execution_time': execution_time
+            },
+            timeout=30
+        )
+
+        return response.status_code == 200
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error enviando resultado: {e}")
+        return False
+
+# ============================================================================
+# BACKTEST EXECUTION
+# ============================================================================
+
+def execute_backtest(strategy_params):
+    """
+    Ejecuta backtest con los parámetros dados
+
+    Args:
+        strategy_params: Dict con population_size, generations, risk_level
+
+    Returns:
+        Dict con pnl, trades, win_rate, sharpe_ratio, max_drawdown
+    """
+    print(f"🔬 Ejecutando backtest...")
+    print(f"   Población: {strategy_params.get('population_size', 30)}")
+    print(f"   Generaciones: {strategy_params.get('generations', 20)}")
+    print(f"   Risk Level: {strategy_params.get('risk_level', 'MEDIUM')}")
+
+    # Cargar datos - usar archivo especificado en params o default
+    data_file_name = strategy_params.get('data_file', os.path.basename(DATA_FILE))
+    data_file_path = os.path.join("data", data_file_name)
+
+    print(f"   Archivo de datos: {data_file_name}")
+
+    if not os.path.exists(data_file_path):
+        print(f"❌ Error: Archivo de datos no encontrado: {data_file_path}")
+        return None
+
+    # Limitar a 100k velas para optimizar rendimiento
+    # Con 1M+ velas, la vectorización se vuelve muy lenta
+    max_candles = 100000
+    df = pd.read_csv(data_file_path).tail(max_candles).copy()
+    df.reset_index(drop=True, inplace=True)
+    print(f"   📊 Usando {len(df):,} velas (máximo: {max_candles:,})")
+
+    # Crear miner
+    # IMPORTANTE: force_local=False permite que Ray paralelice usando los 9 cores
+    miner = StrategyMiner(
+        df=df,
+        population_size=strategy_params.get('population_size', 30),
+        generations=strategy_params.get('generations', 20),
+        risk_level=strategy_params.get('risk_level', 'MEDIUM'),
+        force_local=True  # Procesamiento secuencial estable (Ray inestable en este sistema)
+    )
+
+    # Ejecutar búsqueda
+    start_time = time.time()
+
+    def progress_callback(msg_type, data):
+        """Callback para monitorear progreso y crear checkpoints"""
+        if msg_type == "START_GEN":
+            gen = data
+            print(f"   Gen {gen}/{strategy_params.get('generations', 20)}")
+
+        elif msg_type == "BEST_GEN":
+            gen = data.get('gen', 0)
+            pnl = data.get('pnl', 0)
+            print(f"   Gen {gen}: PnL=${pnl:,.2f}")
+
+            # Guardar checkpoint cada 5 generaciones
+            if gen % 5 == 0:
+                save_checkpoint(
+                    work_id=None,  # Se actualizará después
+                    generation=gen,
+                    best_genome=data.get('genome'),
+                    best_pnl=pnl
+                )
+
+    best_genome, best_pnl = miner.run(progress_callback=progress_callback)
+
+    execution_time = time.time() - start_time
+
+    # Calcular métricas adicionales
+    # TODO: Implementar cálculo de Sharpe y max drawdown
+
+    result = {
+        'pnl': best_pnl,
+        'trades': 10,  # TODO: Obtener del miner
+        'win_rate': 0.65,  # TODO: Obtener del miner
+        'sharpe_ratio': 1.5,  # TODO: Calcular
+        'max_drawdown': 0.15,  # TODO: Calcular
+        'execution_time': execution_time
+    }
+
+    print(f"✅ Backtest completado en {execution_time:.0f}s")
+    print(f"   PnL: ${best_pnl:,.2f}")
+
+    return result
+
+# ============================================================================
+# MAIN WORKER LOOP
+# ============================================================================
+
+def main():
+    """Loop principal del worker"""
+    print("\n" + "="*80)
+    print(f"🤖 CRYPTO WORKER - {WORKER_ID}")
+    print("="*80 + "\n")
+
+    print(f"💻 Sistema: {platform.system()} {platform.release()}")
+    print(f"🐍 Python: {sys.version.split()[0]}")
+    print(f"🌐 Hostname: {socket.gethostname()}")
+    print(f"📡 Coordinator: {COORDINATOR_URL}\n")
+
+    # Verificar conectividad con coordinator
+    print("🔍 Verificando conexión con coordinator...")
+    try:
+        response = requests.get(f"{COORDINATOR_URL}/api/status", timeout=10)
+        if response.status_code == 200:
+            print("✅ Conexión OK\n")
+        else:
+            print(f"⚠️  Coordinator respondió con status {response.status_code}\n")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ No se puede conectar al coordinator: {e}")
+        print("⚠️  Verifica que el coordinator esté ejecutándose")
+        print(f"   URL: {COORDINATOR_URL}\n")
+        print("Presiona Ctrl+C para salir o espera para reintentar...\n")
+
+    # Verificar datos
+    if os.path.exists(DATA_FILE):
+        print(f"✅ Datos encontrados: {DATA_FILE}")
+        df_test = pd.read_csv(DATA_FILE)
+        print(f"   {len(df_test):,} velas disponibles\n")
+    else:
+        print(f"❌ ADVERTENCIA: Datos no encontrados: {DATA_FILE}")
+        print("   El worker no podrá ejecutar backtests\n")
+
+    print("="*80)
+    print("⚡ WORKER INICIADO - Esperando trabajo...")
+    print("="*80)
+    print(f"ℹ️  Poll interval: {POLL_INTERVAL}s")
+    print(f"ℹ️  Presiona Ctrl+C para detener\n")
+
+    # Main loop
+    while True:
+        try:
+            # Solicitar trabajo
+            work = get_work()
+
+            if work:
+                work_id = work['work_id']
+                params = work['strategy_params']
+                replica_num = work.get('replica_number', 1)
+                replicas_needed = work.get('replicas_needed', 2)
+
+                print(f"\n{'='*80}")
+                print(f"📥 TRABAJO RECIBIDO - Work ID: {work_id}")
+                print(f"   Réplica {replica_num}/{replicas_needed}")
+                print(f"{'='*80}\n")
+
+                # Ejecutar backtest
+                result = execute_backtest(params)
+
+                if result:
+                    # Enviar resultado
+                    print(f"\n📤 Enviando resultado al coordinator...")
+
+                    success = submit_result(
+                        work_id=work_id,
+                        pnl=result['pnl'],
+                        trades=result['trades'],
+                        win_rate=result['win_rate'],
+                        sharpe_ratio=result['sharpe_ratio'],
+                        max_drawdown=result['max_drawdown'],
+                        execution_time=result['execution_time']
+                    )
+
+                    if success:
+                        print(f"✅ Resultado enviado exitosamente")
+                        clear_checkpoint()
+                    else:
+                        print(f"❌ Error enviando resultado - Se reintentará")
+
+                else:
+                    print(f"❌ Error ejecutando backtest")
+
+                print(f"\n{'='*80}")
+                print(f"⏳ Esperando siguiente trabajo...")
+                print(f"{'='*80}\n")
+
+            else:
+                # No hay trabajo disponible
+                print(f"⏳ Sin trabajo disponible - Esperando {POLL_INTERVAL}s...")
+
+            # Esperar antes del siguiente poll
+            time.sleep(POLL_INTERVAL)
+
+        except KeyboardInterrupt:
+            print("\n\n" + "="*80)
+            print("🛑 Worker detenido por el usuario")
+            print("="*80 + "\n")
+            break
+
+        except Exception as e:
+            print(f"\n❌ Error inesperado: {e}")
+            print(f"⏳ Reintentando en {POLL_INTERVAL}s...\n")
+            time.sleep(POLL_INTERVAL)
+
+# ============================================================================
+# ENTRY POINT
+# ============================================================================
+
+if __name__ == '__main__':
+    # Permitir configurar coordinator URL desde argumentos
+    if len(sys.argv) > 1:
+        COORDINATOR_URL = sys.argv[1]
+        print(f"📡 Usando coordinator: {COORDINATOR_URL}")
+
+    # Número total de workers en esta máquina
+    NUM_WORKERS = int(os.getenv('NUM_WORKERS', '1'))
+
+    # Detectar número total de CPUs
+    total_cpus = os.cpu_count()
+
+    # Calcular CPUs por worker (dividir entre workers, mínimo 2)
+    cpus_per_worker = max(2, (total_cpus - 1) // NUM_WORKERS)
+
+    # Modo de ejecución: force_local no necesita Ray
+    USE_RAY = os.getenv('USE_RAY', 'false').lower() == 'true'
+
+    print(f"\n{'='*80}")
+    print(f"⚙️  CONFIGURACIÓN DE RECURSOS - Worker {WORKER_INSTANCE}")
+    print(f"{'='*80}")
+    print(f"💻 CPUs totales: {total_cpus}")
+    print(f"👥 Workers en máquina: {NUM_WORKERS}")
+    print(f"🚀 CPUs por worker: {cpus_per_worker}")
+    print(f"⚡ Modo: {'Ray paralelo' if USE_RAY else 'Local secuencial (estable)'}")
+    print(f"{'='*80}\n")
+
+    # Solo inicializar Ray si es necesario y está disponible
+    if USE_RAY and HAS_RAY:
+        if not ray.is_initialized():
+            if os.getenv('RAY_ADDRESS'):
+                print(f"⚠️  Detectado RAY_ADDRESS existente, limpiando...")
+                del os.environ['RAY_ADDRESS']
+            ray.init(num_cpus=cpus_per_worker, ignore_reinit_error=True)
+    else:
+        print("🛡️  Ray desactivado - modo local estable (sin crashes)")
+
+    main()
