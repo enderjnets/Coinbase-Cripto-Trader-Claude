@@ -1,0 +1,26 @@
+[Unit]
+Description=Bittrader Ray Worker
+Documentation=https://github.com/ray-project/ray
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%HOME%
+ExecStart=%INSTALL_DIR%/worker_daemon.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:%INSTALL_DIR%/logs/worker.log
+StandardError=append:%INSTALL_DIR%/logs/worker_error.log
+
+# Environment
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="RAY_ENABLE_WINDOWS_OR_OSX_CLUSTER=1"
+Environment="RAY_ENABLE_IPV6=0"
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
