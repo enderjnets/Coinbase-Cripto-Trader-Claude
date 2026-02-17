@@ -49,15 +49,17 @@ class StrategyMiner:
             "entry_rules": [],
             "params": {
                 "sl_pct": random.uniform(0.01, 0.05),
-                "tp_pct": random.uniform(0.02, 0.10)
+                "tp_pct": random.uniform(0.02, 0.10),
+                "size_pct": random.uniform(0.05, 0.50),
+                "max_positions": random.randint(1, 3)
             }
         }
-        
+
         # 1 to 3 rules
         num_rules = random.randint(1, 3)
         for _ in range(num_rules):
             genome["entry_rules"].append(self._random_rule())
-            
+
         return genome
 
     def _random_rule(self):
@@ -89,40 +91,54 @@ class StrategyMiner:
     def mutate(self, genome):
         """Randomly change a parameter or rule."""
         mutated = copy.deepcopy(genome)
-        
-        if random.random() < 0.5:
-            # Mutate Param
+
+        roll = random.random()
+        if roll < 0.4:
+            # Mutate core param (sl_pct or tp_pct)
             key = random.choice(["sl_pct", "tp_pct"])
             change = random.uniform(0.8, 1.2)
             mutated["params"][key] *= change
+        elif roll < 0.6:
+            # Mutate size_pct
+            change = random.uniform(0.8, 1.2)
+            mutated["params"]["size_pct"] = max(0.05, min(0.95,
+                mutated["params"].get("size_pct", 0.10) * change))
+        elif roll < 0.75:
+            # Mutate max_positions
+            mutated["params"]["max_positions"] = random.randint(1, 3)
         else:
             # Mutate Rule
             if mutated["entry_rules"]:
                 idx = random.randint(0, len(mutated["entry_rules"]) - 1)
                 mutated["entry_rules"][idx] = self._random_rule()
-                
+
         return mutated
         
     def crossover(self, p1, p2):
         """Mix rules from two parents."""
         child = {"entry_rules": [], "params": {}}
-        
+
         # Mix Params
         child["params"]["sl_pct"] = (p1["params"]["sl_pct"] + p2["params"]["sl_pct"]) / 2
         child["params"]["tp_pct"] = (p1["params"]["tp_pct"] + p2["params"]["tp_pct"]) / 2
-        
+        child["params"]["size_pct"] = (p1["params"].get("size_pct", 0.10) + p2["params"].get("size_pct", 0.10)) / 2
+        child["params"]["max_positions"] = random.choice([
+            p1["params"].get("max_positions", 1),
+            p2["params"].get("max_positions", 1)
+        ])
+
         # Mix Rules
         rules1 = p1["entry_rules"]
         rules2 = p2["entry_rules"]
-        
+
         # Take half from each (approx)
         split1 = len(rules1) // 2
         split2 = len(rules2) // 2
-        
+
         child["entry_rules"] = rules1[:split1] + rules2[split2:]
         if not child["entry_rules"]: # Safety
             child["entry_rules"] = rules1 if rules1 else [self._random_rule()]
-            
+
         return child
 
     def evaluate_population(self, population, progress_cb=None, cancel_event=None):

@@ -50,7 +50,7 @@ POLL_INTERVAL = 30
 CHECKPOINT_FILE = f"worker_checkpoint_{WORKER_ID}.json"
 
 # Directorio de datos
-DATA_FILE = "data/BTC-USD_FIVE_MINUTE.csv"
+DATA_FILE = "data/BTC-USD_ONE_MINUTE.csv"
 
 # CPUs a reservar (ajustado para múltiples workers)
 # Si hay N workers, cada uno usa total_cpus/N
@@ -177,12 +177,16 @@ def execute_backtest(strategy_params):
         print(f"❌ Error: Archivo de datos no encontrado: {data_file_path}")
         return None
 
-    # Limitar a 100k velas para optimizar rendimiento
-    # Con 1M+ velas, la vectorización se vuelve muy lenta
-    max_candles = 100000
-    df = pd.read_csv(data_file_path).tail(max_candles).copy()
+    # Read max_candles from strategy_params (0 = all candles)
+    max_candles = strategy_params.get('max_candles', 0)
+    df = pd.read_csv(data_file_path)
+    if max_candles > 0 and len(df) > max_candles:
+        df = df.tail(max_candles).copy()
+    else:
+        df = df.copy()
     df.reset_index(drop=True, inplace=True)
-    print(f"   📊 Usando {len(df):,} velas (máximo: {max_candles:,})")
+    total_available = len(df)
+    print(f"   📊 Usando {total_available:,} velas" + (f" (cap: {max_candles:,})" if max_candles > 0 else " (todas)"))
 
     # Crear miner
     # IMPORTANTE: force_local=False permite que Ray paralelice usando los 9 cores

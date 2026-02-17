@@ -81,12 +81,15 @@ OP_LT = 1  # <
 
 MAX_RULES = 3
 
-# Genome encoding: 18 floats per genome
-# [sl_pct, tp_pct, num_rules,
-#  rule0_left_id, rule0_left_const, rule0_right_id, rule0_right_const, rule0_op,
-#  rule1_left_id, rule1_left_const, rule1_right_id, rule1_right_const, rule1_op,
-#  rule2_left_id, rule2_left_const, rule2_right_id, rule2_right_const, rule2_op]
-GENOME_SIZE = 18
+# Genome encoding: 20 floats per genome
+# [0] sl_pct
+# [1] tp_pct
+# [2] size_pct        (% of balance per trade, 0.05-0.95)
+# [3] max_positions   (1-3 simultaneous positions)
+# [4] num_rules
+# For each rule r (0-2), base = 5 + r*5:
+# [base+0] left_id, [base+1] left_const, [base+2] right_id, [base+3] right_const, [base+4] op
+GENOME_SIZE = 20
 
 # Mapping from (indicator_name, period) to matrix index
 INDICATOR_MAP = {
@@ -198,11 +201,13 @@ def encode_genome(genome):
     """
     Convert a genome dict to a fixed-size numpy array for Numba.
 
-    Layout (18 floats):
+    Layout (20 floats):
     [0] sl_pct
     [1] tp_pct
-    [2] num_rules
-    For each rule r (0-2), base = 3 + r*5:
+    [2] size_pct        (% of balance per trade, 0.05-0.95)
+    [3] max_positions   (1-3 simultaneous positions)
+    [4] num_rules
+    For each rule r (0-2), base = 5 + r*5:
     [base+0] left_id     (indicator index, or 99 for constant)
     [base+1] left_const  (value if left_id == 99, else 0)
     [base+2] right_id
@@ -212,12 +217,14 @@ def encode_genome(genome):
     encoded = np.zeros(GENOME_SIZE, dtype=np.float64)
     encoded[0] = genome.get('params', {}).get('sl_pct', 0.05)
     encoded[1] = genome.get('params', {}).get('tp_pct', 0.10)
+    encoded[2] = genome.get('params', {}).get('size_pct', 0.10)
+    encoded[3] = genome.get('params', {}).get('max_positions', 1)
 
     rules = genome.get('entry_rules', [])
-    encoded[2] = min(len(rules), MAX_RULES)
+    encoded[4] = min(len(rules), MAX_RULES)
 
     for r_idx, rule in enumerate(rules[:MAX_RULES]):
-        base = 3 + r_idx * 5
+        base = 5 + r_idx * 5
 
         # Left side
         left = rule.get('left', {})
@@ -242,12 +249,14 @@ def decode_genome_rules(encoded):
     info = {
         'sl_pct': encoded[0],
         'tp_pct': encoded[1],
-        'num_rules': int(encoded[2]),
+        'size_pct': encoded[2],
+        'max_positions': int(encoded[3]),
+        'num_rules': int(encoded[4]),
         'rules': []
     }
 
-    for r in range(int(encoded[2])):
-        base = 3 + r * 5
+    for r in range(int(encoded[4])):
+        base = 5 + r * 5
         left_id = int(encoded[base])
         left_const = encoded[base + 1]
         right_id = int(encoded[base + 2])
@@ -275,18 +284,18 @@ if HAS_NUMBA:
         """
         JIT-compiled backtest loop for a single genome.
 
-        Replicates the logic of backtester.py run_backtest() for DynamicStrategy:
-        - Entry: all genome rules must pass
-        - Exit: SL (checked against candle low) or TP (checked against candle high)
-        - Trailing stop: updates SL upward as price moves favorably
-        - Position sizing: fixed $1000 per trade
+        Multi-position + percentage sizing + compounding:
+        - Up to 3 simultaneous positions
+        - Position size = balance * size_pct (compounding)
+        - Trailing stop per position
+        - Minimum $10 per trade to avoid dust
 
         Args:
             close: float64[n] - close prices
             high: float64[n] - high prices
             low: float64[n] - low prices
             indicators: float64[NUM_IND, n] - pre-computed indicator matrix
-            genome_encoded: float64[18] - encoded genome
+            genome_encoded: float64[20] - encoded genome
             fee_rate: float64 - trading fee rate (e.g. 0.004 for 0.4%)
 
         Returns:
@@ -299,17 +308,31 @@ if HAS_NUMBA:
         n = len(close)
         sl_pct = genome_encoded[0]
         tp_pct = genome_encoded[1]
-        num_rules = int(genome_encoded[2])
+        size_pct = genome_encoded[2]
+        max_positions = int(genome_encoded[3])
+        num_rules = int(genome_encoded[4])
+
+        # Clamp parameters
+        if size_pct < 0.05:
+            size_pct = 0.05
+        if size_pct > 0.95:
+            size_pct = 0.95
+        if max_positions < 1:
+            max_positions = 1
+        if max_positions > 3:
+            max_positions = 3
 
         balance = 10000.0
-        position_active = False
-        entry_price = 0.0
-        position_size = 0.0
-        cost_basis = 0.0
-        entry_fee_val = 0.0
-        sl_price = 0.0
-        tp_price = 0.0
-        trail_dist = 0.0
+
+        # Fixed arrays for up to 3 positions
+        pos_active = np.zeros(3, dtype=np.int64)      # 0 or 1
+        pos_entry_price = np.zeros(3, dtype=np.float64)
+        pos_size = np.zeros(3, dtype=np.float64)       # quantity (coins)
+        pos_cost_basis = np.zeros(3, dtype=np.float64)  # USD spent
+        pos_entry_fee = np.zeros(3, dtype=np.float64)
+        pos_sl = np.zeros(3, dtype=np.float64)
+        pos_tp = np.zeros(3, dtype=np.float64)
+        pos_trail = np.zeros(3, dtype=np.float64)
 
         total_pnl = 0.0
         num_trades = 0
@@ -325,43 +348,44 @@ if HAS_NUMBA:
             candle_high = high[i]
             candle_low = low[i]
 
-            if position_active:
-                # === TRAILING STOP ===
-                # Move SL up if price moved favorably (80% of initial risk distance)
-                new_sl = price - trail_dist
-                if new_sl > sl_price:
-                    sl_price = new_sl
+            # === EXIT LOOP: check all positions ===
+            for s in range(3):
+                if pos_active[s] == 0:
+                    continue
 
-                # === CHECK EXIT CONDITIONS ===
-                # SL checked against candle low (intra-bar hit)
-                sl_hit = candle_low <= sl_price
-                # TP checked against candle high (intra-bar hit)
-                tp_hit = candle_high >= tp_price
+                # Trailing stop: move SL up if price moved favorably
+                new_sl = price - pos_trail[s]
+                if new_sl > pos_sl[s]:
+                    pos_sl[s] = new_sl
+
+                # Check exit conditions
+                sl_hit = candle_low <= pos_sl[s]
+                tp_hit = candle_high >= pos_tp[s]
 
                 if sl_hit or tp_hit:
-                    # Determine exit price (SL has priority)
                     if sl_hit:
-                        exit_price = sl_price
+                        exit_price = pos_sl[s]
                     else:
-                        exit_price = tp_price
+                        exit_price = pos_tp[s]
 
                     # Close position
-                    exit_val_gross = position_size * exit_price
+                    exit_val_gross = pos_size[s] * exit_price
                     exit_fee = exit_val_gross * fee_rate
                     exit_val_net = exit_val_gross - exit_fee
 
                     balance += exit_val_net
 
-                    trade_pnl = exit_val_net - (cost_basis + entry_fee_val)
+                    trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
                     total_pnl += trade_pnl
                     num_trades += 1
                     if trade_pnl > 0.0:
                         wins += 1
 
-                    # Track metrics for sharpe and drawdown
-                    ret = trade_pnl / cost_basis
-                    sum_ret += ret
-                    sum_ret_sq += ret * ret
+                    # Track metrics
+                    if pos_cost_basis[s] > 0.0:
+                        ret = trade_pnl / pos_cost_basis[s]
+                        sum_ret += ret
+                        sum_ret_sq += ret * ret
                     if balance > peak_balance:
                         peak_balance = balance
                     if peak_balance > 0.0:
@@ -369,17 +393,23 @@ if HAS_NUMBA:
                         if dd > max_drawdown:
                             max_drawdown = dd
 
-                    position_active = False
+                    pos_active[s] = 0
 
-            else:
-                # === EVALUATE ENTRY RULES ===
+            # === ENTRY: evaluate rules and open if slot available ===
+            # Count open positions
+            num_open = 0
+            for s in range(3):
+                num_open += pos_active[s]
+
+            if num_open < max_positions:
+                # Evaluate entry rules
                 all_rules_pass = True
 
                 if num_rules == 0:
                     all_rules_pass = False
 
                 for r in range(num_rules):
-                    base = 3 + r * 5
+                    base = 5 + r * 5
                     left_id = int(genome_encoded[base])
                     left_const = genome_encoded[base + 1]
                     right_id = int(genome_encoded[base + 2])
@@ -402,7 +432,7 @@ if HAS_NUMBA:
                     else:
                         val_b = 0.0
 
-                    # Skip if NaN (indicator not yet available)
+                    # Skip if NaN
                     if np.isnan(val_a) or np.isnan(val_b):
                         all_rules_pass = False
                         break
@@ -417,45 +447,61 @@ if HAS_NUMBA:
                             all_rules_pass = False
                             break
 
-                # === OPEN POSITION ===
+                # Open position
                 if all_rules_pass:
-                    size_usd = 1000.0
-                    entry_fee_val = size_usd * fee_rate
-                    cost_deduct = size_usd + entry_fee_val
+                    size_usd = balance * size_pct
+                    if size_usd < 10.0:
+                        size_usd = 0.0  # Skip dust trades
 
-                    if balance >= cost_deduct:
-                        balance -= cost_deduct
-                        entry_price = price
-                        position_size = size_usd / price
-                        cost_basis = size_usd
-                        sl_price = price * (1.0 - sl_pct)
-                        tp_price = price * (1.0 + tp_pct)
-                        trail_dist = (price - sl_price) * 0.8
-                        position_active = True
+                    if size_usd >= 10.0:
+                        entry_fee_val = size_usd * fee_rate
+                        cost_deduct = size_usd + entry_fee_val
 
-        # === CLOSE OPEN POSITION AT END ===
-        if position_active:
-            final_price = close[n - 1]
-            exit_val_gross = position_size * final_price
-            exit_fee = exit_val_gross * fee_rate
-            exit_val_net = exit_val_gross - exit_fee
-            balance += exit_val_net
-            trade_pnl = exit_val_net - (cost_basis + entry_fee_val)
-            total_pnl += trade_pnl
-            num_trades += 1
-            if trade_pnl > 0.0:
-                wins += 1
+                        if balance >= cost_deduct:
+                            # Find free slot
+                            slot = -1
+                            for s in range(3):
+                                if pos_active[s] == 0:
+                                    slot = s
+                                    break
 
-            # Track metrics for sharpe and drawdown
-            ret = trade_pnl / cost_basis
-            sum_ret += ret
-            sum_ret_sq += ret * ret
-            if balance > peak_balance:
-                peak_balance = balance
-            if peak_balance > 0.0:
-                dd = (peak_balance - balance) / peak_balance
-                if dd > max_drawdown:
-                    max_drawdown = dd
+                            if slot >= 0:
+                                balance -= cost_deduct
+                                pos_active[slot] = 1
+                                pos_entry_price[slot] = price
+                                pos_size[slot] = size_usd / price
+                                pos_cost_basis[slot] = size_usd
+                                pos_entry_fee[slot] = entry_fee_val
+                                pos_sl[slot] = price * (1.0 - sl_pct)
+                                pos_tp[slot] = price * (1.0 + tp_pct)
+                                pos_trail[slot] = (price - pos_sl[slot]) * 0.8
+
+        # === CLOSE ALL OPEN POSITIONS AT END ===
+        final_price = close[n - 1]
+        for s in range(3):
+            if pos_active[s] == 1:
+                exit_val_gross = pos_size[s] * final_price
+                exit_fee = exit_val_gross * fee_rate
+                exit_val_net = exit_val_gross - exit_fee
+                balance += exit_val_net
+                trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+                total_pnl += trade_pnl
+                num_trades += 1
+                if trade_pnl > 0.0:
+                    wins += 1
+
+                if pos_cost_basis[s] > 0.0:
+                    ret = trade_pnl / pos_cost_basis[s]
+                    sum_ret += ret
+                    sum_ret_sq += ret * ret
+                if balance > peak_balance:
+                    peak_balance = balance
+                if peak_balance > 0.0:
+                    dd = (peak_balance - balance) / peak_balance
+                    if dd > max_drawdown:
+                        max_drawdown = dd
+
+                pos_active[s] = 0
 
         # Compute Sharpe Ratio
         sharpe_ratio = 0.0
@@ -570,16 +616,18 @@ def warmup_jit():
     low = close - np.random.uniform(0, 2, n)
     indicators = np.random.uniform(0, 100, (NUM_INDICATORS, n))
     genome = np.zeros(GENOME_SIZE, dtype=np.float64)
-    genome[0] = 0.02  # sl_pct
-    genome[1] = 0.04  # tp_pct
-    genome[2] = 1     # 1 rule
-    genome[3] = IND_RSI_14  # left: RSI_14
-    genome[4] = 0.0
-    genome[5] = IND_CONSTANT  # right: constant
-    genome[6] = 30.0          # value: 30
-    genome[7] = OP_LT         # RSI_14 < 30
+    genome[0] = 0.02   # sl_pct
+    genome[1] = 0.04   # tp_pct
+    genome[2] = 0.10   # size_pct (10% of balance)
+    genome[3] = 1.0    # max_positions
+    genome[4] = 1      # 1 rule
+    genome[5] = IND_RSI_14    # left: RSI_14
+    genome[6] = 0.0
+    genome[7] = IND_CONSTANT  # right: constant
+    genome[8] = 30.0          # value: 30
+    genome[9] = OP_LT         # RSI_14 < 30
 
-    _fast_backtest(close, high, low, indicators, genome, 0.004)  # returns 5 values now
+    _fast_backtest(close, high, low, indicators, genome, 0.004)
 
 
 # ============================================================================

@@ -54,3 +54,7 @@ class Config:
     # Paper Trading
     PAPER_TRADING_INITIAL_BALANCE = 10000.0 # USD
     TRADING_FEE_PERCENT = 0.6 # Coinbase Advanced Taker Fee (approx)
+
+    # Backtester Settings
+    TRADING_FEE_MAKER = 0.4    # Maker fee % (used by numba_backtester)
+    INITIAL_BALANCE = 10000.0  # Starting balance for backtests

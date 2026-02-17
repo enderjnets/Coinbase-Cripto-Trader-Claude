@@ -378,15 +378,16 @@ def api_get_work():
         conn = get_db_connection()
         c = conn.cursor()
 
-        c.execute("""INSERT OR REPLACE INTO workers
-            (id, hostname, platform, last_seen, work_units_completed, total_execution_time, status)
-            VALUES (?, ?, ?, julianday('now'),
-                COALESCE((SELECT work_units_completed FROM workers WHERE id = ?), 0),
-                COALESCE((SELECT total_execution_time FROM workers WHERE id = ?), 0),
-                'active')""",
-            (worker_id, request.headers.get('Host', 'unknown'),
-             request.headers.get('User-Agent', 'unknown'),
-             worker_id, worker_id))
+        # First try to update existing worker
+        c.execute("UPDATE workers SET last_seen = strftime('%s', 'now'), status = 'active' WHERE id = ?", (worker_id,))
+        
+        # If no row was updated (new worker), insert
+        if c.rowcount == 0:
+            c.execute("""INSERT INTO workers
+                (id, hostname, platform, last_seen, work_units_completed, total_execution_time, status)
+                VALUES (?, ?, ?, julianday('now'), 0, 0, 'active')""",
+                (worker_id, request.headers.get('Host', 'unknown'),
+                 request.headers.get('User-Agent', 'unknown')))
 
         conn.commit()
         conn.close()
@@ -451,7 +452,7 @@ def api_submit_result():
         c.execute("""UPDATE workers
             SET work_units_completed = work_units_completed + 1,
                 total_execution_time = total_execution_time + ?,
-                last_seen = julianday('now')
+                last_seen = strftime('%s', 'now')
             WHERE id = ?""",
             (data.get('execution_time', 0), data['worker_id']))
 
@@ -521,6 +522,203 @@ def api_results():
     conn.close()
 
     return jsonify({'results': results})
+
+
+@app.route('/api/results/all', methods=['GET'])
+def api_all_results():
+    """Lista todos los resultados (no solo canónicos)"""
+    limit = request.args.get('limit', 100, type=int)
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    c.execute("""SELECT r.*, w.strategy_params
+        FROM results r
+        JOIN work_units w ON r.work_unit_id = w.id
+        ORDER BY r.submitted_at DESC
+        LIMIT ?""", (limit,))
+    
+    results = []
+    for row in c.fetchall():
+        results.append({
+            'id': row['id'],
+            'work_unit_id': row['work_unit_id'],
+            'worker_id': row['worker_id'],
+            'pnl': row['pnl'],
+            'trades': row['trades'],
+            'win_rate': row['win_rate'],
+            'sharpe_ratio': row['sharpe_ratio'],
+            'max_drawdown': row['max_drawdown'],
+            'execution_time': row['execution_time'],
+            'submitted_at': row['submitted_at'],
+            'validated': row['validated'],
+            'is_canonical': row['is_canonical'],
+            'strategy_params': json.loads(row['strategy_params'])
+        })
+    
+    conn.close()
+    return jsonify({'results': results})
+
+@app.route('/api/dashboard_stats', methods=['GET'])
+def api_dashboard_stats():
+    """Estadísticas completas para el dashboard de la interfaz"""
+    import time
+    from datetime import datetime
+    
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Work units stats
+    c.execute("SELECT COUNT(*) FROM work_units")
+    total_wu = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM work_units WHERE status='completed'")
+    completed_wu = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM work_units WHERE status='pending'")
+    pending_wu = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM work_units WHERE status='in_progress' OR status='assigned'")
+    in_progress_wu = c.fetchone()[0]
+    
+    # Workers stats
+    c.execute("SELECT COUNT(*) FROM workers")
+    total_workers = c.fetchone()[0]
+    
+    # Calculate "active" workers (seen in last 5 minutes)
+    c.execute("SELECT COUNT(*) FROM workers WHERE (julianday('now') - last_seen) < 0.0208")
+    active_workers = c.fetchone()[0]
+    
+    # Results stats
+    c.execute("SELECT COUNT(*) FROM results")
+    total_results = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM results WHERE pnl > 0")
+    positive_results = c.fetchone()[0]
+    
+    c.execute("SELECT AVG(pnl) FROM results WHERE pnl IS NOT NULL")
+    avg_pnl = c.fetchone()[0] or 0
+    
+    # PnL timeline - last 24 hours
+    c.execute("SELECT pnl, submitted_at, work_unit_id, worker_id, is_canonical FROM results WHERE submitted_at > (julianday('now') - 1) ORDER BY submitted_at DESC")
+    pnl_timeline = []
+    for row in c.fetchall():
+        # Convert Julian day to Unix timestamp
+        # Unix epoch = julian 2440588
+        unix_ts = (row[1] - 2440588) * 86400
+        pnl_timeline.append({
+            'pnl': row[0], 
+            'timestamp': unix_ts,
+            'submitted_at_unix': unix_ts,
+            'work_unit_id': row[2],
+            'worker_id': row[3],
+            'is_canonical': bool(row[4])
+        })
+    
+    # Completion timeline - group by hour
+    c.execute("""SELECT COUNT(*), submitted_at FROM results 
+                 WHERE submitted_at > (julianday('now') - 1) 
+                 GROUP BY CAST(submitted_at * 24 AS INT) % 24
+                 ORDER BY submitted_at DESC""")
+    completion_timeline = [{'hour_unix': (row[1] - 2440588) * 86400, 'count': row[0]} for row in c.fetchall()]
+    
+    # Best strategy
+    c.execute("""SELECT r.*, w.strategy_params
+        FROM results r
+        JOIN work_units w ON r.work_unit_id = w.id
+        WHERE r.is_canonical = 1
+        ORDER BY r.pnl DESC LIMIT 1""")
+    best_row = c.fetchone()
+    
+    best_strategy = None
+    if best_row:
+        best_strategy = {
+            'pnl': best_row['pnl'],
+            'trades': best_row['trades'],
+            'win_rate': best_row['win_rate'],
+            'sharpe_ratio': best_row['sharpe_ratio'],
+            'max_drawdown': best_row['max_drawdown'],
+            'execution_time': best_row['execution_time'],
+            'work_unit_id': best_row['work_unit_id'],
+            'worker_id': best_row['worker_id'],
+            'is_canonical': best_row['is_canonical']
+        }
+    
+    # Worker performance stats
+    c.execute("""SELECT id, hostname, work_units_completed, total_execution_time, 
+                         last_seen, status
+                  FROM workers ORDER BY work_units_completed DESC""")
+    
+    worker_stats = []
+    for row in c.fetchall():
+        # Convert sqlite3.Row to dict for easier access
+        row_dict = dict(row)
+        
+        # last_seen is now stored as Unix timestamp from strftime('%s', 'now')
+        last_seen_unix = row_dict.get('last_seen') or 0
+        if last_seen_unix > 0:
+            now_unix = time.time()
+            mins_ago = (now_unix - last_seen_unix) / 60
+        else:
+            mins_ago = 999
+        
+        short_name = row_dict['id'].split('_W')[0].split('_')[-1] if '_W' in row_dict['id'] else row_dict['id'][:10]
+        
+        # Get max_pnl for this worker
+        c2 = conn.cursor()
+        c2.execute("SELECT MAX(pnl) FROM results WHERE worker_id = ?", (row_dict['id'],))
+        max_pnl = c2.fetchone()[0] or 0
+        
+        worker_stats.append({
+            'id': row_dict['id'],
+            'short_name': short_name,
+            'hostname': row_dict['hostname'],
+            'work_units_completed': row_dict['work_units_completed'],
+            'total_execution_time': row_dict['total_execution_time'],
+            'last_seen': row_dict['last_seen'],
+            'last_seen_minutes_ago': mins_ago,
+            'status': 'active' if mins_ago < 30 else 'inactive',
+            'max_pnl': max_pnl
+        })
+    
+    # PnL distribution
+    c.execute("SELECT pnl FROM results WHERE pnl IS NOT NULL")
+    pnl_distribution = [row[0] for row in c.fetchall()]
+    
+    # Performance metrics
+    c.execute("SELECT AVG(execution_time) FROM results WHERE execution_time > 0")
+    avg_exec_time = c.fetchone()[0] or 0
+    
+    c.execute("SELECT SUM(execution_time) FROM results")
+    total_compute_time = c.fetchone()[0] or 0
+    
+    conn.close()
+    
+    return jsonify({
+        'work_units': {
+            'total': total_wu,
+            'completed': completed_wu,
+            'pending': pending_wu,
+            'in_progress': in_progress_wu
+        },
+        'workers': {
+            'active': active_workers,
+            'total_registered': total_workers
+        },
+        'performance': {
+            'total_results': total_results,
+            'positive_pnl_count': positive_results,
+            'avg_pnl': avg_pnl,
+            'results_per_hour': total_results / max(1, total_compute_time / 3600),
+            'avg_execution_time': avg_exec_time,
+            'total_compute_time': total_compute_time
+        },
+        'best_strategy': best_strategy,
+        'pnl_distribution': pnl_distribution,
+        'pnl_timeline': pnl_timeline,
+        'completion_timeline': completion_timeline,
+        'worker_stats': worker_stats,
+        'timestamp': time.time()
+    })
 
 # ============================================================================
 # DASHBOARD HTML
