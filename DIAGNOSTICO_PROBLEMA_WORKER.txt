@@ -1,0 +1,304 @@
+═══════════════════════════════════════════════════════════════
+   🔍 DIAGNÓSTICO: PROBLEMA CON WORKER Y CLUSTER RAY
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26 13:00
+CONTEXTO: Después de reinstalar Worker v2.5 con Python 3.9.6
+
+═══════════════════════════════════════════════════════════════
+✅ LOGROS PREVIOS
+═══════════════════════════════════════════════════════════════
+
+1. ✅ Worker v2.5 instalado con Python 3.9.6
+2. ✅ NO RuntimeError: Version mismatch
+3. ✅ Worker conectó al cluster
+4. ✅ Test completó con PnL positivo ($35.02)
+
+═══════════════════════════════════════════════════════════════
+❌ PROBLEMAS CRÍTICOS ENCONTRADOS
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA 1: MAYORÍA DE GENERACIONES CON 0 TRADES
+--------------------------------------------------
+Resultado del test:
+  • Gen 0: 0 trades
+  • Gen 1: 0 trades
+  • Gen 2: 0 trades
+  • Gen 3: 0 trades
+  • Gen 4: 2 trades ($35.02) ✅
+
+ESPERADO:
+  • Cada generación debería tener 30-70 trades
+  • Gen 0 puede tener menos (aleatorio)
+  • Gen 1-4 deberían optimizar y generar más trades
+
+POSIBLES CAUSAS:
+  a) Código del proyecto no está sincronizado en Worker
+  b) PYTHONPATH no está configurado correctamente
+  c) Worker no puede importar backtester.py
+  d) Google Drive no sincronizado en MacBook Pro
+
+PROBLEMA 2: 16 NODOS ZOMBIE EN CLUSTER
+---------------------------------------
+Estado del cluster antes de limpieza:
+  • 16 nodos activos (debería ser 2)
+  • 22 CPUs totales (correcto)
+  • Múltiples nodos con IDs diferentes
+
+POSIBLES CAUSAS:
+  a) Worker daemon reiniciando constantemente
+  b) Ray creando nuevo nodo en cada reinicio
+  c) Nodos anteriores no se están limpiando
+  d) Worker detecta crashes y se auto-reinicia
+
+PROBLEMA 3: RAY CRASHES (SIGSEGV)
+----------------------------------
+Errores encontrados en logs:
+  *** SIGSEGV received at time=1769449353 ***
+  raylet crashed with segmentation fault
+  dashboard_agent failure
+
+Errores específicos:
+  - grpcio version mismatch (posible)
+  - dashboard_agent falló
+  - raylet en Worker (100.77.179.14) crasheando
+  - Múltiples crashes en diferentes tiempos
+
+POSIBLES CAUSAS:
+  a) Ray 2.51.2 inestable en macOS
+  b) grpcio versión incompatible
+  c) LibreSSL vs OpenSSL (warning visible)
+  d) Conflicto de puertos
+  e) Memoria insuficiente
+
+═══════════════════════════════════════════════════════════════
+🔍 ANÁLISIS TÉCNICO
+═══════════════════════════════════════════════════════════════
+
+EVIDENCIA 1: Worker SÍ puede ejecutar código (Gen 4 funcionó)
+--------------------------------------------------------------
+  • Gen 4 generó 2 trades con PnL $35.02
+  • Esto significa:
+    ✅ Worker tiene acceso al código
+    ✅ Puede importar módulos
+    ✅ Backtester funciona
+    ⚠️ Pero es inconsistente (solo 1 de 5 gen funciona)
+
+EVIDENCIA 2: Ray está inestable en Worker
+------------------------------------------
+  • SIGSEGV crashes repetidos
+  • Worker IP: 100.77.179.14 (MacBook Pro)
+  • Crashes en diferentes componentes:
+    - raylet
+    - dashboard_agent
+    - grpc communication
+
+EVIDENCIA 3: Nodos zombie acumulándose
+---------------------------------------
+  • Cluster limpiado a 1 nodo (Head)
+  • Después del test: 16 nodos
+  • Esto sugiere:
+    - Worker creó múltiples nodos
+    - O daemon reinició 15 veces
+    - Nodos anteriores no se limpiaron
+
+═══════════════════════════════════════════════════════════════
+💡 HIPÓTESIS PRINCIPAL
+═══════════════════════════════════════════════════════════════
+
+RAY 2.51.2 ES INESTABLE EN MACOS (ESPECIALMENTE EN WORKER)
+
+Razones:
+  1. SIGSEGV crashes repetidos (segfault es bug de Ray)
+  2. LibreSSL vs OpenSSL warning (macOS usa LibreSSL antiguo)
+  3. grpcio compatibility issues
+  4. Worker reiniciándose constantemente debido a crashes
+
+IMPACTO:
+  • Worker se conecta, ejecuta 1 tarea, crashea
+  • Daemon detecta crash, reinicia worker
+  • Nuevo nodo se crea, cluster acumula zombies
+  • Algunas tareas completan antes del crash (Gen 4)
+  • Otras no (Gen 0-3)
+
+═══════════════════════════════════════════════════════════════
+🛠️ SOLUCIONES PROPUESTAS
+═══════════════════════════════════════════════════════════════
+
+SOLUCIÓN 1: DOWNGRADE RAY A VERSIÓN ESTABLE EN MACOS
+-----------------------------------------------------
+RIESGO: BAJO
+ESFUERZO: BAJO
+PROBABILIDAD DE ÉXITO: ALTA
+
+Ray 2.51.2 es muy reciente (2025). macOS puede tener issues.
+
+ACCIÓN:
+  1. Probar Ray 2.9.0 (versión LTS estable)
+  2. O Ray 2.7.1 (última versión pre-2.x)
+
+COMANDOS:
+  # En Head Node (MacBook Air)
+  .venv/bin/pip uninstall -y ray
+  .venv/bin/pip install ray==2.9.0
+
+  # En Worker (MacBook Pro)
+  ~/.bittrader_worker/venv/bin/pip uninstall -y ray
+  ~/.bittrader_worker/venv/bin/pip install ray==2.9.0
+
+NOTA: Ambos nodos deben usar la MISMA versión de Ray.
+
+SOLUCIÓN 2: ACTUALIZAR GRPCIO
+------------------------------
+RIESGO: BAJO
+ESFUERZO: BAJO
+PROBABILIDAD DE ÉXITO: MEDIA
+
+El error menciona grpcio version mismatch.
+
+ACCIÓN:
+  # En Worker (MacBook Pro)
+  ~/.bittrader_worker/venv/bin/pip install --upgrade grpcio
+
+VERIFICAR:
+  ~/.bittrader_worker/venv/bin/pip freeze | grep grpcio
+
+DEBE COINCIDIR con la versión del Head:
+  .venv/bin/pip freeze | grep grpcio
+
+SOLUCIÓN 3: DESACTIVAR DASHBOARD (REDUCE CRASHES)
+--------------------------------------------------
+RIESGO: BAJO (solo perdemos UI)
+ESFUERZO: BAJO
+PROBABILIDAD DE ÉXITO: MEDIA
+
+dashboard_agent está crasheando. Podemos desactivarlo.
+
+ACCIÓN:
+  # Reiniciar Head sin dashboard
+  .venv/bin/ray start --head \
+    --port=6379 \
+    --node-ip-address=100.118.215.73 \
+    --include-dashboard=false
+
+  # Worker conecta normalmente
+  # (No necesita cambios)
+
+IMPACTO:
+  • No hay dashboard UI (http://100.118.215.73:8265)
+  • Pero cluster funcionará más estable
+  • ray status sigue funcionando
+
+SOLUCIÓN 4: REINSTALAR WORKER SIN GOOGLE DRIVE SYNC
+----------------------------------------------------
+RIESGO: MEDIO (requiere reinstalación completa)
+ESFUERZO: ALTO
+PROBABILIDAD DE ÉXITO: ALTA
+
+Google Drive puede causar issues de sincronización.
+
+OPCIÓN A: Instalar Worker en directorio local
+  • Copiar proyecto a ~/bittrader_project/
+  • Instalar worker ahí (sin Google Drive)
+  • Sincronizar código manualmente cuando cambie
+
+OPCIÓN B: Usar rsync para sincronizar
+  • Head mantiene código en Google Drive
+  • rsync automático cada 5 min al Worker
+  • Worker usa copia local (más rápido, más estable)
+
+SOLUCIÓN 5: SIMPLIFICAR A 1 SOLO NODO (ÚLTIMA OPCIÓN)
+------------------------------------------------------
+RIESGO: NINGUNO (siempre funciona)
+ESFUERZO: BAJO
+PROBABILIDAD DE ÉXITO: 100%
+
+Si nada funciona, usar solo Head Node.
+
+ACCIÓN:
+  • Desinstalar worker completamente
+  • Usar solo MacBook Air con 10 CPUs
+  • Sacrificar velocidad por estabilidad
+
+IMPACTO:
+  • ~2 min por generación (vs ~54 seg)
+  • Pero funcionará 100% sin crashes
+
+═══════════════════════════════════════════════════════════════
+📋 PLAN DE ACCIÓN RECOMENDADO
+═══════════════════════════════════════════════════════════════
+
+PASO 1: PROBAR DOWNGRADE DE RAY (Solución 1)
+---------------------------------------------
+  1. Verificar versión actual de Ray en ambos nodos
+  2. Downgrade a Ray 2.9.0 en Head
+  3. Downgrade a Ray 2.9.0 en Worker
+  4. Reiniciar ambos
+  5. Ejecutar test_miner_quick.py
+  6. Verificar: ¿Trades > 0 en todas las gen? ¿Sin crashes?
+
+PASO 2: SI PERSISTE, ACTUALIZAR GRPCIO (Solución 2)
+----------------------------------------------------
+  1. Verificar versiones de grpcio en Head y Worker
+  2. Upgrade/downgrade para que coincidan
+  3. Reiniciar worker daemon
+  4. Ejecutar test nuevamente
+
+PASO 3: SI PERSISTE, DESACTIVAR DASHBOARD (Solución 3)
+-------------------------------------------------------
+  1. Reiniciar Head sin dashboard
+  2. Ejecutar test
+  3. Verificar estabilidad
+
+PASO 4: SI PERSISTE, CONSIDERAR SOLUCIÓN 4 O 5
+-----------------------------------------------
+  4a. Reinstalar Worker sin Google Drive
+  4b. O simplificar a 1 solo nodo (Head)
+
+═══════════════════════════════════════════════════════════════
+🎯 OBJETIVO FINAL
+═══════════════════════════════════════════════════════════════
+
+CONFIGURACIÓN ESTABLE:
+  • 2 nodos (Head + Worker)
+  • 22 CPUs totales
+  • Sin crashes (SIGSEGV)
+  • Todas las generaciones generan trades
+  • ~54 seg por generación
+
+RESULTADO TEST ESPERADO:
+  🧬 Gen 0: 30-50 trades
+  🧬 Gen 1: 40-60 trades
+  🧬 Gen 2: 50-70 trades
+  🧬 Gen 3: 50-70 trades
+  🧬 Gen 4: 50-70 trades
+  🏆 PnL: $100-$500
+
+NO:
+  ❌ 0 trades en Gen 0-3
+  ❌ Solo 2 trades en Gen 4
+  ❌ 16 nodos zombie
+  ❌ SIGSEGV crashes
+
+═══════════════════════════════════════════════════════════════
+📊 ESTADO ACTUAL
+═══════════════════════════════════════════════════════════════
+
+HEAD NODE (MacBook Air):
+  • Python: 3.9.6 ✅
+  • Ray: 2.51.2 ⚠️ (posible downgrade)
+  • Status: Detenido (limpieza completa)
+  • Tailscale IP: 100.118.215.73
+
+WORKER NODE (MacBook Pro):
+  • Python: 3.9.6 ✅
+  • Ray: 2.51.2 ⚠️ (posible downgrade)
+  • Status: Desconocido (posiblemente crasheado)
+  • Tailscale IP: 100.77.179.14
+  • Problema: SIGSEGV crashes repetidos
+
+PRÓXIMO PASO:
+  Verificar versiones de Ray y grpcio
+  Decidir si downgrade o probar otra solución
+
+═══════════════════════════════════════════════════════════════

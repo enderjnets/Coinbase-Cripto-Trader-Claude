@@ -1,0 +1,551 @@
+{
+  "timestamp": "2026-02-10T17:18:59.733811",
+  "work_units": {
+    "9": {
+      "params": {
+        "population_size": 20,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_ONE_MINUTE.csv"
+      },
+      "status": "completed",
+      "replicas_needed": 6,
+      "replicas_completed": 6,
+      "created_at": 2461072.6704908563
+    },
+    "10": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_ONE_MINUTE.csv",
+        "max_candles": 100000
+      },
+      "status": "completed",
+      "replicas_needed": 9168,
+      "replicas_completed": 9168,
+      "created_at": 2461072.69713397
+    },
+    "11": {
+      "params": {
+        "population_size": 25,
+        "generations": 50,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_ONE_MINUTE.csv",
+        "max_candles": 100000
+      },
+      "status": "completed",
+      "replicas_needed": 8193,
+      "replicas_completed": 8193,
+      "created_at": 2461073.1265746644
+    },
+    "12": {
+      "params": {
+        "population_size": 25,
+        "generations": 50,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_ONE_MINUTE.csv",
+        "max_candles": 100000
+      },
+      "status": "completed",
+      "replicas_needed": 7311,
+      "replicas_completed": 7311,
+      "created_at": 2461073.1265746644
+    },
+    "13": {
+      "params": {
+        "population_size": 90,
+        "generations": 100,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_ONE_MINUTE.csv"
+      },
+      "status": "completed",
+      "replicas_needed": 291,
+      "replicas_completed": 291,
+      "created_at": 2461073.139104016
+    },
+    "14": {
+      "params": {
+        "population_size": 25,
+        "generations": 50,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_ONE_MINUTE.csv"
+      },
+      "status": "completed",
+      "replicas_needed": 387,
+      "replicas_completed": 387,
+      "created_at": 2461073.1444361922
+    },
+    "15": {
+      "params": {
+        "population_size": 20,
+        "generations": 30,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_ONE_MINUTE.csv"
+      },
+      "status": "completed",
+      "replicas_needed": 176,
+      "replicas_completed": 176,
+      "created_at": 2461073.1495880093
+    },
+    "16": {
+      "params": {
+        "population_size": 15,
+        "generations": 20,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_ONE_MINUTE.csv"
+      },
+      "status": "completed",
+      "replicas_needed": 33,
+      "replicas_completed": 33,
+      "created_at": 2461073.1574805095
+    },
+    "17": {
+      "params": {
+        "population_size": 90,
+        "generations": 100,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_ONE_MINUTE.csv"
+      },
+      "status": "completed",
+      "replicas_needed": 34,
+      "replicas_completed": 34,
+      "created_at": 2461073.167346331
+    },
+    "18": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "in_progress",
+      "replicas_needed": 4584,
+      "replicas_completed": 4582,
+      "created_at": 2461080.0638566087
+    },
+    "19": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 186,
+      "replicas_completed": 185,
+      "created_at": 2461080.0638566087
+    },
+    "20": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "HIGH",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 566,
+      "replicas_completed": 566,
+      "created_at": 2461080.0638566087
+    },
+    "21": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 560,
+      "replicas_completed": 560,
+      "created_at": 2461080.168292824
+    },
+    "22": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 409,
+      "replicas_completed": 409,
+      "created_at": 2461080.168292824
+    },
+    "23": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "HIGH",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "in_progress",
+      "replicas_needed": 3468,
+      "replicas_completed": 3466,
+      "created_at": 2461080.168292824
+    },
+    "24": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 2,
+      "replicas_completed": 2,
+      "created_at": 2461080.168292824
+    },
+    "25": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 1220,
+      "replicas_completed": 1219,
+      "created_at": 2461080.168292824
+    },
+    "26": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "HIGH",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 53,
+      "replicas_completed": 52,
+      "created_at": 2461080.168292824
+    },
+    "27": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 634,
+      "replicas_completed": 633,
+      "created_at": 2461080.168292824
+    },
+    "28": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "LOW",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "in_progress",
+      "replicas_needed": 2528,
+      "replicas_completed": 2526,
+      "created_at": 2461080.168292824
+    },
+    "29": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "HIGH",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "in_progress",
+      "replicas_needed": 44,
+      "replicas_completed": 42,
+      "created_at": 2461080.168292824
+    },
+    "30": {
+      "params": {
+        "population_size": 30,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "completed",
+      "replicas_needed": 1047,
+      "replicas_completed": 1046,
+      "created_at": 2461080.168292824
+    },
+    "31": {
+      "params": {
+        "population_size": 50,
+        "generations": 150,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_ONE_MINUTE.csv",
+        "max_candles": 100000
+      },
+      "status": "in_progress",
+      "replicas_needed": 2,
+      "replicas_completed": 0,
+      "created_at": 2461082.4902700116
+    },
+    "32": {
+      "params": {
+        "population_size": 75,
+        "generations": 100,
+        "risk_level": "HIGH",
+        "data_file": "BTC-USD_ONE_MINUTE.csv",
+        "max_candles": 100000
+      },
+      "status": "in_progress",
+      "replicas_needed": 2,
+      "replicas_completed": 0,
+      "created_at": 2461082.4902700116
+    },
+    "33": {
+      "params": {
+        "population_size": 100,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      },
+      "status": "in_progress",
+      "replicas_needed": 3,
+      "replicas_completed": 2,
+      "created_at": 2461082.4902700116
+    },
+    "34": {
+      "params": {
+        "population_size": 100,
+        "generations": 150,
+        "risk_level": "HIGH",
+        "data_file": "BTC-USD_ONE_MINUTE.csv",
+        "max_candles": 100000
+      },
+      "status": "in_progress",
+      "replicas_needed": 2,
+      "replicas_completed": 0,
+      "created_at": 2461082.4902700116
+    }
+  },
+  "results_summary": {
+    "total": 41283,
+    "positive": 38841,
+    "avg_pnl": 133.6410760972994,
+    "max_pnl": 443.91,
+    "avg_positive": 146.6665228292116,
+    "avg_trades": 9.999781992587748,
+    "avg_win_rate": 0.6500129181503282,
+    "avg_sharpe": 3.274558731196861,
+    "avg_drawdown": 0.14999282755613688
+  },
+  "top_strategies": [
+    {
+      "result_id": 41283,
+      "work_unit_id": 33,
+      "pnl": 230.71,
+      "trades": 5,
+      "win_rate": 1.0,
+      "sharpe_ratio": 73248.6798,
+      "max_drawdown": 0.0,
+      "worker": "ender-rog_Linux_W2",
+      "params": {
+        "population_size": 100,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      }
+    },
+    {
+      "result_id": 41282,
+      "work_unit_id": 33,
+      "pnl": 142.36,
+      "trades": 6,
+      "win_rate": 0.8333,
+      "sharpe_ratio": 13.4283,
+      "max_drawdown": 0.0039,
+      "worker": "ender-rog_Linux_W1",
+      "params": {
+        "population_size": 100,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      }
+    }
+  ],
+  "workers": {
+    "Enders-MacBook-Pro.local_Darwin_W2": {
+      "work_units_completed": 12935,
+      "total_execution_time": 50979.45011663437,
+      "last_seen": 2461082.513070764
+    },
+    "Enders-MacBook-Pro.local_Darwin_W1": {
+      "work_units_completed": 12934,
+      "total_execution_time": 50858.513993263245,
+      "last_seen": 2461082.5130551504
+    },
+    "Enders-MacBook-Pro.local_Darwin_W3": {
+      "work_units_completed": 12927,
+      "total_execution_time": 37869.85667300224,
+      "last_seen": 2461082.513070683
+    },
+    "ender-rog-kubuntu_Linux_W1": {
+      "work_units_completed": 334,
+      "total_execution_time": 2185.129737854004,
+      "last_seen": 2461079.1582081947
+    },
+    "ender-rog-kubuntu_Linux_W2": {
+      "work_units_completed": 309,
+      "total_execution_time": 2004.4753029346466,
+      "last_seen": 2461079.158210486
+    },
+    "ender-rog-kubuntu_Linux_W5": {
+      "work_units_completed": 309,
+      "total_execution_time": 2005.976062297821,
+      "last_seen": 2461079.1582570025
+    },
+    "ender-rog-kubuntu_Linux_W3": {
+      "work_units_completed": 309,
+      "total_execution_time": 1992.6423494815826,
+      "last_seen": 2461079.1582270255
+    },
+    "ender-rog-kubuntu_Linux_W4": {
+      "work_units_completed": 308,
+      "total_execution_time": 1988.6782109737396,
+      "last_seen": 2461079.158185984
+    },
+    "Enders-MacBook-Air.local_Darwin": {
+      "work_units_completed": 303,
+      "total_execution_time": 41125.73417496681,
+      "last_seen": 2461076.1719745947
+    },
+    "enderj_Linux_W2": {
+      "work_units_completed": 161,
+      "total_execution_time": 1160.506543636322,
+      "last_seen": 2461082.3413303704
+    },
+    "enderj_Linux_W3": {
+      "work_units_completed": 160,
+      "total_execution_time": 1124.3117232322693,
+      "last_seen": 2461082.341340567
+    },
+    "enderj_Linux_W1": {
+      "work_units_completed": 158,
+      "total_execution_time": 1131.7631165981293,
+      "last_seen": 2461082.3413168285
+    },
+    "Enders-MacBook-Pro.local_Darwin": {
+      "work_units_completed": 103,
+      "total_execution_time": 4900.832312583923,
+      "last_seen": 2461075.2118222453
+    },
+    "Enders-MacBook-Air.local_Darwin_W1": {
+      "work_units_completed": 11,
+      "total_execution_time": 38.34813928604126,
+      "last_seen": 2461082.5129107293
+    },
+    "Enders-MacBook-Air.local_Darwin_W3": {
+      "work_units_completed": 7,
+      "total_execution_time": 25.683802604675293,
+      "last_seen": 2461082.512918206
+    },
+    "Enders-MacBook-Air.local_Darwin_W2": {
+      "work_units_completed": 6,
+      "total_execution_time": 22.35991406440735,
+      "last_seen": 2461082.512910752
+    },
+    "Enders-MacBook-Air.local_Darwin_W4": {
+      "work_units_completed": 6,
+      "total_execution_time": 21.527182817459106,
+      "last_seen": 2461082.512919213
+    },
+    "ender-rog-kubuntu_Linux": {
+      "work_units_completed": 1,
+      "total_execution_time": 51571.1985514164,
+      "last_seen": 2461076.7607643288
+    },
+    "ender-rog_Linux_W2": {
+      "work_units_completed": 1,
+      "total_execution_time": 5.1705403327941895,
+      "last_seen": 2461082.5127319447
+    },
+    "ender-rog_Linux_W1": {
+      "work_units_completed": 1,
+      "total_execution_time": 4.7389020919799805,
+      "last_seen": 2461082.5127319675
+    },
+    "TEST": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461080.1678040163
+    },
+    "enderj_Linux_W4": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.3413567245
+    },
+    "ender-rog_Linux_W6": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.449936493
+    },
+    "ender-rog_Linux_W8": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.449943692
+    },
+    "ender-rog_Linux_W7": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.4499437613
+    },
+    "Asus-Dorada_Linux_W4": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.4700536225
+    },
+    "Asus-Dorada_Linux_W1": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.470053669
+    },
+    "Asus-Dorada_Linux_W2": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.4700536923
+    },
+    "Asus-Dorada_Linux_W3": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.4700578935
+    },
+    "TEST_WORKER": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.501927882
+    },
+    "ender-rog_Linux_W4": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.512719537
+    },
+    "ender-rog_Linux_W5": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.5127196643
+    },
+    "ender-rog_Linux_W3": {
+      "work_units_completed": 0,
+      "total_execution_time": 0.0,
+      "last_seen": 2461082.512719699
+    }
+  }
+}

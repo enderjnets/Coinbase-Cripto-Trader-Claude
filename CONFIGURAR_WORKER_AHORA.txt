@@ -1,0 +1,159 @@
+╔══════════════════════════════════════════════════════════════════╗
+║         🚀 CONFIGURAR WORKER - PASOS EXACTOS                      ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📍 IP DEL HEAD NODE (esta máquina): 10.0.0.239
+
+═══════════════════════════════════════════════════════════════════
+
+🔹 PASO 1: Ve a tu MacBook Pro Worker
+
+═══════════════════════════════════════════════════════════════════
+
+🔹 PASO 2: Abre Terminal
+
+═══════════════════════════════════════════════════════════════════
+
+🔹 PASO 3: Ejecuta estos comandos (COPIA Y PEGA):
+
+cd "/Users/TU_USUARIO/Library/CloudStorage/GoogleDrive-XXXX/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+# O si está en otra ubicación, navega allí
+
+# Luego ejecuta:
+./setup_worker.sh
+
+═══════════════════════════════════════════════════════════════════
+
+🔹 PASO 4: Cuando te pregunte la IP, ingresa:
+
+10.0.0.239
+
+═══════════════════════════════════════════════════════════════════
+
+✅ VERIFICAR QUE FUNCIONÓ:
+
+En el Terminal del Worker, deberías ver:
+```
+SUCCESS! This Mac is now a worker node connected to 10.0.0.239
+```
+
+En ESTA MÁQUINA (Head), ejecuta:
+```
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+.venv/bin/ray status
+```
+
+Deberías ver:
+```
+Active:
+ 2 node_xxxxx
+ 2 node_yyyyy
+
+Resources:
+ 0.0/22.0 CPU  ← ¡22 CPUs totales!
+```
+
+═══════════════════════════════════════════════════════════════════
+
+🎯 EJECUTAR STRATEGY MINER CON 22 CPUS:
+
+Una vez conectado, ejecuta en ESTA MÁQUINA:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+.venv/bin/python3 << 'SCRIPT_END'
+import pandas as pd
+from strategy_miner import StrategyMiner
+
+# Cargar datos (4,315 velas)
+df = pd.read_csv("data/BTC-USD_ONE_HOUR_FULL.csv")
+print(f"\n📊 Dataset: {len(df)} velas\n")
+
+# Configurar miner CORRECTAMENTE
+print("🧬 Configurando Strategy Miner:")
+print("   - Población: 100 estrategias")
+print("   - Generaciones: 50")
+print("   - Distribuido: SÍ (22 CPUs)")
+print("   - Tiempo estimado: 20-30 minutos\n")
+
+miner = StrategyMiner(
+    df=df,
+    population_size=100,
+    generations=50,
+    risk_level="LOW",
+    force_local=False  # ¡IMPORTANTE! Usar Ray
+)
+
+# Progress callback
+def show_progress(msg_type, data):
+    if msg_type == "START_GEN":
+        print(f"\n🧬 Generación {data}/50 iniciada...")
+    elif msg_type == "BEST_GEN":
+        gen = data.get('gen', 0)
+        pnl = data.get('pnl', 0)
+        print(f"   🏆 Mejor PnL Gen {gen}: ${pnl:.2f}")
+
+# Ejecutar
+print("⚡ Iniciando evolución...\n")
+best_genome, best_pnl = miner.run(progress_callback=show_progress)
+
+# Resultados
+print(f"\n\n{'='*80}")
+print(f"🎯 RESULTADO FINAL")
+print(f"{'='*80}")
+print(f"\n🏆 Mejor PnL: ${best_pnl:.2f}")
+
+if best_pnl > 1000:
+    print("✅ ¡ESTRATEGIA RENTABLE ENCONTRADA!")
+elif best_pnl > 0:
+    print("✅ Estrategia con ganancia positiva")
+else:
+    print("⚠️  PnL negativo - Intenta más generaciones (100+)")
+
+print(f"\n🧬 Genoma ganador:")
+print(f"   - Reglas: {len(best_genome['entry_rules'])}")
+print(f"   - Stop Loss: {best_genome['params']['sl_pct']*100:.1f}%")
+print(f"   - Take Profit: {best_genome['params']['tp_pct']*100:.1f}%")
+print(f"\n📋 Reglas:")
+for i, rule in enumerate(best_genome['entry_rules'], 1):
+    print(f"   {i}. {rule}")
+
+print(f"\n{'='*80}\n")
+SCRIPT_END
+
+═══════════════════════════════════════════════════════════════════
+
+📊 MONITOREAR EN TIEMPO REAL:
+
+Abre en tu navegador:
+http://10.0.0.239:8265
+
+Deberías ver:
+- 22 CPUs activos (o cerca)
+- Tareas distribuyéndose entre 2 nodos
+- Progreso en tiempo real
+
+═══════════════════════════════════════════════════════════════════
+
+⚡ SI ALGO FALLA:
+
+1. Verifica conectividad:
+   ping 10.0.0.239
+
+2. Ambas máquinas en la misma WiFi
+
+3. Firewall desactivado temporalmente
+
+4. Worker no se duerme:
+   System Settings → Energy → "Prevent sleep"
+
+═══════════════════════════════════════════════════════════════════
+
+✅ ¡ESO ES TODO!
+
+El sistema ahora usará 22 CPUs para evolucionar estrategias.
+En 20-30 minutos deberías ver estrategias con PnL positivo.
+
+═══════════════════════════════════════════════════════════════════

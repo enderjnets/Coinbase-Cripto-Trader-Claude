@@ -1,0 +1,157 @@
+═══════════════════════════════════════════════════════════════
+   ⚡ INSTALACIÓN RÁPIDA v2.5 - MacBook Pro Worker
+═══════════════════════════════════════════════════════════════
+
+ARCHIVO: Bittrader_Worker_Installer_v2.5.zip
+
+NOVEDAD: 🎯 Instala Python 3.9.6 AUTOMÁTICAMENTE
+  • NO más version mismatch
+  • NO más errores RuntimeError
+  • Match exacto con Head Node (3.9.6)
+
+═══════════════════════════════════════════════════════════════
+PASOS EN EL MACBOOK PRO
+═══════════════════════════════════════════════════════════════
+
+1. DESINSTALAR WORKER ANTERIOR (si existe)
+   -----------------------------------------
+   cd ~/Downloads/Worker_Installer_Package
+   bash uninstall.sh
+
+2. DESCOMPRIMIR NUEVO INSTALADOR
+   -----------------------------------------
+   cd ~/Downloads
+   unzip Bittrader_Worker_Installer_v2.5.zip
+
+3. EJECUTAR INSTALADOR
+   -----------------------------------------
+   cd Worker_Installer_Package
+   bash install.sh
+
+   QUÉ ESPERAR:
+   • Se te pedirá contraseña de admin (para instalar Python 3.9.6)
+   • Descargará Python 3.9.6 desde python.org (~2 min)
+   • Instalará Python 3.9.6 automáticamente (~1 min)
+   • Instalará Ray y conectará al cluster (~5 min)
+
+4. VERIFICAR INSTALACIÓN
+   -----------------------------------------
+   bash verify_worker.sh
+
+   OUTPUT ESPERADO:
+     [1/7] ✅ Instalación existe
+     [2/7] ✅ Python version: 3.9.6
+     [3/7] ✅ Ray instalado e importable
+     [4/7] ✅ Configuración válida (HEAD_IP)
+     [5/7] ✅ Conectividad con Head Node
+     [6/7] ✅ Código del proyecto sincronizado
+     [7/7] ✅ Worker corriendo y conectado
+
+     ✅ ¡TODO PERFECTO! Worker configurado correctamente.
+
+═══════════════════════════════════════════════════════════════
+QUÉ CAMBIÓ EN v2.5
+═══════════════════════════════════════════════════════════════
+
+ANTES (v2.4):
+  ❌ Instalaba Python 3.9.25 desde Homebrew
+  ⚠️  RuntimeError: Version mismatch (3.9.6 vs 3.9.25)
+  ❌ Había que instalar Python 3.9.6 manualmente
+
+AHORA (v2.5):
+  ✅ Descarga Python 3.9.6 desde python.org automáticamente
+  ✅ NO más errores de version mismatch
+  ✅ 100% automático (solo pide contraseña de admin)
+
+═══════════════════════════════════════════════════════════════
+VERIFICAR QUE FUNCIONA
+═══════════════════════════════════════════════════════════════
+
+EN EL WORKER (MacBook Pro):
+
+1. Verificar Python version:
+   ~/.bittrader_worker/venv/bin/python --version
+
+   Debe mostrar: Python 3.9.6
+
+2. Verificar logs (NO debe haber RuntimeError):
+   tail -20 ~/.bittrader_worker/worker.log
+
+   Debe mostrar:
+     📂 Modo Drive Detectado: /Users/.../Coinbase Cripto Trader Claude
+     ✅ Código verificado: 4 módulos encontrados
+     ✅ Conectado al cluster con 12 CPUs
+
+3. Abrir Desktop shortcut:
+   Double-click: "Bittrader Worker Status" en Desktop
+
+   NO debe mostrar:
+     ❌ RuntimeError: Version mismatch
+
+EN EL HEAD (MacBook Air):
+
+1. Verificar cluster:
+   ray status
+
+   Debe mostrar:
+     Active:
+       2 nodes
+       0.0/22.0 CPU
+
+2. Ejecutar test:
+   python test_miner_quick.py
+
+   Debe mostrar:
+     ✅ Trades > 0 (no más 0 trades)
+     ✅ PnL != $0
+     ✅ Sin errores de módulos o versiones
+
+═══════════════════════════════════════════════════════════════
+TIEMPO ESTIMADO
+═══════════════════════════════════════════════════════════════
+
+Desinstalar worker anterior:     ~30 segundos
+Descomprimir v2.5:                ~5 segundos
+Ejecutar instalador:              ~8 minutos
+  - Descarga Python 3.9.6:        ~2 min
+  - Instala Python 3.9.6:         ~1 min
+  - Instala Ray y conecta:        ~5 min
+Verificar instalación:            ~30 segundos
+
+TOTAL: ~9 minutos
+
+═══════════════════════════════════════════════════════════════
+NOTAS IMPORTANTES
+═══════════════════════════════════════════════════════════════
+
+CONTRASEÑA DE ADMIN:
+  El instalador pedirá tu contraseña cuando instale Python 3.9.6.
+  Esto es NORMAL y necesario (instala en /usr/local/).
+
+GOOGLE DRIVE:
+  Asegúrate de que Google Drive esté:
+    • Instalado en el MacBook Pro
+    • Sincronizando la carpeta "Coinbase Cripto Trader Claude"
+
+CONEXIÓN:
+  El instalador usa IP: 100.118.215.73 (Head Node Tailscale IP)
+  No necesitas ingresar nada, está embebido en el instalador.
+
+═══════════════════════════════════════════════════════════════
+SI ALGO SALE MAL
+═══════════════════════════════════════════════════════════════
+
+1. Ejecuta el diagnóstico:
+   bash verify_worker.sh
+
+2. Revisa los logs:
+   tail -50 ~/.bittrader_worker/worker.log
+
+3. Consulta la guía de troubleshooting:
+   cat TROUBLESHOOTING.txt
+
+4. Verifica Python version:
+   ~/.bittrader_worker/venv/bin/python --version
+   (Debe ser exactamente: Python 3.9.6)
+
+═══════════════════════════════════════════════════════════════

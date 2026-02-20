@@ -1,0 +1,36 @@
+[
+  {
+    "params":{
+      "entry_rules":[
+        {
+          "left":{
+            "field":"close"
+          },
+          "op":"<",
+          "right":{
+            "indicator":"SMA",
+            "period":20
+          }
+        },
+        {
+          "left":{
+            "indicator":"RSI",
+            "period":100
+          },
+          "op":"<",
+          "right":{
+            "value":20
+          }
+        }
+      ],
+      "params":{
+        "sl_pct":0.0343509651,
+        "tp_pct":0.0798099321
+      }
+    },
+    "metrics":{
+      "Total PnL":0.0,
+      "Type":"Best Strategy found"
+    }
+  }
+]

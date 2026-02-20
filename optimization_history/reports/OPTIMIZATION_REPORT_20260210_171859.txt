@@ -1,0 +1,25 @@
+
+================================================================================
+                    REPORTE DE OPTIMIZACIÓN - 2026-02-10 17:18:59
+================================================================================
+
+📊 ESTADÍSTICAS GENERALES
+--------------------------------------------------------------------------------
+Total de resultados:        41,283
+Resultados positivos:       38,841
+Promedio PnL (todos):       $133.64
+Promedio PnL (positivos):   $146.67
+PnL máximo:                 $443.91
+
+🏆 TOP 20 MEJORES ESTRATEGIAS (MÉTRICAS REALES)
+--------------------------------------------------------------------------------
+
+ 1. PnL: $230.71 | Trades: 5 | Win Rate: 100.0%
+    Sharpe: 73248.68 | Max Drawdown: 0.0%
+    Params: pop=100, gen=100, risk=MEDIUM
+    Worker: ender-rog_Linux_W2
+
+ 2. PnL: $142.36 | Trades: 6 | Win Rate: 83.3%
+    Sharpe: 13.43 | Max Drawdown: 0.4%
+    Params: pop=100, gen=100, risk=MEDIUM
+    Worker: ender-rog_Linux_W1

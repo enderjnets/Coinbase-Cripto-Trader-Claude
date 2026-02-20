@@ -1,0 +1,46 @@
+{
+  "work_id": null,
+  "generation": 0,
+  "best_genome": {
+    "entry_rules": [
+      {
+        "left": {
+          "indicator": "SMA",
+          "period": 10
+        },
+        "op": "<",
+        "right": {
+          "indicator": "SMA",
+          "period": 14
+        }
+      },
+      {
+        "left": {
+          "field": "volume"
+        },
+        "op": "<",
+        "right": {
+          "indicator": "VOLSMA",
+          "period": 14
+        }
+      },
+      {
+        "left": {
+          "field": "volume"
+        },
+        "op": ">",
+        "right": {
+          "indicator": "VOLSMA",
+          "period": 100
+        }
+      }
+    ],
+    "params": {
+      "sl_pct": 0.011529149989176748,
+      "tp_pct": 0.04286790757492193
+    }
+  },
+  "best_pnl": -9999,
+  "timestamp": 1769958577.4924212,
+  "worker_id": "Enders-MacBook-Air.local_Darwin"
+}

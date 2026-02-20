@@ -1,0 +1,47 @@
+[
+  {
+    "params":{
+      "entry_rules":[
+        {
+          "left":{
+            "field":"close"
+          },
+          "op":">",
+          "right":{
+            "indicator":"EMA",
+            "period":14
+          }
+        },
+        {
+          "left":{
+            "field":"volume"
+          },
+          "op":"<",
+          "right":{
+            "indicator":"VOLSMA",
+            "period":200
+          }
+        },
+        {
+          "left":{
+            "indicator":"EMA",
+            "period":50
+          },
+          "op":"<",
+          "right":{
+            "indicator":"EMA",
+            "period":100
+          }
+        }
+      ],
+      "params":{
+        "sl_pct":0.0111098842,
+        "tp_pct":0.0544635405
+      }
+    },
+    "metrics":{
+      "Total PnL":-9999,
+      "Type":"Best Strategy found"
+    }
+  }
+]

@@ -1,0 +1,220 @@
+╔══════════════════════════════════════════════════════════════════╗
+║            🚀 SETUP AUTOMÁTICO DEL WORKER VÍA SSH                 ║
+║                  (SIN NECESIDAD DE IR AL WORKER)                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════
+📋 REQUISITO PREVIO (SOLO UNA VEZ):
+═══════════════════════════════════════════════════════════════════
+
+En tu MacBook Pro Worker:
+
+1. Abre System Settings (⚙️)
+2. General → Sharing
+3. Activa "Remote Login" (switch ON)
+4. Asegúrate que tu usuario "enderj" tenga acceso
+
+¡ESO ES TODO! No necesitas hacer nada más en el Worker.
+
+═══════════════════════════════════════════════════════════════════
+⚡ CONFIGURACIÓN AUTOMÁTICA DESDE AQUÍ (EL HEAD):
+═══════════════════════════════════════════════════════════════════
+
+OPCIÓN 1 - Script Automático (RECOMENDADO):
+-------------------------------------------
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+./remote_setup_worker.sh
+
+¡Eso es todo! El script hará AUTOMÁTICAMENTE:
+✅ Conectarse al Worker vía SSH
+✅ Buscar el proyecto
+✅ Detener Ray antiguo
+✅ Iniciar Worker con configuración correcta
+✅ Verificar que esté conectado
+
+
+OPCIÓN 2 - Comando SSH Manual:
+-------------------------------
+
+Si el script falla, ejecuta esto:
+
+ssh enderj@Enders-MacBook-Pro.local << 'COMANDOS'
+cd "/ruta/al/proyecto"
+.venv/bin/ray stop --force
+.venv/bin/ray start --address=10.0.0.239:6379
+COMANDOS
+
+(Reemplaza "/ruta/al/proyecto" con la ruta real)
+
+═══════════════════════════════════════════════════════════════════
+✅ VERIFICAR QUE FUNCIONÓ:
+═══════════════════════════════════════════════════════════════════
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+.venv/bin/ray status
+
+Deberías ver:
+```
+Active:
+ 2 node_xxxxx   ← 2 NODOS
+
+Resources:
+ 0.0/22.0 CPU   ← 22 CPUs TOTALES
+```
+
+═══════════════════════════════════════════════════════════════════
+🚀 EJECUTAR STRATEGY MINER CON 22 CPUS:
+═══════════════════════════════════════════════════════════════════
+
+Una vez conectado (2 nodos, 22 CPUs), ejecuta:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+.venv/bin/python3 << 'EOF'
+import pandas as pd
+from strategy_miner import StrategyMiner
+import time
+
+# Cargar datos
+df = pd.read_csv("data/BTC-USD_ONE_HOUR_FULL.csv")
+print(f"\n{'='*80}")
+print(f"⛏️  STRATEGY MINER - CONFIGURACIÓN ÓPTIMA")
+print(f"{'='*80}")
+print(f"\n📊 Dataset: {len(df):,} velas")
+print(f"🧬 Población: 100 estrategias")
+print(f"🔄 Generaciones: 50")
+print(f"💻 CPUs disponibles: 22")
+print(f"⏱️  Tiempo estimado: 20-30 minutos")
+print(f"\n{'='*80}\n")
+
+# Configurar
+miner = StrategyMiner(
+    df=df,
+    population_size=100,
+    generations=50,
+    risk_level="LOW",
+    force_local=False  # ¡CRÍTICO! Usar Ray
+)
+
+# Callback de progreso
+def progress(msg_type, data):
+    if msg_type == "START_GEN":
+        print(f"\n🧬 Generación {data}/50 iniciada...")
+    elif msg_type == "BEST_GEN":
+        gen = data.get('gen', 0)
+        pnl = data.get('pnl', 0)
+        genome = data.get('genome', {})
+        print(f"   🏆 Gen {gen}: PnL ${pnl:.2f}")
+
+# Ejecutar
+start_time = time.time()
+print("⚡ Iniciando evolución genética...\n")
+
+best_genome, best_pnl = miner.run(progress_callback=progress)
+
+elapsed = time.time() - start_time
+
+# Resultados
+print(f"\n\n{'='*80}")
+print(f"🎯 RESULTADO FINAL")
+print(f"{'='*80}")
+print(f"\n⏱️  Tiempo total: {elapsed/60:.1f} minutos")
+print(f"🏆 Mejor PnL: ${best_pnl:.2f}")
+
+if best_pnl > 2000:
+    print("\n✅ ¡EXCELENTE! Estrategia altamente rentable")
+elif best_pnl > 1000:
+    print("\n✅ ¡MUY BIEN! Estrategia rentable")
+elif best_pnl > 0:
+    print("\n✅ Estrategia con ganancia positiva")
+else:
+    print(f"\n⚠️  PnL negativo")
+    print("   Intenta:")
+    print("   - Más generaciones (100+)")
+    print("   - Más datos históricos")
+    print("   - Diferentes timeframes")
+
+print(f"\n🧬 DETALLES DEL GENOMA GANADOR:")
+print(f"{'='*80}")
+print(f"\n📏 Parámetros:")
+print(f"   - Stop Loss: {best_genome['params']['sl_pct']*100:.2f}%")
+print(f"   - Take Profit: {best_genome['params']['tp_pct']*100:.2f}%")
+
+print(f"\n📋 Reglas de Entrada ({len(best_genome['entry_rules'])} reglas):")
+for i, rule in enumerate(best_genome['entry_rules'], 1):
+    left = rule.get('left', {})
+    op = rule.get('op', '')
+    right = rule.get('right', {})
+
+    # Formatear legible
+    left_str = f"{left.get('indicator', left.get('field', '?'))}"
+    if 'period' in left:
+        left_str += f"({left['period']})"
+
+    right_str = f"{right.get('indicator', right.get('field', right.get('value', '?')))}"
+    if 'period' in right:
+        right_str += f"({right['period']})"
+
+    print(f"   {i}. {left_str} {op} {right_str}")
+
+print(f"\n{'='*80}")
+print(f"\n💾 Para usar esta estrategia, guarda el genoma impreso arriba")
+print(f"   y úsalo en el Bitcoin Spot Pro mode de la interfaz.\n")
+EOF
+
+═══════════════════════════════════════════════════════════════════
+📊 MONITOREAR EN TIEMPO REAL:
+═══════════════════════════════════════════════════════════════════
+
+Mientras corre, abre en tu navegador:
+
+http://10.0.0.239:8265
+
+Verás:
+- 📈 CPUs al 90-100% (ambas máquinas trabajando)
+- 🔄 Tareas distribuyéndose
+- ⏱️  Tiempo por tarea
+- 📊 Nodos activos
+
+═══════════════════════════════════════════════════════════════════
+⚠️ SI ALGO FALLA:
+═══════════════════════════════════════════════════════════════════
+
+"Cannot connect to Worker via SSH":
+→ Verifica Remote Login en Worker (System Settings → Sharing)
+→ Prueba: ssh enderj@Enders-MacBook-Pro.local
+
+"Version mismatch":
+→ Ambas máquinas deben usar Python 3.9.6
+→ Reinstalar venv en Worker
+
+"Solo usa 10 CPUs":
+→ Worker no conectado
+→ Ejecuta: .venv/bin/ray status
+→ Debe mostrar 2 nodos
+
+"PnL sigue negativo después de 50 generaciones":
+→ Es NORMAL en algunas corridas (probabilístico)
+→ Intenta de nuevo con 100 generaciones
+→ O con datos de diferentes períodos
+
+═══════════════════════════════════════════════════════════════════
+✅ RESULTADO ESPERADO:
+═══════════════════════════════════════════════════════════════════
+
+Después de 20-30 minutos verás algo como:
+
+🏆 Mejor PnL: $2,347.89
+   - Stop Loss: 1.8%
+   - Take Profit: 4.2%
+   - Reglas: 3
+     1. RSI(14) < 35
+     2. Close > SMA(50)
+     3. Volume > VOLSMA(20)
+
+¡ESTA es una estrategia real que puedes usar en trading!
+
+═══════════════════════════════════════════════════════════════════

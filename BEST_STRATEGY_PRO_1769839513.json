@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-01-30 23:05:13",
+  "machine": "Enders-MacBook-Air.local",
+  "mode": "MACBOOK_PRO_MEDIUM",
+  "pnl": 70.72604774825379,
+  "trades": 16,
+  "win_rate": 0.375,
+  "genome": {
+    "entry_rules": [
+      {
+        "left": {
+          "field": "close"
+        },
+        "op": "<",
+        "right": {
+          "indicator": "SMA",
+          "period": 100
+        }
+      },
+      {
+        "left": {
+          "indicator": "RSI",
+          "period": 20
+        },
+        "op": ">",
+        "right": {
+          "value": 75
+        }
+      }
+    ],
+    "params": {
+      "sl_pct": 0.040480008261204674,
+      "tp_pct": 0.06375186758033012
+    }
+  },
+  "generation": 29,
+  "execution_time_seconds": 3458.871217727661,
+  "config": {
+    "population": 40,
+    "generations": 30,
+    "risk_level": "MEDIUM"
+  }
+}

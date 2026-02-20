@@ -1,0 +1,144 @@
+
+================================================================================
+                    REPORTE DE OPTIMIZACIÓN - STRATEGY MINER
+                    Generado: 2026-02-10 16:45:25
+================================================================================
+
+📊 ESTADÍSTICAS GENERALES
+--------------------------------------------------------------------------------
+Total de resultados:        41,281
+Resultados positivos:       38,839
+Promedio PnL (todos):       $133.64
+Promedio PnL (positivos):   $146.66
+PnL máximo:                 $443.91
+PnL mínimo:                 $-9999.00
+
+📈 DISTRIBUCIÓN POR RANGO DE PnL
+--------------------------------------------------------------------------------
+Alto (400+)               |   293 estrategias | Avg: $418.25 █████████████████████████████████████████
+Medio (200-400)           |  8902 estrategias | Avg: $250.94 █████████████████████████
+Bajo-Medio (100-200)      | 17933 estrategias | Avg: $148.91 ██████████████
+Bajo (50-100)             |  7738 estrategias | Avg: $75.21 ███████
+Muy Bajo (<50)            |  3973 estrategias | Avg: $22.03 ██
+
+🏆 TOP 10 MEJORES ESTRATEGIAS
+--------------------------------------------------------------------------------
+
+ 1. PnL: $443.91 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=MEDIUM, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W3
+
+ 2. PnL: $443.43 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=LOW, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W1
+
+ 3. PnL: $442.94 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=HIGH, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W2
+
+ 4. PnL: $442.92 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=MEDIUM, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W1
+
+ 5. PnL: $439.29 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=MEDIUM, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W3
+
+ 6. PnL: $429.76 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=HIGH, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W1
+
+ 7. PnL: $429.43 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=HIGH, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W1
+
+ 8. PnL: $428.88 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=LOW, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W3
+
+ 9. PnL: $428.88 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=MEDIUM, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W1
+
+10. PnL: $428.58 | Trades: 10 | Win Rate: 65.0%
+    Sharpe: 1.50 | Max Drawdown: 15.0%
+    Params: pop=30, gen=100, risk=MEDIUM, data=BTC-USD_FIVE_MINUTE.csv
+    Worker: Enders-MacBook-Pro.local_Darwin_W3
+
+📁 ANÁLISIS POR WORK UNIT
+--------------------------------------------------------------------------------
+
+1. Work Unit ID: N/A
+   Params: pop=30, gen=100, 
+           risk=HIGH, candles=59000
+   Resultados: 43 | Avg PnL: $217.90 | Max PnL: $424.13
+
+2. Work Unit ID: N/A
+   Params: pop=30, gen=100, 
+           risk=LOW, candles=59000
+   Resultados: 407 | Avg PnL: $206.75 | Max PnL: $428.21
+
+3. Work Unit ID: N/A
+   Params: pop=30, gen=100, 
+           risk=HIGH, candles=59000
+   Resultados: 563 | Avg PnL: $204.70 | Max PnL: $428.41
+
+4. Work Unit ID: N/A
+   Params: pop=30, gen=100, 
+           risk=HIGH, candles=59000
+   Resultados: 52 | Avg PnL: $203.85 | Max PnL: $413.54
+
+5. Work Unit ID: N/A
+   Params: pop=30, gen=100, 
+           risk=MEDIUM, candles=59000
+   Resultados: 4571 | Avg PnL: $201.30 | Max PnL: $443.91
+
+👥 PERFORMANCE POR WORKER
+--------------------------------------------------------------------------------
+  Enders-MacBook-Air.local_Darwin_W2       |    6 res | Avg: $230.88 | Max: $397.00
+  Enders-MacBook-Air.local_Darwin_W3       |    7 res | Avg: $215.38 | Max: $397.12
+  enderj_Linux_W3                          |  160 res | Avg: $206.67 | Max: $403.52
+  enderj_Linux_W1                          |  158 res | Avg: $198.90 | Max: $422.20
+  enderj_Linux_W2                          |  161 res | Avg: $197.75 | Max: $420.30
+  Enders-MacBook-Air.local_Darwin_W4       |    6 res | Avg: $191.50 | Max: $231.26
+  Enders-MacBook-Air.local_Darwin_W1       |   11 res | Avg: $171.03 | Max: $378.60
+  Enders-MacBook-Pro.local_Darwin_W1       | 12271 res | Avg: $147.86 | Max: $443.43
+  Enders-MacBook-Pro.local_Darwin_W2       | 12257 res | Avg: $146.96 | Max: $442.94
+  Enders-MacBook-Pro.local_Darwin_W3       | 12302 res | Avg: $146.74 | Max: $443.91
+
+💡 RECOMENDACIONES
+--------------------------------------------------------------------------------
+
+[ALTA] Parámetros de Búsqueda
+    → Solo el 0.8% de estrategias superan $400 PnL. Considera:
+
+[ALTA] Parámetros de Búsqueda
+    → - Aumentar population_size a 50-100 (ahora: 20-30)
+
+[ALTA] Parámetros de Búsqueda
+    → - Aumentar generations a 150-200 (ahora: 50-100)
+
+[MEDIA] Escala
+    → El mejor work unit tuvo population_size=30. Con Numba JIT, puedes aumentar a 100+ sin slowdown significativo.
+
+[MEDIA] Profundidad
+    → Generaciones=100. Más generaciones = mejor convergencia.
+
+[BAJA] Datos
+    → Considera usar datos de 1-minuto en lugar de 5-min para más granularity (el archivo BTC-USD_ONE_MINUTE.csv tiene 100K+ candles).
+
+[BAJA] Risk Level
+    → Prueba risk_level=HIGH para estrategias más agresivas, o LOW para保守的 (conservadoras).
+
+================================================================================
+                              FIN DEL REPORTE
+================================================================================

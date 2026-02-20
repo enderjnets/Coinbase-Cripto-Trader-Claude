@@ -1,0 +1,374 @@
+═══════════════════════════════════════════════════════════════
+   📱 GUÍA COMPLETA: WORKER MÓVIL (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+VERSIÓN: Worker Installer v2.6 (Mobile Edition)
+FECHA: 2026-01-26
+
+═══════════════════════════════════════════════════════════════
+🎯 ¿QUÉ ES UN WORKER MÓVIL?
+═══════════════════════════════════════════════════════════════
+
+Un Worker Móvil es un nodo Ray configurado para:
+  • Tolerar cambios de red (WiFi → Celular → WiFi)
+  • Reconectarse automáticamente al Head cuando regresa la conexión
+  • Operar en laptops que se mueven (MacBook Air)
+  • NO crashear el Head cuando se desconecta
+  • Continuar trabajando aunque pierda conexión temporalmente
+
+═══════════════════════════════════════════════════════════════
+🏗️ ARQUITECTURA WORKER MÓVIL
+═══════════════════════════════════════════════════════════════
+
+COMPONENTES:
+
+1. DAEMON (worker_daemon.sh)
+   • Corre en background 24/7
+   • Monitorea conexión con Head cada 30 segundos
+   • Detecta desconexiones
+   • Reinicia Ray Worker automáticamente
+   • Logs en ~/.bittrader_worker/worker.log
+
+2. LAUNCHD SERVICE
+   • Inicia daemon al arrancar macOS
+   • Reinicia daemon si falla
+   • Gestiona el ciclo de vida del Worker
+
+3. HEALTH CHECK
+   • Verifica ping al Head cada 30 segundos
+   • Si no hay ping → intenta reconectar Tailscale
+   • Si Tailscale OK → intenta reconectar Ray
+   • Loop infinito de reconexión
+
+4. TAILSCALE VPN
+   • Conexión segura al Head remoto
+   • Funciona en cualquier red (WiFi, Celular)
+   • IP estable incluso al cambiar de red
+
+═══════════════════════════════════════════════════════════════
+🔄 CICLO DE VIDA DEL WORKER MÓVIL
+═══════════════════════════════════════════════════════════════
+
+ESTADO 1: CONECTADO (En casa, WiFi estable)
+  ✅ Worker conectado al Head
+  ✅ 22 CPUs disponibles (12 Head + 10 Worker)
+  ✅ Ray corriendo normalmente
+  ✅ Daemon verifica cada 30s que todo esté bien
+
+ESTADO 2: DESCONECTANDO (Saliendo de casa)
+  ⚠️ WiFi se pierde
+  ⚠️ Daemon detecta: ping al Head falla
+  ⚠️ Daemon intenta reconectar (30s)
+  ⚠️ Si no puede, detiene Ray Worker limpiamente
+  ℹ️  Head continúa con 12 CPUs (sin crashes)
+
+ESTADO 3: DESCONECTADO (Fuera de casa, sin WiFi)
+  ❌ Worker desconectado
+  ❌ Head continúa solo con 12 CPUs
+  🔄 Daemon sigue intentando reconectar cada 30s
+  ℹ️  No afecta al Head
+
+ESTADO 4: RECONECTANDO (Regresando a casa, WiFi regresa)
+  🔄 WiFi detectado
+  🔄 Tailscale se reconecta
+  🔄 Daemon detecta: ping al Head exitoso
+  🔄 Daemon inicia Ray Worker
+  ✅ Worker reconectado
+
+ESTADO 5: RECONECTADO
+  ✅ Worker conectado nuevamente
+  ✅ 22 CPUs disponibles otra vez
+  ✅ Ray retoma trabajos
+  ✅ Daemon vuelve a verificar cada 30s
+
+═══════════════════════════════════════════════════════════════
+📊 LOGS Y MONITOREO
+═══════════════════════════════════════════════════════════════
+
+VER LOGS EN TIEMPO REAL:
+  tail -f ~/.bittrader_worker/worker.log
+
+LOGS TÍPICOS - CONECTADO:
+  2026-01-26 10:00:00 - 🚀 Worker Daemon iniciado
+  2026-01-26 10:00:00 - 📱 Worker Móvil Detectado (MacBookAir10,1)
+  2026-01-26 10:00:00 -    Modo de reconexión resiliente activado
+  2026-01-26 10:00:00 -    Head Node: 100.x.x.x
+  2026-01-26 10:00:00 -    Retry Delay: 30s
+  2026-01-26 10:00:05 - 🔗 Conectando a 100.x.x.x:6379...
+  2026-01-26 10:00:08 - ✅ Worker Móvil conectado al cluster con 10 CPUs
+  2026-01-26 10:00:08 -    (Reconexión automática si se pierde la red)
+
+LOGS TÍPICOS - DESCONEXIÓN:
+  2026-01-26 12:30:45 - ⚠️ No puedo contactar al Head (100.x.x.x).
+  2026-01-26 12:30:45 - ℹ️ Tailscale conectado (...), pero ping falló.
+  2026-01-26 12:31:15 - ⚠️ No puedo contactar al Head (100.x.x.x).
+  2026-01-26 12:31:45 - ⚠️ Ray corriendo pero sin conexión al Head. Reiniciando...
+
+LOGS TÍPICOS - RECONEXIÓN:
+  2026-01-26 15:20:10 - 🔗 Conectando a 100.x.x.x:6379...
+  2026-01-26 15:20:13 - ✅ Worker Móvil conectado al cluster con 10 CPUs
+  2026-01-26 15:20:13 -    (Reconexión automática si se pierde la red)
+
+VER ESTADO DE RAY:
+  .venv/bin/ray status
+
+VER PROCESOS DE RAY:
+  ps aux | grep ray
+
+═══════════════════════════════════════════════════════════════
+🎮 USO PRÁCTICO - ESCENARIOS
+═══════════════════════════════════════════════════════════════
+
+ESCENARIO 1: TRABAJAR EN CASA CON MÁXIMO RENDIMIENTO
+------------------------------------------------------
+
+1. Asegurar que MacBook Pro (Head) está corriendo:
+   • En MacBook Pro: ray status → Debe mostrar Head activo
+
+2. Asegurar que Worker está conectado:
+   • En MacBook Air: tail ~/.bittrader_worker/worker.log
+   • Debe mostrar: "✅ Worker Móvil conectado"
+
+3. Ejecutar Strategy Miner:
+   • En MacBook Pro (o Air vía SSH):
+     python strategy_miner.py
+   • Usará 22 CPUs
+
+4. Resultado:
+   • Máxima velocidad
+   • ~30% más rápido que solo Head
+
+
+ESCENARIO 2: LLEVAR MACBOOK AIR A TRABAJAR FUERA
+--------------------------------------------------
+
+1. ANTES de salir:
+   • Worker está conectado (22 CPUs)
+   • Strategy Miner corriendo
+
+2. DURANTE el viaje:
+   • WiFi se pierde
+   • Worker se desconecta (logs: "No puedo contactar al Head")
+   • Head continúa con 12 CPUs
+   • Strategy Miner continúa (más lento pero sin fallar)
+
+3. AL LLEGAR a otro lugar con WiFi:
+   • WiFi se conecta
+   • Worker se reconecta automáticamente (logs: "Worker Móvil conectado")
+   • Head retoma 22 CPUs
+   • Strategy Miner se acelera
+
+4. Resultado:
+   • Trabajo continúa sin intervención
+   • No se pierde progreso
+
+
+ESCENARIO 3: SOLO USAR MACBOOK PRO (HEAD) MIENTRAS ESTÁS FUERA
+----------------------------------------------------------------
+
+1. MacBook Air desconectado (lo llevas fuera)
+
+2. En MacBook Pro (remoto via SSH):
+   ssh usuario@macbook-pro
+   cd "/path/to/proyecto"
+   .venv/bin/python strategy_miner.py
+
+3. Ray usa solo 12 CPUs del Head
+
+4. Resultado:
+   • Trabajo continúa con rendimiento reducido
+   • Cuando regreses y conectes Air, recuperará 22 CPUs
+
+
+ESCENARIO 4: USAR MACBOOK AIR PARA TRABAJAR MIENTRAS HEAD CORRE
+-----------------------------------------------------------------
+
+1. Head corriendo en MacBook Pro
+
+2. Worker en MacBook Air desconectado (opcional)
+
+3. Usar MacBook Air para otras tareas:
+   • Navegar web
+   • Editar código
+   • Ver resultados via Streamlit en Head
+
+4. Resultado:
+   • MacBook Air libre para trabajar
+   • Head corre optimizaciones en background
+
+═══════════════════════════════════════════════════════════════
+⚙️ CONFIGURACIÓN Y MANTENIMIENTO
+═══════════════════════════════════════════════════════════════
+
+REINICIAR WORKER DAEMON:
+  launchctl unload ~/Library/LaunchAgents/com.bittrader.worker.plist
+  launchctl load ~/Library/LaunchAgents/com.bittrader.worker.plist
+
+DETENER WORKER PERMANENTEMENTE:
+  launchctl unload ~/Library/LaunchAgents/com.bittrader.worker.plist
+  .venv/bin/ray stop
+
+INICIAR WORKER MANUALMENTE:
+  cd ~/.bittrader_worker
+  ./worker_daemon.sh
+
+CAMBIAR HEAD_IP (Si MacBook Pro cambió de IP):
+  nano ~/.bittrader_worker/config.env
+  # Cambiar HEAD_IP=100.x.x.x
+  # Reiniciar daemon
+
+CAMBIAR NÚMERO DE CPUS:
+  echo "8" > ~/.bittrader_worker/current_cpus
+  # Reiniciar daemon
+  # Usará 8 CPUs en vez de 10 (para dejar más libres)
+
+VER CONFIGURACIÓN ACTUAL:
+  cat ~/.bittrader_worker/config.env
+
+═══════════════════════════════════════════════════════════════
+🔧 TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA: Worker no se reconecta después de perder WiFi
+SOLUCIÓN:
+  1. Verificar Tailscale:
+     tailscale status
+
+  2. Verificar logs:
+     tail -50 ~/.bittrader_worker/worker.log
+
+  3. Verificar ping al Head:
+     ping <HEAD_IP>
+
+  4. Reiniciar daemon:
+     launchctl unload ~/Library/LaunchAgents/com.bittrader.worker.plist
+     launchctl load ~/Library/LaunchAgents/com.bittrader.worker.plist
+
+PROBLEMA: Logs muestran "Error conectando" continuamente
+SOLUCIÓN:
+  • Verificar que Head está corriendo:
+    ssh <HEAD_IP>
+    ray status
+
+  • Verificar firewall en Head no bloquea puerto 6379
+
+  • Verificar Tailscale está conectado en ambos:
+    tailscale status
+
+PROBLEMA: Worker se conecta pero no aparece en ray status del Head
+SOLUCIÓN:
+  1. En Head, verificar:
+     ray status
+
+  2. Verificar Python version coincide:
+     python --version  # Debe ser 3.9.6 en ambos
+
+  3. Verificar Ray version coincide:
+     ray --version  # Debe ser 2.51.2 en ambos
+
+  4. Reiniciar Worker:
+     ray stop
+     # Daemon lo reiniciará automáticamente
+
+PROBLEMA: Daemon crashea y no se reinicia
+SOLUCIÓN:
+  1. Verificar launchd:
+     launchctl list | grep bittrader
+
+  2. Ver logs de launchd:
+     cat /tmp/bittrader_worker.log
+
+  3. Reinstalar daemon:
+     cd Worker_Installer_Package
+     ./install.sh
+
+═══════════════════════════════════════════════════════════════
+💡 TIPS Y MEJORES PRÁCTICAS
+═══════════════════════════════════════════════════════════════
+
+1. MONITOREAR LOGS AL MOVERTE
+   • Antes de salir de casa:
+     tail -f ~/.bittrader_worker/worker.log
+   • Verifica que se desconecta limpiamente
+   • Al llegar, verifica que se reconecta
+
+2. USAR SSH PARA ACCESO REMOTO
+   • En MacBook Air:
+     ssh <HEAD_IP>
+   • Puedes monitorear Head mientras estás fuera
+
+3. NO CERRAR MACBOOK AIR AL MOVERSE
+   • Si cierras la tapa, WiFi se apaga
+   • Worker no se reconectará hasta que abras la tapa
+   • Mejor: dejar abierto o configurar "No dormir con tapa cerrada"
+
+4. VERIFICAR BATERÍA EN WORKER MÓVIL
+   • Ray consume CPU → batería se agota rápido
+   • Si batería baja, Worker se apagará
+   • Mejor: conectar a corriente cuando trabajes
+
+5. USAR STRATEGY MINER EN HEAD, NO EN WORKER
+   • Ejecuta scripts en MacBook Pro (Head)
+   • Worker solo contribuye CPUs
+   • Más confiable si Worker se desconecta
+
+═══════════════════════════════════════════════════════════════
+📈 RENDIMIENTO WORKER MÓVIL vs FIJO
+═══════════════════════════════════════════════════════════════
+
+WORKER MÓVIL (MacBook Air):
+  ✅ Reconexión automática
+  ✅ Tolera desconexiones
+  ⚠️ Latencia variable (depende de red)
+  ⚠️ Puede desconectarse durante trabajos
+
+WORKER FIJO (Si tuvieras otro Mac en casa):
+  ✅ Conexión estable 24/7
+  ✅ Latencia mínima
+  ❌ No portátil
+
+RECOMENDACIÓN:
+  • Para trabajos largos (>1 hora): Usar ambos
+  • Para trabajos cortos (<30 min): Solo Head si estás fuera
+  • Para máximo rendimiento: Ambos en casa con WiFi
+
+═══════════════════════════════════════════════════════════════
+🎓 ENTENDER EL CÓDIGO - WORKER DAEMON
+═══════════════════════════════════════════════════════════════
+
+DETECCIÓN DE MODO MÓVIL (worker_daemon.sh línea 30):
+  DEVICE_MODEL=$(sysctl -n hw.model)
+  if [[ "$DEVICE_MODEL" == *"MacBookAir"* ]]; then
+      MOBILE_MODE=true
+      RETRY_DELAY=30  # Reconexión cada 30s
+  else
+      MOBILE_MODE=false
+      RETRY_DELAY=60  # Reconexión cada 60s
+  fi
+
+HEALTH CHECK (worker_daemon.sh línea 83):
+  # Verifica si Ray está conectado
+  if pgrep -x "raylet" > /dev/null; then
+      # Ray corriendo, verificar conexión
+      if python -c "import ray; ray.init(...)"; then
+          # OK, esperar 30s y verificar otra vez
+      else
+          # No conectado, reiniciar
+          ray stop
+      fi
+  fi
+
+RECONEXIÓN (worker_daemon.sh línea 146):
+  # Intenta conectar
+  ray start --address="$HEAD_IP:6379" --num-cpus="$CPUS"
+
+  # Si falla, espera RETRY_DELAY y reintenta
+  sleep $RETRY_DELAY
+
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26
+VERSIÓN: Worker Installer v2.6 (Mobile Edition)
+ESTADO: ✅ GUÍA COMPLETA Y LISTA PARA USO
+
+═══════════════════════════════════════════════════════════════

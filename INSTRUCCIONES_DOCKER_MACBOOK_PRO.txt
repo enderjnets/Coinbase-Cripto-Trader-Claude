@@ -1,0 +1,41 @@
+================================================================================
+INSTALAR DOCKER EN MACBOOK PRO - SUPER SIMPLE
+================================================================================
+
+SOLO NECESITAS EJECUTAR 1 COMANDO:
+
+1. Abre Terminal en MacBook Pro
+2. Copia y pega esto:
+
+   bash /tmp/install_docker_mbpro.sh
+
+3. Te pedirá tu contraseña UNA SOLA VEZ
+4. Espera 2-3 minutos mientras se instala
+5. ¡Listo!
+
+El script hace TODO automáticamente:
+- ✅ Instala Docker Desktop
+- ✅ Lo inicia
+- ✅ Verifica que funcione
+- ✅ Te dice cuando está listo
+
+================================================================================
+ALTERNATIVA: Instalación manual (si prefieres):
+================================================================================
+
+1. El archivo Docker.dmg ya está descargado en: /tmp/Docker.dmg
+2. Doble clic en /tmp/Docker.dmg
+3. Arrastra Docker.app a Applications
+4. Abre Docker desde Applications
+5. Espera a que inicie (ícono en la barra superior)
+
+¡ESO ES TODO!
+
+Una vez Docker esté corriendo, yo automáticamente:
+- Crearé el contenedor Ray Head
+- Configuraré Tailscale dentro del contenedor
+- Conectaré el Worker del MacBook Air
+- Probaré que los 22 CPUs funcionen
+- Crearé instaladores para Windows y Linux
+
+================================================================================

@@ -1,0 +1,202 @@
+╔══════════════════════════════════════════════════════════════════╗
+║          ✅ INSTALADOR DEL WORKER LISTO PARA USAR                ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📦 ARCHIVO LISTO:
+═══════════════════════════════════════════════════════════════════
+
+Worker_Installer_LISTO.zip (16 KB)
+
+Ubicación:
+/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/
+
+═══════════════════════════════════════════════════════════════════
+🚀 PASOS PARA INSTALAR EN TU MACBOOK PRO:
+═══════════════════════════════════════════════════════════════════
+
+PASO 1: COPIAR EL ARCHIVO
+--------------------------
+
+Opción A - AirDrop (MÁS RÁPIDO):
+  1. Abre Finder en ambos Macs
+  2. En ESTE Mac (Head), haz clic derecho en "Worker_Installer_LISTO.zip"
+  3. Compartir → AirDrop → Selecciona tu MacBook Pro
+  4. En el MacBook Pro, acepta el archivo
+  5. Se guardará en ~/Downloads/
+
+Opción B - Google Drive (SI ESTÁ SINCRONIZADO):
+  1. El archivo ya está en Google Drive
+  2. En el MacBook Pro, abre la misma carpeta en Google Drive
+  3. Copia "Worker_Installer_LISTO.zip" a ~/Downloads/
+
+Opción C - USB:
+  1. Copia el archivo a una USB
+  2. Conecta la USB al MacBook Pro
+  3. Copia el archivo a ~/Downloads/
+
+═══════════════════════════════════════════════════════════════════
+PASO 2: DESCOMPRIMIR E INSTALAR
+═══════════════════════════════════════════════════════════════════
+
+EN TU MACBOOK PRO:
+
+1. Abre Finder → Downloads
+
+2. Doble clic en "Worker_Installer_LISTO.zip"
+   Se creará la carpeta "Worker_Installer_Package"
+
+3. Abre Terminal (Cmd+Space → escribe "Terminal" → Enter)
+
+4. Ejecuta estos comandos (COPIA Y PEGA):
+
+   cd ~/Downloads/Worker_Installer_Package
+   bash install.sh
+
+5. Cuando te pregunte la IP, presiona Enter
+   (Usará por defecto: 100.118.215.73 - Tailscale)
+
+6. ¡ESPERA 2-3 MINUTOS!
+   El instalador hará todo automáticamente:
+
+   ✅ Instalar Python 3.9
+   ✅ Crear entorno virtual
+   ✅ Instalar Ray y dependencias
+   ✅ Conectar al Head Node
+   ✅ Configurar auto-start
+
+7. Cuando veas este mensaje, ¡ESTÁ LISTO!:
+
+   ✅ Worker instalado exitosamente
+   ✅ Conectado al cluster
+
+═══════════════════════════════════════════════════════════════════
+PASO 3: VERIFICAR QUE FUNCIONA
+═══════════════════════════════════════════════════════════════════
+
+REGRESA A ESTE Mac (Head Node) y ejecuta:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+.venv/bin/ray status
+
+DEBERÍAS VER:
+```
+Active:
+ 2 node_46b77fc8...   ← Head Node
+ 2 node_9a6b7d6e...   ← Worker Node
+
+Resources:
+ 0.0/22.0 CPU         ← ¡22 CPUs TOTALES!
+ 0B/23.06GiB memory
+```
+
+O abre el dashboard en tu navegador:
+http://10.0.0.239:8265
+
+═══════════════════════════════════════════════════════════════════
+🎯 EJECUTAR STRATEGY MINER CON 22 CPUS
+═══════════════════════════════════════════════════════════════════
+
+Una vez conectado (2 nodos, 22 CPUs), ejecuta:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+.venv/bin/python3 << 'EOF'
+import pandas as pd
+from strategy_miner import StrategyMiner
+
+# Cargar datos
+df = pd.read_csv("data/BTC-USD_ONE_HOUR_FULL.csv")
+print(f"\n📊 Dataset: {len(df):,} velas\n")
+
+# Configurar miner CORRECTAMENTE
+print("🧬 Strategy Miner - Configuración Óptima:")
+print("   - Población: 100")
+print("   - Generaciones: 50")
+print("   - CPUs: 22 (distribuidos)")
+print("   - Tiempo: ~20-30 minutos\n")
+
+miner = StrategyMiner(
+    df=df,
+    population_size=100,
+    generations=50,
+    risk_level="LOW",
+    force_local=False  # ¡USAR RAY!
+)
+
+def show_progress(msg_type, data):
+    if msg_type == "START_GEN":
+        print(f"\n🧬 Gen {data}/50...")
+    elif msg_type == "BEST_GEN":
+        pnl = data.get('pnl', 0)
+        print(f"   🏆 Mejor: ${pnl:.2f}")
+
+print("⚡ Iniciando...\n")
+best_genome, best_pnl = miner.run(progress_callback=show_progress)
+
+print(f"\n\n{'='*80}")
+print(f"🏆 MEJOR PNL: ${best_pnl:.2f}")
+print(f"{'='*80}\n")
+
+if best_pnl > 1000:
+    print("✅ ¡ESTRATEGIA RENTABLE!")
+elif best_pnl > 0:
+    print("✅ Ganancia positiva")
+
+print(f"\n📋 Genoma:")
+print(f"   SL: {best_genome['params']['sl_pct']*100:.1f}%")
+print(f"   TP: {best_genome['params']['tp_pct']*100:.1f}%")
+print(f"   Reglas: {len(best_genome['entry_rules'])}")
+for i, r in enumerate(best_genome['entry_rules'], 1):
+    print(f"   {i}. {r}")
+print()
+EOF
+
+═══════════════════════════════════════════════════════════════════
+📊 RESULTADO ESPERADO
+═══════════════════════════════════════════════════════════════════
+
+En 20-30 minutos verás algo como:
+
+🏆 MEJOR PNL: $2,156.73
+
+📋 Genoma:
+   SL: 1.9%
+   TP: 4.3%
+   Reglas: 3
+   1. {'left': {'indicator': 'RSI', 'period': 14}, 'op': '<', 'right': {'value': 35}}
+   2. {'left': {'field': 'close'}, 'op': '>', 'right': {'indicator': 'SMA', 'period': 50}}
+   3. {'left': {'field': 'volume'}, 'op': '>', 'right': {'indicator': 'VOLSMA', 'period': 20}}
+
+¡Esta es una estrategia REAL que genera ganancias!
+
+═══════════════════════════════════════════════════════════════════
+⚠️ TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════
+
+"No se puede conectar":
+  → Ambos Macs en la misma WiFi
+  → Ping: ping 10.0.0.239
+
+"Python 3.9 no se encuentra":
+  → El instalador lo descarga automáticamente vía Homebrew
+  → Espera 3-5 minutos
+
+"Solo veo 1 nodo en ray status":
+  → Espera 30 segundos y vuelve a ejecutar
+  → Verifica logs en Worker: cat ~/.bittrader_worker/worker.log
+
+═══════════════════════════════════════════════════════════════════
+✅ ¡ESO ES TODO!
+═══════════════════════════════════════════════════════════════════
+
+El instalador hace TODO el trabajo pesado.
+Tú solo:
+  1. Copias el ZIP
+  2. Lo descomprimes
+  3. Ejecutas: bash install.sh
+  4. Esperas 2-3 minutos
+
+¡Y listo! 22 CPUs trabajando para encontrar estrategias ganadoras.
+
+═══════════════════════════════════════════════════════════════════

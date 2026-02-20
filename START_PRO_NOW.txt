@@ -1,0 +1,14 @@
+
+INSTRUCCIÓN PARA MACBOOK PRO
+============================
+
+Ejecuta este comando en Terminal:
+
+cd "/Users/enderjnets/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+python3 crypto_worker.py http://100.118.215.73:5001
+
+O simplemente haz doble-click en: start_pro_worker.command
+
+Esto activará los 9 cores del Pro para trabajar en paralelo con los 9 del Air.
+Total: 18 cores procesando estrategias simultáneamente.

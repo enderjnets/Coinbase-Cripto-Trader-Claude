@@ -1,0 +1,30 @@
+============================================================
+📊 ESTADO DE CONFIGURACIÓN - API DE FUTUROS DE COINBASE
+============================================================
+
+TU API KEY NAME (Key Name): 069e2e6b-537d-463d-a42f-470e36eb94ed
+
+CONFIGURACIÓN REQUERIDA:
+
+1. Private Key (formato PEM) - NECESARIA PARA JWT
+   Para obtenerla:
+   a) Ve a: https://portal.coinbase.com/portal/api-keys
+   b) Busca la clave: "069e2e6b-537d-463d-a42f-470e36eb94ed"
+   c) Haz clic en "Show" o "Reveal" para ver la Private Key
+   d) Copia TODO el contenido (incluye -----BEGIN/END PRIVATE KEY-----)
+
+2. Para configurar, edita el archivo .env:
+   
+   COINBASE_API_KEY=069e2e6b-537d-463d-a42f-470e36eb94ed
+   COINBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nTU_CLAVE_AQUI\n-----END PRIVATE KEY-----
+
+3. O usa variables de entorno:
+
+   export COINBASE_API_KEY="069e2e6b-537d-463d-a42f-470e36eb94ed"
+   export COINBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+
+NOTA: La API Key de Spot y la Private Key para Futuros SON DIFERENTES.
+      - Spot usa API Key + API Secret
+      - Futuros usa API Key Name + Private Key (formato PEM)
+
+============================================================

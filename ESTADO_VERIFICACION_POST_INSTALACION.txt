@@ -1,0 +1,139 @@
+═══════════════════════════════════════════════════════════════
+   ✅ ESTADO POST-INSTALACIÓN DEL WORKER v2.5
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26 08:07
+WORKER: MacBook Pro (Python 3.9.6 ✅)
+HEAD: MacBook Air (Python 3.9.6 ✅)
+
+═══════════════════════════════════════════════════════════════
+✅ PROGRESO ACTUAL
+═══════════════════════════════════════════════════════════════
+
+[✅] Worker instalado con Python 3.9.6
+[✅] NO RuntimeError: Version mismatch
+[✅] Worker daemon iniciado y conectado (2 CPUs)
+[✅] Head Node reiniciado limpiamente
+[⏳] Worker esperando reconexión automática
+
+═══════════════════════════════════════════════════════════════
+🔍 SITUACIÓN ACTUAL
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA ENCONTRADO:
+  • Cluster tenía 493 nodos fantasma de pruebas anteriores
+  • Ray acumuló workers zombies que no se limpiaron
+
+SOLUCIÓN APLICADA:
+  • ray stop en Head Node
+  • ray start --head (cluster limpio)
+  • Ahora solo 1 nodo activo (Head, 10 CPUs)
+
+SIGUIENTE PASO:
+  • Worker daemon debe reconectarse automáticamente
+  • O reiniciar worker manualmente en MacBook Pro
+
+═══════════════════════════════════════════════════════════════
+🔧 REINICIAR WORKER MANUALMENTE (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+Si el worker no se reconecta en 1-2 minutos, ejecuta en el MacBook Pro:
+
+OPCIÓN 1: Reiniciar daemon launchd
+-----------------------------------
+launchctl stop com.bittrader.worker
+launchctl start com.bittrader.worker
+
+OPCIÓN 2: Reiniciar worker manualmente
+---------------------------------------
+~/.bittrader_worker/venv/bin/ray stop
+~/.bittrader_worker/venv/bin/ray start --address=100.118.215.73:6379 --num-cpus=12
+
+OPCIÓN 3: Verificar logs del worker
+------------------------------------
+tail -f ~/.bittrader_worker/worker.log
+
+Debería mostrar:
+  "✅ Conectado al cluster con 12 CPUs"
+
+═══════════════════════════════════════════════════════════════
+✅ VERIFICACIÓN POST-RECONEXIÓN
+═══════════════════════════════════════════════════════════════
+
+Una vez que el worker se reconecte, ejecuta en el Head (MacBook Air):
+
+1. Verificar cluster status:
+   ray status
+
+   Debe mostrar:
+     Active:
+       2 nodes
+       0.0/22.0 CPU  (10 Head + 12 Worker)
+
+2. Ejecutar test rápido:
+   python test_miner_quick.py
+
+   Debe mostrar:
+     ✅ Trades > 0 (50+ trades por genoma)
+     ✅ PnL != $0
+     ✅ Sin errores de módulos o versiones
+
+═══════════════════════════════════════════════════════════════
+📊 ESTADO DEL HEAD NODE
+═══════════════════════════════════════════════════════════════
+
+Current Ray Status:
+  Active Nodes: 1 (solo Head)
+  CPUs: 0.0/10.0
+  Memory: 0B/10.55GiB
+  Dashboard: http://127.0.0.1:8265
+
+Cluster ID: 308b014e5ecab3a6e02c39bf6d4b44712a36507cee8fb9f43e7e4791
+
+✅ El Head está limpio y funcionando correctamente
+⏳ Esperando reconexión del Worker
+
+═══════════════════════════════════════════════════════════════
+🎯 QUÉ ESPERAR DESPUÉS DE LA RECONEXIÓN
+═══════════════════════════════════════════════════════════════
+
+CONFIGURACIÓN FINAL:
+  • Head Node:   10 CPUs (MacBook Air)
+  • Worker Node: 12 CPUs (MacBook Pro)
+  • Total:       22 CPUs disponibles
+
+RENDIMIENTO ESPERADO:
+  • Strategy Miner: ~54 segundos por generación
+  • Velocidad: 2.2x más rápido que solo Head
+  • PnL Generación 1-10: Negativo (random)
+  • PnL Generación 30+: Positivo (optimizado)
+
+═══════════════════════════════════════════════════════════════
+⚠️ SI EL WORKER NO SE RECONECTA
+═══════════════════════════════════════════════════════════════
+
+POSIBLES CAUSAS:
+  1. Daemon del worker esperando más tiempo (normal)
+  2. Worker detectó que Head reinició y está esperando
+  3. Worker necesita reinicio manual
+
+SOLUCIÓN:
+  En el MacBook Pro, ejecuta:
+    launchctl stop com.bittrader.worker
+    launchctl start com.bittrader.worker
+
+  O reinicia el MacBook Pro completamente.
+
+═══════════════════════════════════════════════════════════════
+📋 CHECKLIST FINAL
+═══════════════════════════════════════════════════════════════
+
+[ ] Worker reconectado (ray status muestra 2 nodos)
+[ ] test_miner_quick.py genera trades > 0
+[ ] Dashboard muestra 22 CPUs disponibles
+[ ] No errores de "ModuleNotFoundError"
+[ ] No errores de "RuntimeError: Version mismatch"
+
+Una vez completado el checklist, el sistema está 100% operativo.
+
+═══════════════════════════════════════════════════════════════

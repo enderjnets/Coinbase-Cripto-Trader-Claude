@@ -1,0 +1,275 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "fecha": "2026-01-28",
+    "autor": "Claude Sonnet 4.5",
+    "validado": true
+  },
+
+  "configuraciones": {
+    "validacion_rapida": {
+      "nombre": "Test Rápido - Validación del Sistema",
+      "script": "test_miner_local.py",
+      "parametros": {
+        "population_size": 20,
+        "generations": 5,
+        "risk_level": "LOW",
+        "dataset": "BTC-USD_FIVE_MINUTE.csv (completo)",
+        "force_local": true
+      },
+      "tiempo_estimado_minutos": 15,
+      "estrategias_totales": 100,
+      "objetivo": "Verificar que el sistema funciona sin errores",
+      "cuando_usar": "Primera vez que ejecutas el miner, o después de cambios en el código",
+      "comando": "python3 test_miner_local.py"
+    },
+
+    "busqueda_rentabilidad": {
+      "nombre": "Búsqueda de Estrategias Rentables",
+      "script": "test_miner_productive.py",
+      "parametros": {
+        "population_size": 50,
+        "generations": 20,
+        "risk_level": "MEDIUM",
+        "dataset": "BTC-USD_FIVE_MINUTE.csv (tail 25000)",
+        "force_local": true
+      },
+      "tiempo_estimado_minutos": 50,
+      "estrategias_totales": 1000,
+      "objetivo": "Encontrar estrategias con PnL > $500",
+      "cuando_usar": "Para generar estrategias rentables para trading real",
+      "comando": "python3 test_miner_productive.py",
+      "criterio_exito": {
+        "pnl_minimo": 500,
+        "trades_minimo": 30,
+        "win_rate_minimo": 45
+      }
+    },
+
+    "optimizacion_exhaustiva": {
+      "nombre": "Optimización Exhaustiva - Exploración Completa",
+      "script": "test_miner_productive.py (modificar parámetros)",
+      "parametros": {
+        "population_size": 100,
+        "generations": 50,
+        "risk_level": "MEDIUM",
+        "dataset": "BTC-USD_FIVE_MINUTE.csv (tail 40000)",
+        "force_local": true
+      },
+      "tiempo_estimado_minutos": 180,
+      "estrategias_totales": 5000,
+      "objetivo": "Exploración exhaustiva del espacio de búsqueda",
+      "cuando_usar": "Cuando tienes tiempo y quieres las mejores estrategias posibles",
+      "comando": "python3 test_miner_productive.py # (modificar parámetros en el script)",
+      "criterio_exito": {
+        "pnl_minimo": 1000,
+        "trades_minimo": 50,
+        "win_rate_minimo": 50
+      }
+    },
+
+    "testing_rapido_iterativo": {
+      "nombre": "Testing Rápido Iterativo - Debug",
+      "script": "test_miner_local.py (modificar parámetros)",
+      "parametros": {
+        "population_size": 10,
+        "generations": 3,
+        "risk_level": "MEDIUM",
+        "dataset": "BTC-USD_FIVE_MINUTE.csv (tail 10000)",
+        "force_local": true
+      },
+      "tiempo_estimado_minutos": 5,
+      "estrategias_totales": 30,
+      "objetivo": "Debugging y ajuste rápido de parámetros",
+      "cuando_usar": "Para probar cambios en el código rápidamente",
+      "comando": "python3 test_miner_local.py # (modificar parámetros)"
+    }
+  },
+
+  "risk_levels": {
+    "LOW": {
+      "descripcion": "Riesgo bajo, operaciones conservadoras",
+      "stop_loss_range": "1-2%",
+      "take_profit_range": "2-5%",
+      "cuando_usar": "Para estrategias muy conservadoras",
+      "nota": "Puede generar pocas señales"
+    },
+    "MEDIUM": {
+      "descripcion": "Riesgo medio, balance entre riesgo y recompensa",
+      "stop_loss_range": "1-5%",
+      "take_profit_range": "2-10%",
+      "cuando_usar": "Recomendado para la mayoría de casos",
+      "nota": "Balance óptimo entre oportunidades y seguridad"
+    },
+    "HIGH": {
+      "descripcion": "Riesgo alto, operaciones agresivas",
+      "stop_loss_range": "2-10%",
+      "take_profit_range": "5-20%",
+      "cuando_usar": "Para estrategias muy agresivas o scalping",
+      "nota": "Genera más señales pero mayor exposición"
+    }
+  },
+
+  "datasets_recomendados": {
+    "rapido": {
+      "archivo": "BTC-USD_FIVE_MINUTE.csv",
+      "subset": "tail(10000)",
+      "periodo": "~35 días",
+      "uso": "Testing rápido y debug",
+      "ventajas": ["Muy rápido", "Ideal para iteraciones"],
+      "desventajas": ["Poca muestra", "Menos robusto"]
+    },
+    "balanceado": {
+      "archivo": "BTC-USD_FIVE_MINUTE.csv",
+      "subset": "tail(25000)",
+      "periodo": "~3 meses",
+      "uso": "Búsqueda de rentabilidad (RECOMENDADO)",
+      "ventajas": ["Balance tiempo/calidad", "Suficiente muestra", "Datos recientes"],
+      "desventajas": ["~50 min de ejecución"]
+    },
+    "exhaustivo": {
+      "archivo": "BTC-USD_FIVE_MINUTE.csv",
+      "subset": "tail(40000)",
+      "periodo": "~5 meses",
+      "uso": "Optimización exhaustiva",
+      "ventajas": ["Mucha muestra", "Muy robusto", "Captura diferentes condiciones de mercado"],
+      "desventajas": ["~3 horas de ejecución"]
+    },
+    "completo": {
+      "archivo": "BTC-USD_FIVE_MINUTE.csv",
+      "subset": "completo (59206 velas)",
+      "periodo": "~6 meses",
+      "uso": "Máxima validación",
+      "ventajas": ["Máxima muestra", "Más robusto"],
+      "desventajas": ["Muy lento", "Puede ser overfitting"]
+    }
+  },
+
+  "recursos_del_sistema": {
+    "modo_actual": "LOCAL",
+    "cpus_disponibles": 10,
+    "notas": "MacBook Air - Ray en modo local",
+    "throughput_aproximado": {
+      "estrategias_por_minuto": 6,
+      "generacion_completa_20_pop": "3 minutos",
+      "generacion_completa_50_pop": "2.5 minutos"
+    }
+  },
+
+  "mejores_practicas": {
+    "primera_ejecucion": {
+      "paso_1": "Ejecutar test_miner_local.py para validar",
+      "paso_2": "Si funciona, ejecutar test_miner_productive.py",
+      "paso_3": "Revisar resultados en archivos JSON",
+      "paso_4": "Si no es rentable, aumentar población/generaciones"
+    },
+    "optimizacion_iterativa": {
+      "inicio": "population_size=50, generations=20",
+      "si_no_rentable": "Aumentar a population_size=100, generations=30",
+      "si_muy_lento": "Reducir dataset a tail(15000)",
+      "si_convergencia_prematura": "Aumentar mutation_rate en código"
+    },
+    "interpretacion_resultados": {
+      "pnl_0_trades_0": "Estrategias muy restrictivas → Aumentar población o cambiar a MEDIUM risk",
+      "pnl_positivo_pocos_trades": "Estrategia selectiva → Puede ser válida, verificar drawdown",
+      "pnl_negativo_muchos_trades": "Overtrading → Aumentar selectividad de reglas",
+      "convergencia_gen_3": "Población muy pequeña → Aumentar a 100+"
+    }
+  },
+
+  "archivos_generados": {
+    "por_ejecucion": [
+      "BEST_STRATEGY_[timestamp].json",
+      "all_strategies_[timestamp].json",
+      "miner_debug.log (append)"
+    ],
+    "formato_best_strategy": {
+      "timestamp": "YYYY-MM-DD HH:MM:SS",
+      "pnl": "float",
+      "trades": "int",
+      "win_rate": "float",
+      "genome": {
+        "entry_rules": "array of rules",
+        "params": {
+          "sl_pct": "float",
+          "tp_pct": "float"
+        }
+      },
+      "generation": "int",
+      "execution_time_seconds": "float"
+    }
+  },
+
+  "comandos_utiles": {
+    "ejecutar_test_rapido": "python3 test_miner_local.py",
+    "ejecutar_test_productivo": "python3 test_miner_productive.py",
+    "monitorear_progreso": "tail -f test_productive_output.log",
+    "ver_logs_debug": "tail -100 miner_debug.log",
+    "listar_resultados": "ls -lt BEST_STRATEGY_*.json | head -5",
+    "ver_mejor_estrategia": "cat BEST_STRATEGY_*.json | python3 -m json.tool",
+    "cancelar_ejecucion": "ps aux | grep test_miner && kill [PID]"
+  },
+
+  "troubleshooting": {
+    "ray_ya_inicializado": {
+      "solucion": "ray.shutdown() en Python, o reiniciar script"
+    },
+    "no_encuentra_datos": {
+      "verificar": "ls -lh data/BTC-USD_FIVE_MINUTE.csv",
+      "debe_ser": "~3.9 MB"
+    },
+    "todas_estrategias_pnl_0": {
+      "causa": "Estrategias muy restrictivas",
+      "solucion": "Cambiar risk_level a MEDIUM o HIGH, aumentar población"
+    },
+    "proceso_colgado": {
+      "verificar": "tail -50 miner_debug.log",
+      "solucion": "Si timeout, reducir dataset o población"
+    },
+    "out_of_memory": {
+      "solucion": "Usar subset más pequeño (tail(10000)), reducir población"
+    }
+  },
+
+  "metricas_de_exito": {
+    "excelente": {
+      "pnl": "> $2000",
+      "trades": "> 100",
+      "win_rate": "> 55%"
+    },
+    "bueno": {
+      "pnl": "> $1000",
+      "trades": "> 50",
+      "win_rate": "> 50%"
+    },
+    "aceptable": {
+      "pnl": "> $500",
+      "trades": "> 30",
+      "win_rate": "> 45%"
+    },
+    "no_viable": {
+      "pnl": "≤ 0",
+      "trades": "< 20",
+      "win_rate": "< 40%"
+    }
+  },
+
+  "proximos_pasos": {
+    "inmediato": "Ejecutar python3 test_miner_productive.py",
+    "corto_plazo": [
+      "Analizar resultados",
+      "Validar estrategia rentable en out-of-sample",
+      "Documentar mejores configuraciones"
+    ],
+    "medio_plazo": [
+      "Implementar multi-objetivo (PnL + Sharpe + Drawdown)",
+      "Walk-forward analysis",
+      "Optimización de parámetros del GA"
+    ],
+    "largo_plazo": [
+      "Implementar Ray Job Submit (usar 22 CPUs)",
+      "Mejorar diversidad genética",
+      "Integración con trading real"
+    ]
+  }
+}

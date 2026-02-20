@@ -1,0 +1,42 @@
+{
+  "saved_at": "2026-02-10T17:18:59.747267",
+  "total_saved": 2,
+  "strategies": [
+    {
+      "result_id": 41283,
+      "work_unit_id": 33,
+      "pnl": 230.71,
+      "trades": 5,
+      "win_rate": 1.0,
+      "sharpe_ratio": 73248.6798,
+      "max_drawdown": 0.0,
+      "worker": "ender-rog_Linux_W2",
+      "submitted_at": 2461082.490494919,
+      "params": {
+        "population_size": 100,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      }
+    },
+    {
+      "result_id": 41282,
+      "work_unit_id": 33,
+      "pnl": 142.36,
+      "trades": 6,
+      "win_rate": 0.8333,
+      "sharpe_ratio": 13.4283,
+      "max_drawdown": 0.0039,
+      "worker": "ender-rog_Linux_W1",
+      "submitted_at": 2461082.4904839005,
+      "params": {
+        "population_size": 100,
+        "generations": 100,
+        "risk_level": "MEDIUM",
+        "data_file": "BTC-USD_FIVE_MINUTE.csv",
+        "max_candles": 59000
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+❌ Error: [Errno 5] Input/output error
+Traceback (most recent call last):
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/strategy_miner.py", line 301, in _evaluate_local
+    _, trades = bt.run_backtest(self.df, risk_level=self.risk_level, strategy_params=genome, strategy_cls=DynamicStrategy)
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/backtester.py", line 125, in run_backtest
+    print("🚀 Vectorizing Indicators...")
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/.venv/lib/python3.9/site-packages/ray/experimental/tqdm_ray.py", line 50, in safe_print
+    _print(*args, **kwargs)
+OSError: [Errno 5] Input/output error
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/optimizer_runner.py", line 162, in run_optimizer_process
+    best_genome, best_pnl = optimizer.run(
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/strategy_miner.py", line 251, in run
+    scored_pop = self.evaluate_population(population, progress_cb=eval_cb, cancel_event=cancel_event)
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/strategy_miner.py", line 202, in evaluate_population
+    results_raw = self._evaluate_local(population, progress_cb, cancel_event)
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/strategy_miner.py", line 312, in _evaluate_local
+    print(f"Local Backtest Error: {e}")
+  File "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Antigravity/.venv/lib/python3.9/site-packages/ray/experimental/tqdm_ray.py", line 50, in safe_print
+    _print(*args, **kwargs)
+OSError: [Errno 5] Input/output error

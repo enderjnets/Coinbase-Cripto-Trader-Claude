@@ -1,0 +1,55 @@
+================================================================================
+EJECUTA ESTOS COMANDOS EN MACBOOK AIR
+================================================================================
+
+PASO 1: Abrir Terminal en MacBook Air
+
+PASO 2: Copiar y pegar este comando completo:
+
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" 2>/dev/null || echo "Homebrew ya instalado"; cd ~/Downloads && curl -O "https://drive.google.com/uc?export=download&id=FILEID" && bash SETUP_WORKER_MACBOOK_AIR.sh
+
+ESPERA... Este método no funcionará con Google Drive.
+
+================================================================================
+MÉTODO SIMPLIFICADO - EJECUTA ESTO EN MACBOOK AIR:
+================================================================================
+
+1. Abre Terminal
+
+2. Copia y pega este ÚNICO comando (todo junto):
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude" && bash SETUP_WORKER_MACBOOK_AIR.sh
+
+3. Presiona Enter
+
+4. El script se ejecutará automáticamente y:
+   - Verificará Python 3.9.6
+   - Configurará SSH
+   - Instalará Ray 2.10.0
+   - Creará los daemons
+   - Conectará el Worker al Head
+
+5. Al terminar, verás:
+   ✅ WORKER INSTALADO Y ACTIVADO
+
+6. Para verificar que funciona, ejecuta:
+   tail -f ~/.bittrader_worker/logs/worker.log
+
+   Debe mostrar: "✅ Worker conectado"
+
+================================================================================
+SI GOOGLE DRIVE NO ESTÁ SINCRONIZADO EN MACBOOK AIR:
+================================================================================
+
+Ejecuta este comando completo (copia TODO):
+
+cat > ~/setup_worker.sh << 'ENDOFSCRIPT'
+[... contenido del script ...]
+ENDOFSCRIPT
+chmod +x ~/setup_worker.sh && bash ~/setup_worker.sh
+
+================================================================================
+
+¿El MacBook Air tiene acceso a Google Drive sincronizado?
+- SI: Usa el método simplificado
+- NO: Te crearé el script completo para copiar/pegar

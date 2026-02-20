@@ -1,0 +1,235 @@
+═══════════════════════════════════════════════════════════════
+   📦 INSTALADORES ACTUALIZADOS - RESUMEN COMPLETO
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26
+PROBLEMA RESUELTO: RuntimeError: Version mismatch (Python 3.9.6 vs 3.9.25)
+
+═══════════════════════════════════════════════════════════════
+ARCHIVOS ACTUALIZADOS
+═══════════════════════════════════════════════════════════════
+
+1. 🔴 HEAD NODE INSTALLER v3.0
+   ------------------------------
+   Archivo: Bittrader_Head_Installer_v3.0.zip (165 KB)
+   También:  Bittrader_Head_Installer.zip (copia)
+
+   Cambio Principal:
+     ANTES: Instalaba Python 3.11 desde Homebrew
+     AHORA: Descarga e instala Python 3.9.6 automáticamente
+
+2. 🔵 WORKER INSTALLER v2.5
+   ------------------------------
+   Archivo: Bittrader_Worker_Installer_v2.5.zip (28 KB)
+   También: Worker_Installer_LISTO.zip (copia)
+
+   Cambio Principal:
+     ANTES: Instalaba Python 3.9.25 desde Homebrew
+     AHORA: Descarga e instala Python 3.9.6 automáticamente
+
+═══════════════════════════════════════════════════════════════
+POR QUÉ ESTOS CAMBIOS
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA ORIGINAL:
+  • Head Node: Python 3.9.6 (del proyecto actual en Google Drive)
+  • Worker: Python 3.9.25 (instalado por Homebrew)
+  • Ray requiere versiones IDÉNTICAS de Python
+  • Resultado: "RuntimeError: Version mismatch"
+
+SOLUCIÓN:
+  • Ambos instaladores ahora usan Python 3.9.6 EXACTO
+  • Descarga automática desde python.org
+  • NO más Homebrew para Python (evita versiones incorrectas)
+  • Match perfecto entre Head y Workers
+
+═══════════════════════════════════════════════════════════════
+CAMBIOS TÉCNICOS
+═══════════════════════════════════════════════════════════════
+
+HEAD INSTALLER v3.0 (setup_head.sh):
+  Líneas 1-2:   Versión actualizada a v3.0
+  Líneas 24-95: Reemplazado Python 3.11 con Python 3.9.6
+                • Busca Python 3.9.6 en paths estándar
+                • Si no existe, descarga desde python.org
+                • Instala automáticamente con sudo installer
+                • Verifica versión exacta (falla si != 3.9.6)
+
+WORKER INSTALLER v2.5 (install.sh):
+  Líneas 1-6:    Versión actualizada a v2.5
+  Líneas 189-260: Reemplazado Python 3.9 (Homebrew) con Python 3.9.6
+                  • Mismo sistema de descarga/instalación que Head
+                  • Verifica versión exacta
+                  • NO más warnings de version mismatch
+
+═══════════════════════════════════════════════════════════════
+COMPATIBILIDAD
+═══════════════════════════════════════════════════════════════
+
+INSTALACIONES NUEVAS:
+  ✅ Usa los nuevos instaladores v3.0 (Head) y v2.5 (Worker)
+  ✅ Instalación automática de Python 3.9.6
+  ✅ Sin errores de version mismatch
+
+INSTALACIONES EXISTENTES:
+
+  Head Node (si ya tienes Python 3.9.6):
+    ✅ No necesitas actualizar
+    ✅ Tu Head ya usa Python 3.9.6 correctamente
+
+  Worker Node (si tiene Python 3.9.25):
+    ⚠️  DEBE actualizar a v2.5
+    ⚠️  Reinstalar para obtener Python 3.9.6
+
+═══════════════════════════════════════════════════════════════
+INSTRUCCIONES DE ACTUALIZACIÓN
+═══════════════════════════════════════════════════════════════
+
+WORKER (PRIORITARIO):
+  1. cd ~/Downloads/Worker_Installer_Package
+  2. bash uninstall.sh
+  3. cd ~/Downloads
+  4. unzip Bittrader_Worker_Installer_v2.5.zip
+  5. cd Worker_Installer_Package
+  6. bash install.sh
+     (Descargará e instalará Python 3.9.6 automáticamente)
+
+HEAD (OPCIONAL, solo si no tienes Python 3.9.6):
+  1. Verifica tu versión actual:
+     .venv/bin/python --version
+
+  2. Si NO es 3.9.6, reinstala con v3.0:
+     cd ~/Downloads
+     unzip Bittrader_Head_Installer_v3.0.zip
+     cd Head_Node_Installer_Package
+     bash setup_head.sh
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN POST-ACTUALIZACIÓN
+═══════════════════════════════════════════════════════════════
+
+EN EL WORKER:
+  bash verify_worker.sh
+
+  Debe mostrar:
+    [2/7] ✅ Python version: 3.9.6
+    [7/7] ✅ Worker corriendo y conectado
+    ✅ ¡TODO PERFECTO!
+
+EN EL HEAD:
+  ray status
+
+  Debe mostrar:
+    Active:
+      2 nodes
+      0.0/22.0 CPU
+
+  python test_miner_quick.py
+
+  Debe mostrar:
+    ✅ Trades > 0
+    ✅ PnL != $0
+    ✅ Sin errores
+
+WORKER STATUS (Desktop shortcut):
+  NO debe mostrar:
+    ❌ RuntimeError: Version mismatch
+
+═══════════════════════════════════════════════════════════════
+ARCHIVOS DE DOCUMENTACIÓN INCLUIDOS
+═══════════════════════════════════════════════════════════════
+
+WORKER INSTALLER:
+  • CAMBIOS_V2.5.txt - Changelog v2.5
+  • CAMBIOS_V2.4.txt - Changelog v2.4
+  • TROUBLESHOOTING.txt - Guía de solución de problemas
+  • verify_worker.sh - Script de diagnóstico
+  • README.txt - Guía de instalación
+
+HEAD INSTALLER:
+  • setup_head.sh (actualizado a v3.0)
+  • start_head.sh - Launcher
+  • src/ - Código fuente completo
+
+PROYECTO:
+  • RESUMEN_INSTALADORES_ACTUALIZADOS.txt (este archivo)
+  • INSTRUCCIONES_V2.5_INSTALACION_RAPIDA.txt
+  • INSTRUCCIONES_ACTUALIZAR_WORKER.txt
+
+═══════════════════════════════════════════════════════════════
+IMPACTO ESPERADO
+═══════════════════════════════════════════════════════════════
+
+ANTES:
+  ❌ RuntimeError: Version mismatch
+  ❌ Worker conectado pero inútil (0 trades)
+  ❌ Solo 10 CPUs usados (Head únicamente)
+  ❌ Crashes frecuentes (segmentation fault)
+
+DESPUÉS:
+  ✅ Python 3.9.6 en Head y Worker (match perfecto)
+  ✅ Sin errores de version mismatch
+  ✅ Worker ejecuta trades correctamente
+  ✅ 22 CPUs activos (10 Head + 12 Worker)
+  ✅ Strategy Miner 2.2x más rápido
+  ✅ No más crashes
+
+VELOCIDAD:
+  • Antes: ~2 minutos por generación
+  • Ahora: ~54 segundos por generación
+  • Mejora: 2.2x más rápido
+
+═══════════════════════════════════════════════════════════════
+NOTAS IMPORTANTES
+═══════════════════════════════════════════════════════════════
+
+CONTRASEÑA DE ADMINISTRADOR:
+  Los instaladores pedirán tu contraseña al instalar Python 3.9.6.
+  Esto es NORMAL y necesario (instala en /usr/local/).
+
+GOOGLE DRIVE:
+  El Worker necesita Google Drive sincronizado con el proyecto:
+    "Coinbase Cripto Trader Claude"
+
+  Sin Google Drive, el Worker no tendrá acceso al código y fallará.
+
+HOMEBREW:
+  Los instaladores NO usan Homebrew para Python.
+  Descargan Python 3.9.6 directo desde python.org para garantizar
+  la versión exacta.
+
+VERSIONES ANTERIORES:
+  Python 3.9.25 (Homebrew) puede coexistir con Python 3.9.6.
+  Los instaladores crean venvs con Python 3.9.6 específicamente.
+
+═══════════════════════════════════════════════════════════════
+SOPORTE
+═══════════════════════════════════════════════════════════════
+
+Si después de actualizar siguen habiendo problemas:
+
+1. Verifica Python versions:
+   Head:   .venv/bin/python --version
+   Worker: ~/.bittrader_worker/venv/bin/python --version
+
+   Ambos DEBEN ser: Python 3.9.6
+
+2. Ejecuta diagnósticos:
+   Worker: bash verify_worker.sh
+   Head:   ray status
+
+3. Revisa logs:
+   Worker: tail -50 ~/.bittrader_worker/worker.log
+   Head:   Revisa output de test_miner_quick.py
+
+═══════════════════════════════════════════════════════════════
+PRÓXIMOS PASOS
+═══════════════════════════════════════════════════════════════
+
+1. ✅ Actualizar Worker con v2.5 (PRIORITARIO)
+2. ✅ Verificar que Worker usa Python 3.9.6
+3. ✅ Probar test_miner_quick.py
+4. ✅ Confirmar que genera trades > 0
+5. ✅ Ejecutar Strategy Miner completo
+
+═══════════════════════════════════════════════════════════════

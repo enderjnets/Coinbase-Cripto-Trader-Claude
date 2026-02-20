@@ -1,0 +1,201 @@
+═══════════════════════════════════════════════════════════════
+   🔄 CÓMO ACTUALIZAR EL WORKER A v2.4
+═══════════════════════════════════════════════════════════════
+
+ARCHIVO ACTUALIZADO:
+  📦 Bittrader_Worker_Installer_v2.4.zip
+  📦 Worker_Installer_LISTO.zip (copia de respaldo)
+
+UBICACIÓN:
+  /Users/enderj/Library/CloudStorage/.../Coinbase Cripto Trader Claude/
+
+═══════════════════════════════════════════════════════════════
+OPCIÓN 1: Actualizar Worker Existente (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+PASOS EN EL MACBOOK PRO (Worker):
+
+1. Descomprimir el nuevo instalador:
+
+   cd ~/Downloads
+   unzip Bittrader_Worker_Installer_v2.4.zip
+   cd Worker_Installer_Package
+
+2. Desinstalar versión anterior:
+
+   bash uninstall.sh
+
+3. Reinstalar con versión actualizada:
+
+   bash install.sh
+
+4. Cuando pida HEAD_IP, usa: 100.118.215.73
+
+5. Verificar instalación:
+
+   bash verify_worker.sh
+
+   Deberías ver:
+     ✅ ¡TODO PERFECTO! Worker configurado correctamente.
+
+═══════════════════════════════════════════════════════════════
+OPCIÓN 2: Solo Actualizar worker_daemon.sh (Más Rápido)
+═══════════════════════════════════════════════════════════════
+
+Si el worker ya está instalado y solo quieres actualizar el script
+principal (sin reinstalar todo):
+
+1. Descomprimir el instalador:
+
+   cd ~/Downloads
+   unzip Bittrader_Worker_Installer_v2.4.zip
+
+2. Copiar el worker_daemon.sh actualizado:
+
+   cp Worker_Installer_Package/worker_daemon.sh ~/.bittrader_worker/
+
+3. Reiniciar el worker:
+
+   launchctl stop com.bittrader.worker
+   launchctl start com.bittrader.worker
+
+4. Verificar los logs:
+
+   tail -f ~/.bittrader_worker/worker.log
+
+   Deberías ver:
+     📂 Modo Drive Detectado: /Users/.../Coinbase Cripto Trader Claude
+     ✅ Código verificado: 4 módulos encontrados
+     ✅ Conectado al cluster con 12 CPUs
+
+═══════════════════════════════════════════════════════════════
+QUÉ ESPERAR DESPUÉS DE ACTUALIZAR
+═══════════════════════════════════════════════════════════════
+
+EN EL WORKER (MacBook Pro):
+
+1. Logs del worker mostrarán:
+   tail -20 ~/.bittrader_worker/worker.log
+
+   Output esperado:
+     📂 Modo Drive Detectado: /path/to/Coinbase Cripto Trader Claude
+     ✅ Código verificado: 4 módulos encontrados
+     ✅ Conectado al cluster con 12 CPUs
+
+2. Ray status mostrará conexión:
+   ~/.bittrader_worker/venv/bin/ray status
+
+   Output esperado:
+     Active:
+       2 nodes (head + worker)
+       0.0/22.0 CPU
+
+
+EN EL HEAD (MacBook Air):
+
+1. Ray status mostrará ambos nodos:
+   ray status
+
+   Output esperado:
+     Active:
+       2 nodes
+       0.0/22.0 CPU
+
+2. Test rápido del Strategy Miner:
+   python test_miner_quick.py
+
+   ANTES de v2.4:
+     ❌ 0 trades en todas las generaciones
+     ❌ PnL = $0.00
+     ❌ Errores "ModuleNotFoundError: No module named 'backtester'"
+
+   DESPUÉS de v2.4:
+     ✅ Trades > 0 (50+ trades por genoma)
+     ✅ PnL != $0 (puede ser negativo al inicio, pero no $0)
+     ✅ Sin errores de módulos faltantes
+     ✅ 2.2x más rápido (22 CPUs vs 10 CPUs)
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN COMPLETA (EN EL WORKER)
+═══════════════════════════════════════════════════════════════
+
+Ejecuta el script de verificación:
+
+  cd ~/Downloads/Worker_Installer_Package
+  bash verify_worker.sh
+
+Checklist automático:
+  [1/7] ✅ Instalación existe
+  [2/7] ✅ Python 3.9.x instalado
+  [3/7] ✅ Ray instalado e importable
+  [4/7] ✅ Configuración válida (HEAD_IP)
+  [5/7] ✅ Conectividad con Head Node
+  [6/7] ✅ Código del proyecto sincronizado
+  [7/7] ✅ Worker corriendo y conectado
+
+Si todos son ✅, estás listo.
+
+═══════════════════════════════════════════════════════════════
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+Si hay problemas después de actualizar, consulta:
+
+  ~/Downloads/Worker_Installer_Package/TROUBLESHOOTING.txt
+
+Problemas comunes cubiertos:
+  • ModuleNotFoundError (código no sincronizado)
+  • Python Version Mismatch (crashes)
+  • Worker no conecta al Head Node
+  • Worker usa demasiada CPU
+
+═══════════════════════════════════════════════════════════════
+RESUMEN DE CAMBIOS EN v2.4
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA RESUELTO 1:
+  ❌ Worker conectado pero 0 trades ejecutados
+  ✅ Ahora encuentra el código en Google Drive automáticamente
+
+PROBLEMA RESUELTO 2:
+  ❌ Crashes por "Python version mismatch"
+  ✅ Ahora valida y advierte sobre versión de Python
+
+PROBLEMA RESUELTO 3:
+  ❌ Buscaba nombre incorrecto del proyecto
+  ✅ Ahora busca "Coinbase Cripto Trader Claude" (correcto)
+
+ARCHIVOS NUEVOS:
+  • verify_worker.sh - Diagnóstico automático
+  • TROUBLESHOOTING.txt - Guía de solución de problemas
+  • CAMBIOS_V2.4.txt - Changelog detallado
+
+RENDIMIENTO ESPERADO:
+  • Velocidad: 2.2x más rápido (22 CPUs vs 10)
+  • Generaciones: ~54 seg (vs ~2 min antes)
+  • Funcionalidad: Worker ahora ejecuta trades correctamente
+
+═══════════════════════════════════════════════════════════════
+NOTAS IMPORTANTES
+═══════════════════════════════════════════════════════════════
+
+GOOGLE DRIVE ES NECESARIO:
+  El worker necesita acceso al código del proyecto vía Google Drive.
+  Si Google Drive no está instalado o sincronizado en el MacBook Pro,
+  el worker seguirá conectándose pero las tareas fallarán.
+
+  Verifica que Google Drive esté:
+    1. Instalado en el MacBook Pro
+    2. Sincronizando la carpeta "Coinbase Cripto Trader Claude"
+    3. Los archivos .py estén presentes en:
+       ~/Library/CloudStorage/GoogleDrive*/*/Coinbase*Cripto*Claude/
+
+PYTHON VERSION:
+  El Head Node usa Python 3.9.6.
+  Si el Worker usa una versión diferente (ej: 3.9.25), Ray puede
+  tener problemas. El instalador ahora advierte sobre esto.
+
+  Si hay crashes, instala Python 3.9.6 exacto desde:
+    https://www.python.org/ftp/python/3.9.6/python-3.9.6-macos11.pkg
+
+═══════════════════════════════════════════════════════════════

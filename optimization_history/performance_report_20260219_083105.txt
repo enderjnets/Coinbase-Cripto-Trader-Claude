@@ -1,0 +1,158 @@
+================================================================================
+📊 REPORTE DE RENDIMIENTO AVANZADO
+   Generado: 2026-02-19 08:31:05
+================================================================================
+
+📈 ESTADÍSTICAS GENERALES
+----------------------------------------
+Work Units Totales:    224
+Work Units Completados: 224
+Workers Registrados:   18
+Resultados Totales:    764
+Resultados Positivos:   761 (99.6%)
+
+💰 PnL:
+   Mínimo: $-27.88
+   Máximo: $443.99
+   Promedio: $254.75
+   Total: $194,630.47
+
+🏆 RÉCORD ACTUAL: $443.99
+   ✅ ¡RÉCORD SUPERADO!
+
+🏆 TOP 10 ESTRATEGIAS GANADORAS
+--------------------------------------------------------------------------------
+
+1. Volume Profile Pro
+   💰 PnL: $443.99 | Trades: 12 | Win: 66.7%
+   📊 Sharpe: 12.93 | Max DD: 0.52%
+   ⚙️  Pop: 250 | Gen: 300 | Risk: HIGH
+   🛡️  SL: 1.8% | TP: 4.5% | Volume Profile
+
+2. BB + RSI Combo
+   💰 PnL: $443.99 | Trades: 12 | Win: 66.7%
+   📊 Sharpe: 12.93 | Max DD: 0.52%
+   ⚙️  Pop: 200 | Gen: 250 | Risk: HIGH
+   🛡️  SL: None% | TP: None% | Unknown
+
+3. Exact-258-320
+   💰 PnL: $429.26 | Trades: 14 | Win: 64.3%
+   📊 Sharpe: 11.92 | Max DD: 0.38%
+   ⚙️  Pop: 258 | Gen: 320 | Risk: HIGH
+   🛡️  SL: 1.9% | TP: 4.8% | Volume Profile
+
+4. Mean Reversion 1min
+   💰 PnL: $429.24 | Trades: 14 | Win: 64.3%
+   📊 Sharpe: 11.91 | Max DD: 0.38%
+   ⚙️  Pop: 250 | Gen: 200 | Risk: HIGH
+   🛡️  SL: 1.5% | TP: 3.0% | Scalping
+
+5. Perfect-251-300
+   💰 PnL: $427.75 | Trades: 14 | Win: 64.3%
+   📊 Sharpe: 11.91 | Max DD: 0.38%
+   ⚙️  Pop: 251 | Gen: 300 | Risk: HIGH
+   🛡️  SL: 1.8% | TP: 4.51% | Volume Profile
+
+6. OPTIMIZED-200-250-5
+   💰 PnL: $427.31 | Trades: 14 | Win: 64.3%
+   📊 Sharpe: 11.91 | Max DD: 0.38%
+   ⚙️  Pop: 200 | Gen: 250 | Risk: HIGH
+   🛡️  SL: None% | TP: None% | Unknown
+
+7. Volume Ganador Ultra
+   💰 PnL: $425.98 | Trades: 14 | Win: 64.3%
+   📊 Sharpe: 11.91 | Max DD: 0.38%
+   ⚙️  Pop: 280 | Gen: 325 | Risk: HIGH
+   🛡️  SL: 2.0% | TP: 5.0% | Volume Profile
+
+8. Auto-Optimized-330-400
+   💰 PnL: $425.33 | Trades: 14 | Win: 64.3%
+   📊 Sharpe: 11.91 | Max DD: 0.38%
+   ⚙️  Pop: 330 | Gen: 400 | Risk: HIGH
+   🛡️  SL: 1.9% | TP: 5.5% | Volume Profile
+
+9. Volume Mega
+   💰 PnL: $424.62 | Trades: 17 | Win: 70.6%
+   📊 Sharpe: 7.65 | Max DD: 0.54%
+   ⚙️  Pop: 600 | Gen: 800 | Risk: HIGH
+   🛡️  SL: 1.0% | TP: 6.0% | Volume Profile
+
+10. Mean Reversion Volume Hybrid
+   💰 PnL: $424.56 | Trades: 17 | Win: 70.6%
+   📊 Sharpe: 7.65 | Max DD: 0.54%
+   ⚙️  Pop: 600 | Gen: 450 | Risk: HIGH
+   🛡️  SL: 1.2% | TP: 3.5% | Mean Reversion
+
+
+📊 PATRONES EN ESTRATEGIAS EXITOSAS (PnL > $350)
+----------------------------------------
+
+Population Sizes más frecuentes:
+   200: 18 estrategias
+   250: 13 estrategias
+   251: 7 estrategias
+   600: 6 estrategias
+   300: 6 estrategias
+   30: 5 estrategias
+   150: 4 estrategias
+   400: 4 estrategias
+   500: 4 estrategias
+   280: 4 estrategias
+
+Generations más frecuentes:
+   250: 18 estrategias
+   100: 9 estrategias
+   300: 7 estrategias
+   350: 6 estrategias
+   340: 6 estrategias
+   320: 6 estrategias
+   302: 5 estrategias
+   200: 4 estrategias
+   450: 4 estrategias
+   400: 4 estrategias
+
+Risk Levels:
+   HIGH: 127 estrategias
+   MEDIUM: 4 estrategias
+   LOW: 4 estrategias
+
+Categorías:
+   Volume Profile: 100 estrategias
+   Unknown: 24 estrategias
+   SMC: 4 estrategias
+   Scalping: 2 estrategias
+   Mean Reversion: 2 estrategias
+   Day Trading: 1 estrategias
+   Technical: 1 estrategias
+   Trend: 1 estrategias
+
+Promedio Mutation Rate: 0.173
+Promedio Crossover Rate: 0.870
+
+
+👥 TOP 10 WORKERS POR RENDIMIENTO
+----------------------------------------
+1. ender-rog_Linux_W...
+   WUs completados: 61 | Avg PnL: $297.44 | Max PnL: $425.98
+2. ender-rog_Linux_W4...
+   WUs completados: 8 | Avg PnL: $286.15 | Max PnL: $396.47
+3. ender-rog_Linux_W5...
+   WUs completados: 8 | Avg PnL: $261.60 | Max PnL: $422.59
+4. Enders-MacBook-Pro.local_Darwin_W1...
+   WUs completados: 220 | Avg PnL: $256.01 | Max PnL: $429.26
+5. Enders-MacBook-Pro.local_Darwin_W2...
+   WUs completados: 199 | Avg PnL: $254.91 | Max PnL: $443.99
+6. Enders-MacBook-Pro.local_Darwin_W3...
+   WUs completados: 198 | Avg PnL: $251.91 | Max PnL: $427.31
+7. ender-rog_Linux_W10...
+   WUs completados: 8 | Avg PnL: $237.80 | Max PnL: $395.86
+8. ender-rog_Linux_W7...
+   WUs completados: 7 | Avg PnL: $234.64 | Max PnL: $371.21
+9. ender-rog_Linux_W8...
+   WUs completados: 8 | Avg PnL: $228.92 | Max PnL: $422.40
+10. ender-rog_Linux_W9...
+   WUs completados: 8 | Avg PnL: $214.83 | Max PnL: $342.92
+
+================================================================================
+FIN DEL REPORTE
+================================================================================

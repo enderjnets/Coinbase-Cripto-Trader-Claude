@@ -1,0 +1,588 @@
+{
+  "execution_info": {
+    "timestamp": "2026-01-30 15:41:33",
+    "mode": "SEQUENTIAL_NO_RAY",
+    "duration_seconds": 773.811047077179,
+    "population": 20,
+    "generations": 15
+  },
+  "best_strategy": {
+    "gen": 11,
+    "pnl": 25.00792837938252,
+    "num_trades": 0,
+    "win_rate": 0.0,
+    "genome": {
+      "entry_rules": [
+        {
+          "left": {
+            "indicator": "RSI",
+            "period": 100
+          },
+          "op": ">",
+          "right": {
+            "value": 60
+          }
+        },
+        {
+          "left": {
+            "indicator": "SMA",
+            "period": 10
+          },
+          "op": "<",
+          "right": {
+            "indicator": "SMA",
+            "period": 200
+          }
+        }
+      ],
+      "params": {
+        "sl_pct": 0.01770677377929228,
+        "tp_pct": 0.03314049034074544
+      }
+    }
+  },
+  "all_generations": [
+    {
+      "gen": 0,
+      "pnl": -101.65466676756739,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "field": "close"
+            },
+            "op": ">",
+            "right": {
+              "indicator": "EMA",
+              "period": 100
+            }
+          },
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 200
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 14
+            },
+            "op": ">",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.031729652387049376,
+          "tp_pct": 0.05689314511518956
+        }
+      }
+    },
+    {
+      "gen": 1,
+      "pnl": 3.808448972715837,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.026143921164445645,
+          "tp_pct": 0.04037818592129312
+        }
+      }
+    },
+    {
+      "gen": 2,
+      "pnl": 3.808448972715837,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.026143921164445645,
+          "tp_pct": 0.04037818592129312
+        }
+      }
+    },
+    {
+      "gen": 3,
+      "pnl": 7.455078503114237,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.02156732787830292,
+          "tp_pct": 0.04146320330437729
+        }
+      }
+    },
+    {
+      "gen": 4,
+      "pnl": 9.000928259331317,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.019627255393090903,
+          "tp_pct": 0.04146320330437729
+        }
+      }
+    },
+    {
+      "gen": 5,
+      "pnl": 9.749076119760502,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.01868831480520281,
+          "tp_pct": 0.04146320330437729
+        }
+      }
+    },
+    {
+      "gen": 6,
+      "pnl": 24.916751811040513,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.02011227351439391,
+          "tp_pct": 0.033048947601446436
+        }
+      }
+    },
+    {
+      "gen": 7,
+      "pnl": 24.916751811040513,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.02011227351439391,
+          "tp_pct": 0.033048947601446436
+        }
+      }
+    },
+    {
+      "gen": 8,
+      "pnl": 24.916751811040513,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.02011227351439391,
+          "tp_pct": 0.033048947601446436
+        }
+      }
+    },
+    {
+      "gen": 9,
+      "pnl": 24.916751811040513,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.02011227351439391,
+          "tp_pct": 0.033048947601446436
+        }
+      }
+    },
+    {
+      "gen": 10,
+      "pnl": 24.916751811040513,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.02011227351439391,
+          "tp_pct": 0.033048947601446436
+        }
+      }
+    },
+    {
+      "gen": 11,
+      "pnl": 25.00792837938252,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.01770677377929228,
+          "tp_pct": 0.03314049034074544
+        }
+      }
+    },
+    {
+      "gen": 12,
+      "pnl": 25.00792837938252,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.01770677377929228,
+          "tp_pct": 0.03314049034074544
+        }
+      }
+    },
+    {
+      "gen": 13,
+      "pnl": 25.00792837938252,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.01770677377929228,
+          "tp_pct": 0.03314049034074544
+        }
+      }
+    },
+    {
+      "gen": 14,
+      "pnl": 25.00792837938252,
+      "trades": 0,
+      "win_rate": 0.0,
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "indicator": "SMA",
+              "period": 10
+            },
+            "op": "<",
+            "right": {
+              "indicator": "SMA",
+              "period": 200
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.01770677377929228,
+          "tp_pct": 0.03314049034074544
+        }
+      }
+    }
+  ],
+  "statistics": {
+    "profitable_count": 14,
+    "success_rate": 93.33333333333333,
+    "avg_pnl": 10.4521857755202,
+    "best_pnl": 25.00792837938252,
+    "worst_pnl": -101.65466676756739
+  }
+}

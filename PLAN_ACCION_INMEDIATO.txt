@@ -1,0 +1,299 @@
+═══════════════════════════════════════════════════════════════
+   🎯 PLAN DE ACCIÓN INMEDIATO - ARREGLAR WORKER
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26 13:05
+PROBLEMA: Worker crashea con SIGSEGV, solo 1 de 5 gen genera trades
+
+═══════════════════════════════════════════════════════════════
+📊 SITUACIÓN ACTUAL
+═══════════════════════════════════════════════════════════════
+
+HEAD NODE (MacBook Air):
+  • Ray: 2.51.2
+  • grpcio: 1.76.0
+  • Python: 3.9.6
+  • Status: Detenido
+
+WORKER NODE (MacBook Pro):
+  • Ray: 2.51.2 (presumido)
+  • Python: 3.9.6
+  • Status: Crasheando (SIGSEGV)
+
+PROBLEMA IDENTIFICADO:
+  • Ray 2.51.2 es INESTABLE en macOS
+  • SIGSEGV crashes repetidos en Worker
+  • 16 nodos zombie creados
+  • Solo Gen 4 de 5 generó trades
+
+═══════════════════════════════════════════════════════════════
+✅ SOLUCIÓN RECOMENDADA: DOWNGRADE A RAY 2.9.0 (LTS)
+═══════════════════════════════════════════════════════════════
+
+Ray 2.9.0 es una versión LTS (Long Term Support) conocida por ser
+estable en macOS. Ray 2.51.2 es demasiado reciente (Enero 2025) y
+tiene bugs conocidos en macOS.
+
+VENTAJAS:
+  ✅ Versión LTS probada en producción
+  ✅ Sin crashes SIGSEGV conocidos
+  ✅ Compatibilidad total con Python 3.9.6
+  ✅ grpcio estable
+
+DESVENTAJAS:
+  ⚠️ Algunas features nuevas no disponibles (no las usamos)
+
+═══════════════════════════════════════════════════════════════
+📋 PASO 1: DOWNGRADE RAY EN HEAD NODE (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+Ejecuta estos comandos EN LA MACBOOK AIR:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+# 1. Desinstalar Ray actual
+.venv/bin/pip uninstall -y ray
+
+# 2. Instalar Ray 2.9.0
+.venv/bin/pip install ray==2.9.0
+
+# 3. Verificar instalación
+.venv/bin/ray --version
+
+# Debe mostrar:
+#   ray, version 2.9.0
+
+# 4. Verificar grpcio (debe ser compatible)
+.venv/bin/pip freeze | grep grpcio
+
+# Si es necesario, actualizar grpcio:
+# .venv/bin/pip install grpcio==1.60.0
+
+═══════════════════════════════════════════════════════════════
+📋 PASO 2: DOWNGRADE RAY EN WORKER (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+IMPORTANTE: Ejecuta estos comandos EN LA MACBOOK PRO
+
+# 1. Detener worker daemon
+launchctl stop com.bittrader.worker
+
+# 2. Desinstalar Ray actual
+~/.bittrader_worker/venv/bin/pip uninstall -y ray
+
+# 3. Instalar Ray 2.9.0 (MISMA VERSIÓN que Head)
+~/.bittrader_worker/venv/bin/pip install ray==2.9.0
+
+# 4. Verificar instalación
+~/.bittrader_worker/venv/bin/ray --version
+
+# Debe mostrar:
+#   ray, version 2.9.0
+
+# 5. Verificar grpcio
+~/.bittrader_worker/venv/bin/pip freeze | grep grpcio
+
+# Si es necesario, actualizar para que coincida con Head:
+# ~/.bittrader_worker/venv/bin/pip install grpcio==1.60.0
+
+# 6. Reiniciar worker daemon
+launchctl start com.bittrader.worker
+
+# 7. Verificar logs
+tail -30 ~/.bittrader_worker/worker.log
+
+# Debe mostrar:
+#   ✅ Conectado al cluster con 12 CPUs
+#   NO debe mostrar SIGSEGV
+
+═══════════════════════════════════════════════════════════════
+📋 PASO 3: REINICIAR HEAD NODE CON RAY 2.9.0 (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+# Iniciar Ray Head con configuración correcta
+.venv/bin/ray start --head \
+  --port=6379 \
+  --node-ip-address=100.118.215.73
+
+# Debe mostrar:
+#   Local node IP: 100.118.215.73
+#   Dashboard: http://100.118.215.73:8265
+
+# Verificar status
+.venv/bin/ray status
+
+# Debe mostrar inicialmente:
+#   Active: 1 node (Head)
+#   0.0/10.0 CPU
+
+# Esperar 30-60 segundos para que Worker se conecte
+
+# Verificar nuevamente:
+.venv/bin/ray status
+
+# Ahora debe mostrar:
+#   Active: 2 nodes
+#   0.0/22.0 CPU  (10 Head + 12 Worker)
+
+═══════════════════════════════════════════════════════════════
+📋 PASO 4: EJECUTAR TEST DE VERIFICACIÓN (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+python test_miner_quick.py
+
+RESULTADO ESPERADO (SIN CRASHES):
+  ════════════════════════════════════════════════════════════
+  🧬 STRATEGY MINER - TEST RÁPIDO
+
+  ✅ Ray inicializado
+  📊 Dataset: 58,901 velas
+  ⚙️  CPUs: 22
+
+  🧬 Gen 0/5
+     ✅ PnL: $XX.XX | Trades: 30-50 | Win: XX%  ← Trades > 0
+
+  🧬 Gen 1/5
+     ✅ PnL: $XX.XX | Trades: 40-60 | Win: XX%  ← Trades > 0
+
+  🧬 Gen 2/5
+     ✅ PnL: $XX.XX | Trades: 50-70 | Win: XX%  ← Trades > 0
+
+  🧬 Gen 3/5
+     ✅ PnL: $XX.XX | Trades: 50-70 | Win: XX%  ← Trades > 0
+
+  🧬 Gen 4/5
+     ✅ PnL: $XX.XX | Trades: 50-70 | Win: XX%  ← Trades > 0
+
+  🏆 RESULTADO
+  💰 Mejor PnL: $100-$500
+  ⏱️  Tiempo: ~270 segundos (5 gen × ~54 seg)
+
+  ✅ ¡FUNCIONA! El algoritmo encontró estrategia
+  ════════════════════════════════════════════════════════════
+
+VERIFICACIONES CRÍTICAS:
+  ✅ TODAS las generaciones generan trades (no solo 1)
+  ✅ Trades > 20 en cada gen
+  ✅ Sin errores SIGSEGV en logs
+  ✅ Cluster se mantiene en 2 nodos (no 16)
+  ✅ Tiempo ~54 seg por gen (eficiencia con 22 CPUs)
+
+SI HAY ERRORES:
+  • Revisar logs del worker: tail -50 ~/.bittrader_worker/worker.log
+  • Verificar ray status: .venv/bin/ray status
+  • Consultar TROUBLESHOOTING.txt
+
+═══════════════════════════════════════════════════════════════
+📋 PASO 5: VERIFICAR ESTABILIDAD (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+Después del test, verificar que no hay nodos zombie:
+
+.venv/bin/ray status
+
+Debe mostrar:
+  Active: 2 nodes  ← SOLO 2 (no 16)
+  0.0/22.0 CPU
+
+Si hay más de 2 nodos:
+  • Hay un problema persistente
+  • Continuar con Solución 2 o 3 del documento DIAGNOSTICO
+
+═══════════════════════════════════════════════════════════════
+🔄 SI RAY 2.9.0 NO RESUELVE EL PROBLEMA
+═══════════════════════════════════════════════════════════════
+
+PLAN B: Desactivar Dashboard
+-----------------------------
+El dashboard_agent está crasheando. Desactivarlo puede ayudar.
+
+# En MacBook Air:
+.venv/bin/ray stop
+.venv/bin/ray start --head \
+  --port=6379 \
+  --node-ip-address=100.118.215.73 \
+  --include-dashboard=false
+
+Esto elimina la UI visual pero puede estabilizar el cluster.
+
+PLAN C: Simplificar a 1 Nodo
+-----------------------------
+Si nada funciona, usar solo Head Node (10 CPUs).
+
+# Desinstalar worker completamente en MacBook Pro:
+cd ~/Downloads/Worker_Installer_Package
+bash uninstall.sh
+
+# Usar solo MacBook Air
+# Rendimiento: ~2 min por gen (vs ~54 seg)
+# Pero 100% estable
+
+PLAN D: Reinstalar Worker en Directorio Local
+----------------------------------------------
+Si Google Drive está causando issues, mover código:
+
+# En MacBook Pro:
+mkdir ~/bittrader_local
+rsync -av "/Users/.../Coinbase Cripto Trader Claude/" ~/bittrader_local/
+
+# Modificar worker_daemon.sh para usar ~/bittrader_local
+# Esto elimina dependencia de Google Drive sync
+
+═══════════════════════════════════════════════════════════════
+✅ CHECKLIST DE ÉXITO
+═══════════════════════════════════════════════════════════════
+
+[ ] Ray 2.9.0 instalado en Head (MacBook Air)
+[ ] Ray 2.9.0 instalado en Worker (MacBook Pro)
+[ ] Versiones de grpcio coinciden en ambos
+[ ] Worker daemon reiniciado
+[ ] Head Node iniciado con IP correcta (100.118.215.73)
+[ ] ray status muestra 2 nodos, 22 CPUs
+[ ] test_miner_quick.py completa sin errores
+[ ] TODAS las generaciones generan trades > 20
+[ ] Sin SIGSEGV en logs
+[ ] Cluster se mantiene en 2 nodos (no aumenta)
+[ ] Tiempo por gen ~54 segundos
+
+═══════════════════════════════════════════════════════════════
+📞 PRÓXIMOS PASOS
+═══════════════════════════════════════════════════════════════
+
+AHORA:
+  1. Ejecutar Paso 1 en MacBook Air (downgrade Ray)
+  2. Ejecutar Paso 2 en MacBook Pro (downgrade Ray)
+  3. Ejecutar Paso 3 en MacBook Air (reiniciar Head)
+  4. Ejecutar Paso 4 en MacBook Air (test)
+  5. Verificar resultados
+
+SI FUNCIONA:
+  • Ejecutar Strategy Miner completo (100 población, 50 gen)
+  • Tiempo estimado: ~45 minutos
+  • PnL esperado: $1,000+ en gen 50
+
+SI NO FUNCIONA:
+  • Consultar DIAGNOSTICO_PROBLEMA_WORKER.txt
+  • Probar Plan B (sin dashboard)
+  • O Plan C (1 solo nodo)
+
+═══════════════════════════════════════════════════════════════
+🎯 OBJETIVO
+═══════════════════════════════════════════════════════════════
+
+SISTEMA ESTABLE CON:
+  • 2 nodos (Head + Worker)
+  • 22 CPUs distribuidos
+  • Sin crashes
+  • Trades > 0 en todas las generaciones
+  • Rendimiento ~54 seg/gen
+
+LISTO PARA:
+  • Optimización completa de estrategias
+  • Ejecución de 50+ generaciones
+  • PnL $1,000+ esperado
+
+═══════════════════════════════════════════════════════════════

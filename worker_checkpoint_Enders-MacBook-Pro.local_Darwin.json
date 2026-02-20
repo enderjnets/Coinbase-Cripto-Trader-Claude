@@ -1,0 +1,36 @@
+{
+  "work_id": null,
+  "generation": 30,
+  "best_genome": {
+    "entry_rules": [
+      {
+        "left": {
+          "indicator": "SMA",
+          "period": 100
+        },
+        "op": ">",
+        "right": {
+          "indicator": "SMA",
+          "period": 200
+        }
+      },
+      {
+        "left": {
+          "indicator": "RSI",
+          "period": 50
+        },
+        "op": "<",
+        "right": {
+          "value": 25
+        }
+      }
+    ],
+    "params": {
+      "sl_pct": 0.07162950708888999,
+      "tp_pct": 0.04956938070143895
+    }
+  },
+  "best_pnl": 74.0328728989424,
+  "timestamp": 1770214572.145652,
+  "worker_id": "Enders-MacBook-Pro.local_Darwin"
+}

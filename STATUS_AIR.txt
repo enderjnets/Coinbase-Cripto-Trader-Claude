@@ -1,0 +1,6 @@
+Estado: EJECUTANDO
+Generación: 24/25 (96%)
+Tiempo transcurrido: 60m 35s
+Tiempo restante estimado: ~2m
+Mejor PnL hasta ahora: $78.12
+Última actualización: 23:07:41

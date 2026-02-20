@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-01-30 15:41:33",
+  "mode": "SEQUENTIAL_NO_RAY",
+  "pnl": 25.00792837938252,
+  "trades": 0,
+  "win_rate": 0.0,
+  "genome": {
+    "entry_rules": [
+      {
+        "left": {
+          "indicator": "RSI",
+          "period": 100
+        },
+        "op": ">",
+        "right": {
+          "value": 60
+        }
+      },
+      {
+        "left": {
+          "indicator": "SMA",
+          "period": 10
+        },
+        "op": "<",
+        "right": {
+          "indicator": "SMA",
+          "period": 200
+        }
+      }
+    ],
+    "params": {
+      "sl_pct": 0.01770677377929228,
+      "tp_pct": 0.03314049034074544
+    }
+  },
+  "generation": 11,
+  "execution_time_seconds": 773.811047077179,
+  "config": {
+    "population": 20,
+    "generations": 15,
+    "risk_level": "MEDIUM"
+  }
+}

@@ -1,0 +1,147 @@
+================================================================================
+INSTRUCCIONES PARA CONFIGURAR MACBOOK AIR COMO WORKER
+================================================================================
+
+IMPORTANTE: Ejecuta estos pasos EN EL MACBOOK AIR
+
+================================================================================
+PASO 1: HABILITAR SSH EN MACBOOK PRO (Head)
+================================================================================
+
+**EJECUTA ESTO EN MACBOOK PRO** (donde ya está el Head corriendo):
+
+1. Abre Terminal
+2. Ejecuta:
+   sudo systemsetup -setremotelogin on
+
+3. Verifica:
+   sudo systemsetup -getremotelogin
+
+   Debe decir: "Remote Login: On"
+
+================================================================================
+PASO 2: DESCARGAR INSTALADOR EN MACBOOK AIR
+================================================================================
+
+El instalador está en Google Drive:
+/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/Bittrader_Worker_Installer_v3.0_SSH.zip
+
+1. Descarga el archivo .zip a tu carpeta Downloads
+2. Descomprime el archivo:
+   cd ~/Downloads
+   unzip Bittrader_Worker_Installer_v3.0_SSH.zip
+
+================================================================================
+PASO 3: CONFIGURAR CLAVES SSH (EN MACBOOK AIR)
+================================================================================
+
+1. Generar clave SSH (si no tienes):
+   ssh-keygen -t ed25519 -C "bittrader-worker-air"
+
+   Presiona Enter en todas las preguntas (sin contraseña)
+
+2. Copiar clave al MacBook Pro:
+   ssh-copy-id enderj@100.77.179.14
+
+   Te pedirá la contraseña del MacBook Pro UNA SOLA VEZ
+
+3. Verificar que funciona sin contraseña:
+   ssh enderj@100.77.179.14 "echo OK"
+
+   Debe mostrar "OK" sin pedir contraseña
+
+================================================================================
+PASO 4: INSTALAR WORKER (EN MACBOOK AIR)
+================================================================================
+
+1. Ir al directorio del instalador:
+   cd ~/Downloads/Worker_Installer_Package_SSH
+
+2. Ejecutar instalador:
+   ./install.sh
+
+3. Instalar daemons:
+   ./install_daemons.sh
+
+================================================================================
+PASO 5: VERIFICAR FUNCIONAMIENTO
+================================================================================
+
+EN MACBOOK AIR:
+
+1. Ver log del SSH tunnel:
+   tail -f ~/.bittrader_worker/logs/ssh_tunnel.log
+
+   Debe mostrar: "✅ SSH tunnel activo"
+
+2. Ver log del Worker:
+   tail -f ~/.bittrader_worker/logs/worker.log
+
+   Debe mostrar: "✅ Worker conectado exitosamente"
+
+EN MACBOOK PRO (Head):
+
+1. Verificar cluster:
+   cd ~/.bittrader_head
+   source venv/bin/activate
+   ray status
+
+   Debe mostrar:
+   Active: 2 nodes
+   Resources: 0.0/22.0 CPU (12 Head + 10 Worker)
+
+================================================================================
+PASO 6: EJECUTAR TEST COMPLETO
+================================================================================
+
+EN MACBOOK PRO:
+
+1. Ir al directorio del proyecto:
+   cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+2. Activar entorno:
+   source .venv/bin/activate
+
+3. Ejecutar test:
+   python test_miner_quick.py
+
+   Debe mostrar:
+   - ⚙️  CPUs: 22
+   - Completar en ~30-35 segundos
+   - Sin crashes
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Problema: "Permission denied (publickey)"
+Solución:
+   - Verifica que ejecutaste ssh-copy-id correctamente
+   - En MacBook Air: cat ~/.ssh/id_ed25519.pub
+   - Copia el contenido y agrégalo manualmente en MacBook Pro:
+     echo "CLAVE_PUBLICA" >> ~/.ssh/authorized_keys
+
+Problema: "Connection refused"
+Solución:
+   - Verifica que SSH esté habilitado en MacBook Pro
+   - Verifica Tailscale: tailscale status
+   - Verifica conectividad: ping 100.77.179.14
+
+Problema: "Worker no aparece en ray status"
+Solución:
+   - En MacBook Air:
+     launchctl unload ~/Library/LaunchAgents/com.bittrader.worker.plist
+     launchctl load ~/Library/LaunchAgents/com.bittrader.worker.plist
+   - Ver logs: tail -f ~/.bittrader_worker/logs/worker.log
+
+================================================================================
+
+Una vez completados todos los pasos, tendrás:
+
+✅ MacBook Pro: Head Node con 12 CPUs (siempre en casa)
+✅ MacBook Air: Worker con 10 CPUs (funciona desde cualquier ubicación)
+✅ Cluster total: 22 CPUs distribuidos
+✅ Conexión segura via Tailscale + SSH tunnel
+✅ Auto-reconexión si se pierde la conexión
+
+================================================================================

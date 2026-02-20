@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0a0a0f">
+    <title>Bittrader Dashboard</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a25;
+            --text-primary: #ffffff;
+            --text-secondary: #888899;
+            --accent-green: #00ff88;
+            --accent-red: #ff4466;
+            --accent-blue: #4488ff;
+            --accent-yellow: #ffcc00;
+            --accent-cyan: #00ccff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 12px;
+            padding-bottom: 80px;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.offline {
+            background: var(--accent-red);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* KPI Cards Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        @media (min-width: 768px) {
+            .kpi-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .kpi-grid {
+                grid-template-columns: repeat(6, 1fr);
+            }
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .kpi-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .kpi-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .kpi-delta {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .kpi-value.green { color: var(--accent-green); }
+        .kpi-value.red { color: var(--accent-red); }
+        .kpi-value.blue { color: var(--accent-blue); }
+        .kpi-value.yellow { color: var(--accent-yellow); }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+
+        /* Best Strategy Card */
+        .best-strategy {
+            background: linear-gradient(135deg, #1a2a1a 0%, #1a1a25 100%);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(0,255,136,0.2);
+        }
+
+        .best-strategy-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .best-strategy-title {
+            font-size: 14px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .best-strategy-badge {
+            background: var(--accent-green);
+            color: #000;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .best-strategy-pnl {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--accent-green);
+            margin-bottom: 4px;
+        }
+
+        .best-strategy-roi {
+            font-size: 16px;
+            color: var(--accent-green);
+            opacity: 0.8;
+        }
+
+        .best-strategy-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        @media (min-width: 768px) {
+            .best-strategy-metrics {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        .metric-item {
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .metric-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-top: 2px;
+        }
+
+        /* Workers Section */
+        .section-title {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .workers-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        @media (min-width: 768px) {
+            .workers-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .worker-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .worker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .worker-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .worker-status {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 10px;
+        }
+
+        .worker-status.active {
+            background: rgba(0,255,136,0.15);
+            color: var(--accent-green);
+        }
+
+        .worker-status.inactive {
+            background: rgba(255,68,102,0.15);
+            color: var(--accent-red);
+        }
+
+        .worker-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .worker-stat-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Refresh Button */
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(0,200,255,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+
+        .refresh-btn.loading {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Auto-refresh indicator */
+        .auto-refresh {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: var(--bg-card);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .auto-refresh select {
+            background: transparent;
+            border: none;
+            color: var(--accent-cyan);
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        /* Loading Skeleton */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-secondary) 50%, var(--bg-card) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Error State */
+        .error-card {
+            background: rgba(255,68,102,0.1);
+            border: 1px solid rgba(255,68,102,0.3);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            color: var(--accent-red);
+        }
+
+        /* Last Update */
+        .last-update {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 20px;
+            padding-bottom: 60px;
+        }
+
+        /* iPad/Tablet specific */
+        @media (min-width: 768px) and (max-width: 1024px) {
+            body {
+                padding: 20px;
+            }
+
+            .kpi-card {
+                padding: 20px;
+            }
+
+            .kpi-value {
+                font-size: 28px;
+            }
+
+            .best-strategy-pnl {
+                font-size: 48px;
+            }
+        }
+
+        /* Desktop */
+        @media (min-width: 1024px) {
+            body {
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 24px;
+            }
+
+            .best-strategy {
+                display: grid;
+                grid-template-columns: 1fr 2fr;
+                gap: 24px;
+            }
+
+            .best-strategy-main {
+                border-right: 1px solid rgba(255,255,255,0.1);
+                padding-right: 24px;
+            }
+
+            .best-strategy-metrics {
+                border-top: none;
+                padding-top: 0;
+                margin-top: 0;
+                align-content: center;
+            }
+        }
+
+        /* Samsung Galaxy Fold (narrow) */
+        @media (max-width: 320px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .kpi-value {
+                font-size: 20px;
+            }
+
+            .best-strategy-pnl {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">Bittrader</div>
+        <div class="status-badge">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">Conectando...</span>
+        </div>
+    </header>
+
+    <main id="dashboard">
+        <!-- KPI Cards -->
+        <div class="kpi-grid" id="kpiGrid">
+            <div class="kpi-card">
+                <div class="kpi-label">Completados</div>
+                <div class="kpi-value" id="completedWU">--/--</div>
+                <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Workers</div>
+                <div class="kpi-value blue" id="activeWorkers">--</div>
+                <div class="kpi-delta" id="totalWorkers">de -- registrados</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Velocidad</div>
+                <div class="kpi-value yellow" id="speed">--/hr</div>
+                <div class="kpi-delta" id="avgExec">-- prom</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">CPU-Horas</div>
+                <div class="kpi-value" id="cpuHours">-- hrs</div>
+                <div class="kpi-delta" id="totalResults">-- resultados</div>
+            </div>
+        </div>
+
+        <!-- Best Strategy -->
+        <div class="best-strategy" id="bestStrategy">
+            <div class="best-strategy-main">
+                <div class="best-strategy-header">
+                    <div class="best-strategy-title">
+                        🏆 Mejor Estrategia
+                    </div>
+                    <span class="best-strategy-badge" id="canonBadge">VALIDADO</span>
+                </div>
+                <div class="best-strategy-pnl" id="bestPnl">$0.00</div>
+                <div class="best-strategy-roi" id="bestRoi">+0.00% ROI</div>
+            </div>
+            <div class="best-strategy-metrics">
+                <div class="metric-item">
+                    <div class="metric-value" id="bestTrades">--</div>
+                    <div class="metric-label">Trades</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="bestWinRate">--%</div>
+                    <div class="metric-label">Win Rate</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="bestSharpe">--</div>
+                    <div class="metric-label">Sharpe</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="bestDrawdown">--%</div>
+                    <div class="metric-label">Drawdown</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workers -->
+        <div class="section-title">👥 Workers Activos</div>
+        <div class="workers-grid" id="workersGrid">
+            <!-- Workers will be rendered here -->
+        </div>
+
+        <div class="last-update">
+            Última actualización: <span id="lastUpdate">--:--:--</span>
+        </div>
+    </main>
+
+    <!-- Controls -->
+    <div class="auto-refresh">
+        Auto:
+        <select id="refreshInterval" onchange="setRefreshInterval(this.value)">
+            <option value="0">Off</option>
+            <option value="5">5s</option>
+            <option value="10" selected>10s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+        </select>
+    </div>
+
+    <button class="refresh-btn" id="refreshBtn" onclick="fetchData()">↻</button>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let refreshTimer = null;
+        let currentInterval = 10;
+
+        async function fetchData() {
+            const btn = document.getElementById('refreshBtn');
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+
+            btn.classList.add('loading');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/dashboard_stats`);
+                if (!response.ok) throw new Error('API Error');
+
+                const data = await response.json();
+                updateDashboard(data);
+
+                statusDot.classList.remove('offline');
+                statusText.textContent = 'Conectado';
+
+            } catch (error) {
+                console.error('Error:', error);
+                statusDot.classList.add('offline');
+                statusText.textContent = 'Sin conexión';
+            }
+
+            btn.classList.remove('loading');
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        }
+
+        function updateDashboard(data) {
+            const wu = data.work_units || {};
+            const perf = data.performance || {};
+            const best = data.best_strategy || {};
+            const workers = data.worker_stats || [];
+
+            // KPIs
+            const total = wu.total || 0;
+            const completed = wu.completed || 0;
+            const progress = total > 0 ? (completed / total * 100) : 0;
+
+            document.getElementById('completedWU').textContent = `${completed}/${total}`;
+            document.getElementById('progressFill').style.width = `${progress}%`;
+
+            document.getElementById('activeWorkers').textContent = data.workers?.active || 0;
+            document.getElementById('totalWorkers').textContent = `de ${data.workers?.total_registered || 0} registrados`;
+
+            const rph = perf.results_per_hour || 0;
+            const avgExec = perf.avg_execution_time || 0;
+            document.getElementById('speed').textContent = `${rph.toFixed(1)}/hr`;
+            document.getElementById('avgExec').textContent = `${avgExec.toFixed(0)}s prom`;
+
+            const cpuHours = (perf.total_compute_time || 0) / 3600;
+            document.getElementById('cpuHours').textContent = `${cpuHours.toFixed(1)} hrs`;
+            document.getElementById('totalResults').textContent = `${perf.total_results || 0} resultados`;
+
+            // Best Strategy
+            if (best.pnl) {
+                const pnl = best.pnl || 0;
+                const capital = best.initial_capital || 10000;
+                const roi = (pnl / capital * 100);
+
+                document.getElementById('bestPnl').textContent = `$${pnl.toFixed(2)}`;
+                document.getElementById('bestPnl').style.color = pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+
+                document.getElementById('bestRoi').textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}% ROI`;
+                document.getElementById('bestRoi').style.color = roi >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+
+                document.getElementById('bestTrades').textContent = best.trades || 0;
+                document.getElementById('bestWinRate').textContent = `${((best.win_rate || 0) * 100).toFixed(0)}%`;
+                document.getElementById('bestSharpe').textContent = (best.sharpe_ratio || 0).toFixed(2);
+                document.getElementById('bestDrawdown').textContent = `${((best.max_drawdown || 0) * 100).toFixed(0)}%`;
+
+                const badge = document.getElementById('canonBadge');
+                badge.textContent = best.is_canonical ? 'VALIDADO' : 'PENDIENTE';
+                badge.style.background = best.is_canonical ? 'var(--accent-green)' : 'var(--accent-yellow)';
+            }
+
+            // Workers
+            const workersGrid = document.getElementById('workersGrid');
+            workersGrid.innerHTML = '';
+
+            // Group by machine
+            const machines = {};
+            workers.forEach(w => {
+                const machine = w.machine || 'Otro';
+                if (!machines[machine]) machines[machine] = [];
+                machines[machine].push(w);
+            });
+
+            Object.entries(machines).forEach(([machine, machineWorkers]) => {
+                const activeCount = machineWorkers.filter(w => w.status === 'active').length;
+                const totalWU = machineWorkers.reduce((sum, w) => sum + (w.work_units_completed || 0), 0);
+                const maxPnl = Math.max(...machineWorkers.map(w => w.max_pnl || 0));
+
+                const card = document.createElement('div');
+                card.className = 'worker-card';
+                card.innerHTML = `
+                    <div class="worker-header">
+                        <span class="worker-name">${machine}</span>
+                        <span class="worker-status ${activeCount > 0 ? 'active' : 'inactive'}">
+                            ${activeCount > 0 ? `${activeCount} activos` : 'offline'}
+                        </span>
+                    </div>
+                    <div class="worker-stats">
+                        <span>WU: <span class="worker-stat-value">${totalWU}</span></span>
+                        <span>Mejor: <span class="worker-stat-value">$${maxPnl.toFixed(0)}</span></span>
+                    </div>
+                `;
+                workersGrid.appendChild(card);
+            });
+        }
+
+        function setRefreshInterval(seconds) {
+            currentInterval = parseInt(seconds);
+
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+
+            if (currentInterval > 0) {
+                refreshTimer = setInterval(fetchData, currentInterval * 1000);
+            }
+        }
+
+        // Initial load
+        fetchData();
+        setRefreshInterval(10);
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+        }
+    </script>
+</body>
+</html>

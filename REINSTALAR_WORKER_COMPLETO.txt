@@ -1,0 +1,301 @@
+═══════════════════════════════════════════════════════════════
+   🔄 REINSTALACIÓN COMPLETA DEL WORKER - PASO A PASO
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26
+VERSIÓN: Worker v2.5 (Python 3.9.6 automático)
+
+POR QUÉ REINSTALAR:
+  • Asegurar instalación 100% limpia
+  • Eliminar cualquier residuo del cluster anterior
+  • Garantizar sincronización correcta con Head Node limpio
+
+═══════════════════════════════════════════════════════════════
+PASO 1: DESINSTALAR WORKER ACTUAL (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+Ejecuta estos comandos en Terminal del MacBook Pro:
+
+cd ~/Downloads/Worker_Installer_Package
+bash uninstall.sh
+
+Debe mostrar:
+  "Desinstalando Bittrader Worker..."
+  "✅ Worker desinstalado correctamente"
+
+VERIFICAR DESINSTALACIÓN:
+ls ~/.bittrader_worker/
+
+Debe mostrar:
+  "ls: ~/.bittrader_worker/: No such file or directory"
+
+═══════════════════════════════════════════════════════════════
+PASO 2: LIMPIAR ARCHIVOS ANTERIORES (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+cd ~/Downloads
+rm -rf Worker_Installer_Package
+
+# Verificar que no hay procesos Ray corriendo
+ps aux | grep ray
+
+# Si hay procesos ray, eliminarlos:
+pkill -9 ray
+
+═══════════════════════════════════════════════════════════════
+PASO 3: DESCARGAR NUEVO INSTALADOR v2.5 (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+OPCIÓN A: Si el .zip está en Google Drive sincronizado
+-------------------------------------------------------
+Copia desde Google Drive:
+  "Coinbase Cripto Trader Claude/Bittrader_Worker_Installer_v2.5.zip"
+
+A:
+  ~/Downloads/
+
+OPCIÓN B: Si no tienes Google Drive en MacBook Pro
+---------------------------------------------------
+1. En MacBook Air, copia el archivo a USB o AirDrop
+2. O compártelo por Messages/Email
+3. Guárdalo en ~/Downloads/ del MacBook Pro
+
+═══════════════════════════════════════════════════════════════
+PASO 4: DESCOMPRIMIR INSTALADOR (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+cd ~/Downloads
+unzip Bittrader_Worker_Installer_v2.5.zip
+
+Debe crear:
+  ~/Downloads/Worker_Installer_Package/
+
+VERIFICAR CONTENIDO:
+ls ~/Downloads/Worker_Installer_Package/
+
+Debe mostrar:
+  • install.sh
+  • uninstall.sh
+  • worker_daemon.sh
+  • verify_worker.sh
+  • CAMBIOS_V2.5.txt
+  • TROUBLESHOOTING.txt
+  • README.txt
+
+═══════════════════════════════════════════════════════════════
+PASO 5: EJECUTAR INSTALADOR v2.5 (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+cd ~/Downloads/Worker_Installer_Package
+bash install.sh
+
+QUÉ VA A PASAR:
+  [1/7] Verificando sistema operativo...
+  [2/7] Configuración del cluster...
+        HEAD_IP: 100.118.215.73 (ya configurado)
+  [3/7] Detectando modo de conexión...
+        ✅ Head Node alcanzable (LAN o Tailscale)
+  [5/7] Verificando Python y Ray...
+        ⚡ DESCARGARÁ Python 3.9.6 automáticamente
+        Se te pedirá tu CONTRASEÑA (para instalar Python)
+        (Esto puede tardar 2-3 minutos)
+  [6/7] Instalando scripts del worker...
+  [7/7] Configurando inicio automático...
+  [8/8] Creando acceso directo...
+
+TIEMPO TOTAL: ~8-10 minutos
+
+IMPORTANTE:
+  • NO cierres la terminal mientras se instala
+  • Se te pedirá contraseña 1 vez (para instalar Python 3.9.6)
+  • Espera a ver "✅ INSTALACIÓN COMPLETADA"
+
+═══════════════════════════════════════════════════════════════
+PASO 6: VERIFICAR INSTALACIÓN (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+Ejecuta el script de verificación:
+
+cd ~/Downloads/Worker_Installer_Package
+bash verify_worker.sh
+
+RESULTADO ESPERADO:
+  [1/7] ✅ Instalación existe
+  [2/7] ✅ Python version: 3.9.6
+  [3/7] ✅ Ray instalado e importable
+  [4/7] ✅ Configuración válida (HEAD_IP)
+  [5/7] ✅ Conectividad con Head Node
+  [6/7] ✅ Código del proyecto sincronizado
+  [7/7] ✅ Worker corriendo y conectado
+
+  ✅ ¡TODO PERFECTO! Worker configurado correctamente.
+
+SI HAY ERRORES:
+  • Lee los mensajes detallados de verify_worker.sh
+  • Consulta TROUBLESHOOTING.txt
+  • Revisa logs: tail -50 ~/.bittrader_worker/worker.log
+
+═══════════════════════════════════════════════════════════════
+PASO 7: VERIFICAR LOGS DEL WORKER (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+tail -30 ~/.bittrader_worker/worker.log
+
+DEBE MOSTRAR (últimas líneas):
+  📂 Modo Drive Detectado: /Users/.../Coinbase Cripto Trader Claude
+  ✅ Código verificado: 4 módulos encontrados
+  ✅ Conectado al cluster con 12 CPUs
+
+NO DEBE MOSTRAR:
+  ❌ RuntimeError: Version mismatch
+  ❌ ModuleNotFoundError
+  ❌ No puedo contactar al Head
+
+═══════════════════════════════════════════════════════════════
+PASO 8: VERIFICAR CLUSTER DESDE HEAD (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+En el MacBook Air, ejecuta:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+ray status
+
+RESULTADO ESPERADO:
+  ======== Autoscaler status: 2026-01-26 XX:XX:XX ========
+  Node status
+  ---------------------------------------------------------------
+  Active:
+   1 node_xxxxxxxx (Head)
+   1 node_yyyyyyyy (Worker)
+
+  Resources
+  ---------------------------------------------------------------
+  Total Usage:
+   0.0/22.0 CPU   ← 10 Head + 12 Worker = 22 TOTAL
+   0B/XXGiB memory
+
+SI SOLO MUESTRA 1 NODO:
+  • Espera 30-60 segundos (daemon tarda en conectar)
+  • Verifica logs del worker en MacBook Pro
+  • Reinicia daemon: launchctl restart com.bittrader.worker
+
+═══════════════════════════════════════════════════════════════
+PASO 9: EJECUTAR TEST FINAL (MacBook Air)
+═══════════════════════════════════════════════════════════════
+
+python test_miner_quick.py
+
+RESULTADO ESPERADO:
+  ════════════════════════════════════════════════════════════
+  🧬 STRATEGY MINER - TEST RÁPIDO CON BUG CORREGIDO
+  ════════════════════════════════════════════════════════════
+
+  ✅ Ray inicializado
+
+  📊 Dataset: 58,901 velas
+
+  ⚙️  Configuración TEST:
+     • Población: 10
+     • Generaciones: 5
+     • CPUs: 22    ← ¡DEBE MOSTRAR 22!
+
+  ════════════════════════════════════════════════════════════
+  ⚡ INICIANDO...
+  ════════════════════════════════════════════════════════════
+
+  🧬 Gen 1/5
+     ✅ PnL: $  -234.56 | Trades:  52 | Win:  38.5%
+
+  🧬 Gen 2/5
+     ✅ PnL: $  -123.45 | Trades:  48 | Win:  41.7%
+
+  ... (continúa)
+
+  🏆 RESULTADO
+  ════════════════════════════════════════════════════════════
+
+  💰 Mejor PnL: $XXX.XX
+  ⏱️  Tiempo: ~270 segundos (5 gen × ~54 seg c/u)
+
+  ✅ ¡FUNCIONA! El algoritmo encontró estrategia
+
+VERIFICACIONES CRÍTICAS:
+  ✅ Trades > 0 (NO más 0 trades)
+  ✅ PnL != $0
+  ✅ Sin errores "ModuleNotFoundError"
+  ✅ Sin errores "RuntimeError: Version mismatch"
+  ✅ Tiempo ~54 seg por gen (no ~2 min)
+
+SI TRADES = 0:
+  ❌ Google Drive no sincronizado en Worker
+  ❌ Verificar: [6/7] en verify_worker.sh
+
+═══════════════════════════════════════════════════════════════
+PASO 10: MONITOREO OPCIONAL (MacBook Pro)
+═══════════════════════════════════════════════════════════════
+
+Para ver el worker en acción:
+
+1. DESKTOP SHORTCUT:
+   Double-click "Bittrader Worker Status" en Desktop
+
+   Debe mostrar logs en vivo:
+     ✅ Conectado al cluster con 12 CPUs
+     (logs de conexión continua)
+
+2. COMANDO MANUAL:
+   tail -f ~/.bittrader_worker/worker.log
+
+═══════════════════════════════════════════════════════════════
+CHECKLIST FINAL
+═══════════════════════════════════════════════════════════════
+
+[ ] Worker desinstalado completamente
+[ ] Archivos anteriores eliminados
+[ ] Instalador v2.5 descomprimido
+[ ] install.sh ejecutado exitosamente
+[ ] Python 3.9.6 instalado (verify_worker.sh)
+[ ] verify_worker.sh muestra ✅ en 7/7 checks
+[ ] Logs muestran "Código verificado: 4 módulos"
+[ ] ray status muestra 2 nodos, 22 CPUs
+[ ] test_miner_quick.py genera trades > 0
+[ ] NO errores de RuntimeError o ModuleNotFoundError
+
+═══════════════════════════════════════════════════════════════
+🎉 ¡ÉXITO! SISTEMA 100% OPERATIVO
+═══════════════════════════════════════════════════════════════
+
+CONFIGURACIÓN FINAL:
+  • Head Node:   10 CPUs (MacBook Air)
+  • Worker Node: 12 CPUs (MacBook Pro)
+  • Total:       22 CPUs disponibles
+  • Python:      3.9.6 en ambos (match perfecto)
+  • Ray:         2.51.2 en ambos
+
+RENDIMIENTO:
+  • Strategy Miner: ~54 seg/generación
+  • Velocidad: 2.2x más rápido vs solo Head
+  • Sin errores de versiones o módulos
+
+PRÓXIMOS PASOS OPCIONALES:
+  • Ejecutar Strategy Miner completo (100 población, 50 gen)
+  • Tiempo estimado: ~45 minutos
+  • PnL esperado: $1,000+ en generación 50+
+
+═══════════════════════════════════════════════════════════════
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+SI ALGO FALLA:
+  1. Lee verify_worker.sh output (muestra errores específicos)
+  2. Revisa ~/.bittrader_worker/worker.log (últimas 50 líneas)
+  3. Consulta TROUBLESHOOTING.txt en Worker_Installer_Package/
+  4. Verifica Google Drive está sincronizado en MacBook Pro
+
+SI PERSISTE EL PROBLEMA:
+  • Reinicia MacBook Pro completamente
+  • Reinstala de nuevo (Paso 1-10)
+  • Verifica Tailscale: tailscale status
+
+═══════════════════════════════════════════════════════════════

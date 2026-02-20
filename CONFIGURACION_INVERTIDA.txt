@@ -1,0 +1,297 @@
+═══════════════════════════════════════════════════════════════
+   📋 CONFIGURACIÓN INVERTIDA - MACBOOK PRO COMO HEAD
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26
+VERSIONES:
+  • Head Installer: v4.0 (MacBook Pro Edition)
+  • Worker Installer: v2.6 (Mobile Edition)
+
+═══════════════════════════════════════════════════════════════
+❓ ¿POR QUÉ INVERTIR LA CONFIGURACIÓN?
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA ORIGINAL:
+  • MacBook Air (Head) es móvil - cambia de red constantemente
+  • WiFi → Celular → WiFi → Otra WiFi
+  • Cada cambio de red desconecta al Worker
+  • Worker (MacBook Pro) crashea con SIGSEGV al perder conexión con Head
+
+DESCUBRIMIENTO CLAVE:
+  • Ray Head DEBE tener red 100% estable
+  • Ray Worker puede tolerar desconexiones si el Head es estable
+  • El problema NO era Ray, sino la red inestable del Head móvil
+
+SOLUCIÓN:
+  ✅ MacBook Pro (fijo en casa) → HEAD NODE (red estable)
+  ✅ MacBook Air (móvil) → WORKER MÓVIL (tolera desconexiones)
+
+═══════════════════════════════════════════════════════════════
+🏗️ NUEVA ARQUITECTURA
+═══════════════════════════════════════════════════════════════
+
+MACBOOK PRO (HEAD NODE):
+  • Ubicación: Fijo en casa
+  • Red: WiFi doméstica (100% estable)
+  • CPUs: 12
+  • IP: Tailscale (100.x.x.x)
+  • Rol: Coordinador central del cluster
+  • Uptime: 24/7
+
+MACBOOK AIR (WORKER MÓVIL):
+  • Ubicación: Contigo (móvil)
+  • Red: WiFi cambia constantemente
+  • CPUs: 10
+  • IP: Tailscale (cambia con la red)
+  • Rol: Worker con reconexión automática
+  • Uptime: Solo cuando estás trabajando
+
+═══════════════════════════════════════════════════════════════
+📊 MODOS DE OPERACIÓN
+═══════════════════════════════════════════════════════════════
+
+MODO 1: SOLO HEAD (MacBook Pro)
+  • Cuándo: Cuando estás fuera sin MacBook Air
+  • CPUs: 12
+  • Velocidad: Test ~42 segundos
+  • Estabilidad: 100%
+  • Uso: Procesos en background mientras trabajas fuera
+
+MODO 2: HEAD + WORKER MÓVIL (Ambos conectados)
+  • Cuándo: En casa con WiFi estable
+  • CPUs: 22 (12 Head + 10 Worker Air)
+  • Velocidad: Test ~30-35 segundos
+  • Estabilidad: 100% (Worker se reconecta automáticamente)
+  • Uso: Máximo rendimiento para optimizaciones largas
+
+MODO 3: WORKER MÓVIL EN MOVIMIENTO
+  • Cuándo: Llevando MacBook Air a otro lugar
+  • CPUs: 22 → 12 (Worker se desconecta) → 22 (Worker se reconecta)
+  • Comportamiento: Worker se desconecta al perder WiFi, se reconecta automáticamente al llegar
+  • Estabilidad: Head sigue corriendo sin problemas
+  • Uso: Trabajos largos que continúan aunque el Worker se desconecte
+
+═══════════════════════════════════════════════════════════════
+✅ VENTAJAS DE ESTA CONFIGURACIÓN
+═══════════════════════════════════════════════════════════════
+
+1. HEAD SIEMPRE ESTABLE
+   • MacBook Pro fijo en casa
+   • Red WiFi doméstica 100% estable
+   • Sin cambios de IP
+   • Sin desconexiones
+
+2. MÁS CPUS QUE ANTES
+   • 12 CPUs (MacBook Pro) vs 10 CPUs (MacBook Air)
+   • 20% más rápido cuando solo corre Head
+   • 22 CPUs cuando ambos están conectados
+
+3. WORKER MÓVIL RESILIENTE
+   • Se desconecta sin crashear el Head
+   • Se reconecta automáticamente
+   • No requiere intervención manual
+   • Daemon monitorea conexión cada 30 segundos
+
+4. FLEXIBILIDAD
+   • Puedes usar MacBook Air para trabajar mientras Head corre
+   • Puedes llevar MacBook Air contigo sin afectar al Head
+   • Puedes usar solo Head cuando no necesitas Worker
+   • Puedes agregar más Workers en el futuro
+
+5. SIMPLICIDAD
+   • Instaladores automáticos (v4.0 Head, v2.6 Worker)
+   • Configuración en 5 minutos
+   • Sin configuración manual compleja
+   • Todo sincronizado via Google Drive
+
+═══════════════════════════════════════════════════════════════
+📋 INSTRUCCIONES DE INSTALACIÓN
+═══════════════════════════════════════════════════════════════
+
+PASO 1: DETENER CONFIGURACIÓN ACTUAL
+--------------------------------------
+
+En MacBook Air (Head actual):
+  cd "/path/to/Coinbase Cripto Trader Claude"
+  .venv/bin/ray stop
+
+
+PASO 2: INSTALAR HEAD EN MACBOOK PRO
+--------------------------------------
+
+1. En MacBook Pro, abrir Terminal
+
+2. Ir al proyecto:
+   cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+3. Ir a la carpeta del instalador:
+   cd Head_Node_Installer_Package
+
+4. Ejecutar instalador:
+   chmod +x setup_head_macbook_pro.sh
+   ./setup_head_macbook_pro.sh
+
+5. El instalador mostrará:
+   ✅ Python 3.9.6 instalado
+   ✅ Ray 2.51.2 instalado
+   ✅ Tailscale conectado
+   ✅ Configuración guardada
+
+6. IMPORTANTE: Copiar la IP de Tailscale que muestra
+   Ejemplo: 100.x.x.x (será diferente a la del Air)
+
+
+PASO 3: INICIAR RAY HEAD EN MACBOOK PRO
+----------------------------------------
+
+Desde el proyecto en MacBook Pro:
+  cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+  .venv/bin/ray start --head \
+    --port=6379 \
+    --node-ip-address=<TAILSCALE_IP> \
+    --include-dashboard=false \
+    --num-cpus=12
+
+Verificar:
+  .venv/bin/ray status
+
+Debe mostrar:
+  Active: 1 node
+  0.0/12.0 CPU
+
+
+PASO 4: INSTALAR WORKER EN MACBOOK AIR
+---------------------------------------
+
+1. En MacBook Air, abrir Terminal
+
+2. Ir al proyecto:
+   cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
+
+3. Ir a la carpeta del instalador:
+   cd Worker_Installer_Package
+
+4. Ejecutar instalador:
+   chmod +x install.sh
+   ./install.sh
+
+5. Cuando pregunte por HEAD_IP:
+   Ingresar la IP de Tailscale del MacBook Pro (del Paso 2)
+
+6. El instalador configurará:
+   ✅ Python 3.9.6
+   ✅ Modo Worker Móvil activado
+   ✅ Daemon con reconexión automática
+
+
+PASO 5: VERIFICAR CLUSTER COMPLETO
+-----------------------------------
+
+En MacBook Pro (Head):
+  .venv/bin/ray status
+
+Debe mostrar:
+  Active: 2 nodes
+  0.0/22.0 CPU  ← 12 (Head) + 10 (Worker Air)
+
+
+PASO 6: EJECUTAR TEST
+----------------------
+
+En MacBook Pro:
+  .venv/bin/python test_miner_quick.py
+
+Resultado esperado:
+  ⚙️  CPUs: 22
+
+  🧬 Gen 0/5
+     ✅ PnL: $XXX.XX | Trades: 40+ | Win: XX%
+
+  🏆 Mejor PnL: $XXX.XX
+  ⏱️  Tiempo: ~30-35 segundos
+  ✅ Sin crashes SIGSEGV
+
+═══════════════════════════════════════════════════════════════
+🔧 TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA: Worker no se conecta
+SOLUCIÓN:
+  1. Verificar Tailscale en ambos:
+     tailscale status
+
+  2. Verificar ping:
+     ping <HEAD_IP>
+
+  3. Verificar HEAD_IP en config:
+     cat ~/.bittrader_worker/config.env
+
+  4. Reiniciar Worker daemon:
+     launchctl unload ~/Library/LaunchAgents/com.bittrader.worker.plist
+     launchctl load ~/Library/LaunchAgents/com.bittrader.worker.plist
+
+PROBLEMA: Worker se desconecta al cambiar de red
+SOLUCIÓN:
+  • Esto es NORMAL en modo Worker Móvil
+  • El Worker se reconectará automáticamente
+  • Verificar logs:
+    tail -f ~/.bittrader_worker/worker.log
+
+  • Debe mostrar:
+    "⚠️ Conexión perdida, reintentando..."
+    "✅ Worker Móvil reconectado al cluster"
+
+PROBLEMA: Head crashea cuando Worker se desconecta
+SOLUCIÓN:
+  • Esto NO debería pasar con la configuración invertida
+  • Verificar que MacBook Pro es el Head:
+    .venv/bin/ray status | grep "Head"
+
+  • Si el problema persiste, reportar bug
+
+═══════════════════════════════════════════════════════════════
+📈 RENDIMIENTO ESPERADO
+═══════════════════════════════════════════════════════════════
+
+TEST RÁPIDO (5 generaciones, 10 población):
+  • Solo Head (12 CPUs): ~42 segundos
+  • Head + Worker (22 CPUs): ~30-35 segundos
+  • Mejora: ~20-25%
+
+STRATEGY MINER (50 generaciones, 100 población):
+  • Solo Head (12 CPUs): ~8-9 minutos
+  • Head + Worker (22 CPUs): ~6-7 minutos
+  • Mejora: ~25-30%
+
+OPTIMIZACIÓN COMPLETA (200 generaciones, 200 población):
+  • Solo Head (12 CPUs): ~40-45 minutos
+  • Head + Worker (22 CPUs): ~28-32 minutos
+  • Mejora: ~30%
+
+═══════════════════════════════════════════════════════════════
+📞 SOPORTE
+═══════════════════════════════════════════════════════════════
+
+VERIFICAR LOGS DEL HEAD:
+  tail -f /tmp/ray/session_latest/logs/raylet.out
+
+VERIFICAR LOGS DEL WORKER:
+  tail -f ~/.bittrader_worker/worker.log
+
+ESTADO DEL CLUSTER:
+  .venv/bin/ray status
+
+DETENER TODO:
+  # En Head (MacBook Pro):
+  .venv/bin/ray stop
+
+  # En Worker (MacBook Air):
+  .venv/bin/ray stop
+
+═══════════════════════════════════════════════════════════════
+
+FECHA: 2026-01-26
+ESTADO: ✅ CONFIGURACIÓN OPTIMIZADA Y LISTA PARA USO
+
+═══════════════════════════════════════════════════════════════

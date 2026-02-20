@@ -1,0 +1,26 @@
+[
+  {
+    "params":{
+      "entry_rules":[
+        {
+          "left":{
+            "indicator":"RSI",
+            "period":100
+          },
+          "op":">",
+          "right":{
+            "value":65
+          }
+        }
+      ],
+      "params":{
+        "sl_pct":0.0479519965,
+        "tp_pct":0.0344426607
+      }
+    },
+    "metrics":{
+      "Total PnL":-596.41,
+      "Type":"Best Strategy found"
+    }
+  }
+]

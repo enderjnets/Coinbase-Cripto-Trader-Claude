@@ -1,0 +1,23 @@
+{
+  "pnl": 0.0,
+  "genome": {
+    "entry_rules": [
+      {
+        "left": {
+          "field": "close"
+        },
+        "op": "<",
+        "right": {
+          "indicator": "SMA",
+          "period": 200
+        }
+      }
+    ],
+    "params": {
+      "sl_pct": 0.04674835402866547,
+      "tp_pct": 0.040667098337801605
+    }
+  },
+  "total_time_seconds": 2100.167315006256,
+  "timestamp": "2026-01-25 19:55:22"
+}

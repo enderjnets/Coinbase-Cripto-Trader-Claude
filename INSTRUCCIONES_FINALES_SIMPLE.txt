@@ -1,0 +1,58 @@
+================================================================================
+CONFIGURACIÓN COMPLETA - SOLO 2 COMANDOS
+================================================================================
+
+📍 PASO 1: EN MACBOOK PRO
+================================================================================
+
+Ejecuta este comando:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude" && bash /tmp/install_docker_mbpro.sh
+
+- Te pedirá tu contraseña UNA VEZ
+- Espera 2-3 minutos
+- Cuando diga "✅ Docker instalado y funcionando", continúa
+
+
+📍 PASO 2: TAMBIÉN EN MACBOOK PRO
+================================================================================
+
+Ejecuta este comando:
+
+cd "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude" && bash setup_ray_head_docker.sh
+
+- Abrirá una página web para obtener Tailscale authkey
+- Copia y pega el key cuando te lo pida
+- Espera 30 segundos
+- ¡Listo!
+
+
+📍 PASO 3: YO LO HAGO TODO AUTOMÁTICAMENTE
+================================================================================
+
+Una vez hayas ejecutado los 2 comandos arriba, AVISAME y yo:
+
+✅ Verificaré que el Head Docker esté corriendo
+✅ Conectaré el Worker del MacBook Air
+✅ Probaré que los 22 CPUs funcionen
+✅ Crearé instaladores para Windows y Linux
+✅ Verificaré todo el sistema
+
+================================================================================
+¿POR QUÉ DOCKER?
+================================================================================
+
+Ray multi-nodo NO funciona de forma confiable en macOS nativo.
+Docker resuelve esto porque:
+- ✅ El contenedor se comporta como Linux (100% compatible)
+- ✅ Workers en Mac, Windows y Linux pueden conectarse sin problemas
+- ✅ Escalable a infinitos Workers
+- ✅ Más estable y confiable
+
+================================================================================
+¿ALGÚN PROBLEMA?
+================================================================================
+
+Si algo falla, dime EXACTAMENTE qué mensaje sale y en qué paso estás.
+
+================================================================================

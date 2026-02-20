@@ -1,0 +1,17 @@
+{
+  "exported_at": "2026-02-10T17:18:59.756865",
+  "pnl": 230.71,
+  "trades": 5,
+  "win_rate": 1.0,
+  "sharpe_ratio": 73248.6798,
+  "max_drawdown": 0.0,
+  "worker": "ender-rog_Linux_W2",
+  "work_unit_params": {
+    "population_size": 100,
+    "generations": 100,
+    "risk_level": "MEDIUM",
+    "data_file": "BTC-USD_FIVE_MINUTE.csv",
+    "max_candles": 59000
+  },
+  "note": "Este genoma puede ser usado directamente en crypto_worker.py para trading real"
+}
