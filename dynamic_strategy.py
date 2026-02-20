@@ -4,15 +4,18 @@ import numpy as np
 class DynamicStrategy:
     """
     Interpreter for Genetically Evolved Strategies.
-    Accepts a 'genome' (configuration dict) to apply trading rules.
     Compatible with Backtester interface.
     
     INDICADORES SOPORTADOS:
-    - RSI, SMA, EMA, VOLSMA (básico)
-    - MACD, MACD_Signal, MACD_Hist (nuevo)
-    - ATR, ATR_Pct (nuevo)
-    - Bollinger Bands: BB_Upper, BB_Lower, BB_Width, BB_Position (nuevo)
-    - ADX: ADX, DI_Plus, DI_Minus (nuevo)
+    - Básicos: RSI, SMA, EMA, VOLSMA
+    - MACD: MACD, MACD_Signal, MACD_Hist
+    - ATR: ATR, ATR_Pct
+    - Bollinger: BB_Upper, BB_Lower, BB_Width, BB_Position
+    - ADX: ADX, DI_Plus, DI_Minus
+    - Stochastic: STOCH_K, STOCH_D
+    - Ichimoku: ICHIMOKU_Conv, ICHIMOKU_Base, ICHIMOKU_SpanA, ICHIMOKU_SpanB
+    - Volume: OBV, VWAP
+    - Momentum: ROC, CCI, WILLIAMS_R
     """
     def __init__(self, genome=None):
         self.genome = genome if genome else {}
@@ -82,9 +85,7 @@ class DynamicStrategy:
         elif name == "VOLSMA":
             df[col_name] = df['volume'].rolling(window=period).mean()
 
-        # === INDICADORES AVANZADOS (NUEVO) ===
-        
-        # MACD (12, 26, 9 estándar)
+        # === MACD ===
         elif name == "MACD":
             exp12 = df['close'].ewm(span=12, adjust=False).mean()
             exp26 = df['close'].ewm(span=26, adjust=False).mean()
@@ -103,7 +104,7 @@ class DynamicStrategy:
             signal = macd.ewm(span=9, adjust=False).mean()
             df[col_name] = macd - signal
 
-        # ATR - Average True Range
+        # === ATR ===
         elif name == "ATR":
             high = df['high']
             low = df['low']
@@ -127,9 +128,9 @@ class DynamicStrategy:
             
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             atr = tr.rolling(window=period).mean()
-            df[col_name] = (atr / close) * 100  # ATR como porcentaje
+            df[col_name] = (atr / close) * 100
 
-        # Bollinger Bands
+        # === BOLLINGER BANDS ===
         elif name == "BB_Upper":
             sma = df['close'].rolling(window=period).mean()
             std = df['close'].rolling(window=period).std()
@@ -154,19 +155,17 @@ class DynamicStrategy:
             lower = sma - (std * 2)
             df[col_name] = (df['close'] - lower) / (upper - lower) * 100
 
-        # ADX - Average Directional Index
+        # === ADX ===
         elif name == "ADX":
             high = df['high']
             low = df['low']
             close = df['close']
             
-            # True Range
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             
-            # Directional Movement
             plus_dm = high.diff()
             minus_dm = -low.diff()
             
@@ -218,6 +217,64 @@ class DynamicStrategy:
             atr = tr.rolling(window=period).mean()
             df[col_name] = (minus_dm / atr) * 100
 
+        # === STOCHASTIC ===
+        elif name == "STOCH_K":
+            low_min = df['low'].rolling(window=period).min()
+            high_max = df['high'].rolling(window=period).max()
+            df[col_name] = ((df['close'] - low_min) / (high_max - low_min)) * 100
+            
+        elif name == "STOCH_D":
+            low_min = df['low'].rolling(window=period).min()
+            high_max = df['high'].rolling(window=period).max()
+            stoch_k = ((df['close'] - low_min) / (high_max - low_min)) * 100
+            df[col_name] = stoch_k.rolling(window=3).mean()
+
+        # === ICHIMOKU ===
+        elif name == "ICHIMOKU_Conv":
+            high_9 = df['high'].rolling(window=9).max()
+            low_9 = df['low'].rolling(window=9).min()
+            df[col_name] = (high_9 + low_9) / 2
+            
+        elif name == "ICHIMOKU_Base":
+            high_26 = df['high'].rolling(window=26).max()
+            low_26 = df['low'].rolling(window=26).min()
+            df[col_name] = (high_26 + low_26) / 2
+            
+        elif name == "ICHIMOKU_SpanA":
+            conv = df['close'].rolling(window=9).max() + df['close'].rolling(window=9).min()
+            base = df['close'].rolling(window=26).max() + df['close'].rolling(window=26).min()
+            df[col_name] = (conv + base) / 2
+            
+        elif name == "ICHIMOKU_SpanB":
+            high_52 = df['high'].rolling(window=52).max()
+            low_52 = df['low'].rolling(window=52).min()
+            df[col_name] = (high_52 + low_52) / 2
+
+        # === VOLUME INDICATORS ===
+        elif name == "OBV":
+            df[col_name] = (np.sign(df['close'].diff()) * df['volume']).cumsum()
+            
+        elif name == "VWAP":
+            df['pv'] = df['close'] * df['volume']
+            df['v'] = df['volume']
+            df[col_name] = df['pv'].cumsum() / df['v'].cumsum()
+            df.drop(['pv', 'v'], axis=1, inplace=True)
+
+        # === MOMENTUM INDICATORS ===
+        elif name == "ROC":
+            df[col_name] = ((df['close'] - df['close'].shift(period)) / df['close'].shift(period)) * 100
+            
+        elif name == "CCI":
+            tp = (df['high'] + df['low'] + df['close']) / 3
+            sma_tp = tp.rolling(window=period).mean()
+            mad = tp.rolling(window=period).apply(lambda x: np.abs(x - x.mean()).mean())
+            df[col_name] = (tp - sma_tp) / (0.015 * mad)
+            
+        elif name == "WILLIAMS_R":
+            high_n = df['high'].rolling(window=period).max()
+            low_n = df['low'].rolling(window=period).min()
+            df[col_name] = -100 * (high_n - df['close']) / (high_n - low_n)
+
     def get_signal(self, window, current_index, risk_level=None):
         """Evaluate rules at specific index."""
         row = window.iloc[-1]
@@ -241,8 +298,14 @@ class DynamicStrategy:
         if entry_signal:
             signal = "BUY"
             
+        # Risk Management desde genome params
         sl_pct = self.genome.get("params", {}).get("sl_pct", 0.05)
         tp_pct = self.genome.get("params", {}).get("tp_pct", 0.10)
+        
+        # Trailing stop
+        trailing_stop = self.genome.get("params", {}).get("trailing_stop_pct", 0)
+        # Breakeven
+        breakeven_after = self.genome.get("params", {}).get("breakeven_after", 0)
         
         price = row['close']
         
@@ -250,6 +313,8 @@ class DynamicStrategy:
             "signal": signal,
             "sl": price * (1 - sl_pct),
             "tp": price * (1 + tp_pct),
+            "trailing_stop": trailing_stop,
+            "breakeven_after": breakeven_after,
             "reason": "GENETIC_ENTRY"
         }
 
