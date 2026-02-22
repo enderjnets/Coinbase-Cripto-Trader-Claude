@@ -2937,6 +2937,47 @@ elif nav_mode == "🌐 Sistema Distribuido":
                     except ImportError:
                         st.metric("Motor", "Python", delta="Sin aceleracion")
 
+                # ===== OBJETIVO 5% DIARIO =====
+                # El backtester corre con $10,000 fijo (numba_backtester.py balance=10000)
+                # El % de retorno se calcula sobre esa base. REAL_CAPITAL ($500) es
+                # solo para mostrar cuánto ganarías con tu cuenta real.
+                BACKTEST_CAPITAL = 10000
+                REAL_CAPITAL     = 500
+                TARGET_DAILY_PCT = 5.0
+                MAX_CANDLES      = 80000
+                CANDLES_PER_DAY  = 1440
+                BACKTEST_DAYS    = MAX_CANDLES / CANDLES_PER_DAY
+
+                if best:
+                    best_pnl      = best.get('pnl', 0) or 0
+                    total_ret     = best_pnl / BACKTEST_CAPITAL * 100
+                    daily_ret_pct = total_ret / BACKTEST_DAYS
+                    daily_pnl     = REAL_CAPITAL * (daily_ret_pct / 100)
+                    target_total  = REAL_CAPITAL * (TARGET_DAILY_PCT / 100) * BACKTEST_DAYS
+                    progress_pct  = min(daily_ret_pct / TARGET_DAILY_PCT * 100, 100)
+                    multiplier    = target_total / max(REAL_CAPITAL * (total_ret / 100), 0.01)
+
+                    if progress_pct < 20:
+                        status_icon = "🔴"; status_msg = f"Inicio del camino — necesitamos {multiplier:.1f}x de mejora en PnL diario."
+                    elif progress_pct < 50:
+                        status_icon = "🟡"; status_msg = f"Buen progreso — {progress_pct:.1f}% del objetivo alcanzado. Seguir optimizando."
+                    elif progress_pct < 80:
+                        status_icon = "🔵"; status_msg = f"Muy cerca — {100-progress_pct:.1f}% restante para el 5% diario."
+                    else:
+                        status_icon = "🟢"; status_msg = f"¡Objetivo alcanzado! {daily_ret_pct:.2f}%/día. Listo para live trading."
+
+                    st.markdown(f"#### 🎯 Objetivo: 5% Diario &nbsp; {status_icon} **{daily_ret_pct:.2f}%** actual vs **5.00%** objetivo")
+                    st.progress(min(progress_pct / 100, 1.0))
+                    st.caption(f"{status_msg} &nbsp;·&nbsp; Capital: **$500** &nbsp;·&nbsp; Período: **{BACKTEST_DAYS:.1f} días** ({MAX_CANDLES:,} candles 1min)")
+
+                    gc1, gc2, gc3, gc4, gc5, gc6 = st.columns(6)
+                    with gc1: st.metric("Retorno Diario", f"{daily_ret_pct:.2f}%",    delta="obj: 5.00%",          delta_color="normal")
+                    with gc2: st.metric("PnL Diario",     f"${daily_pnl:.2f}/día",    delta="obj: $25/día",        delta_color="normal")
+                    with gc3: st.metric("PnL Total",      f"${best_pnl:.0f}",         delta=f"obj: ${target_total:.0f}", delta_color="normal")
+                    with gc4: st.metric("Progreso",       f"{progress_pct:.1f}%",     delta=f"{100-progress_pct:.1f}% restante", delta_color="inverse")
+                    with gc5: st.metric("Mejora Necesaria", f"{multiplier:.1f}x",     delta="para el objetivo",    delta_color="inverse")
+                    with gc6: st.metric("Capital Base",   "$500",                     delta="cuenta real objetivo", delta_color="off")
+
                 st.divider()
 
                 # ===== WORLD MAP: Worker Network Globe =====

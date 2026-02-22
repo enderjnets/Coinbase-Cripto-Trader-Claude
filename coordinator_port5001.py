@@ -649,7 +649,7 @@ def api_dashboard_stats():
         
         # Get max_pnl for this worker
         c2 = conn.cursor()
-        c2.execute("SELECT MAX(pnl) FROM results WHERE worker_id = ? AND pnl < 5000", (row_dict['id'],))
+        c2.execute("SELECT MAX(pnl) FROM results WHERE worker_id = ? AND pnl < 5000 AND trades >= 5", (row_dict['id'],))
         max_pnl = c2.fetchone()[0] or 0
         
         worker_stats.append({
@@ -855,6 +855,68 @@ DASHBOARD_HTML = """
         .badge-yellow { background: rgba(210,153,34,.18); color: var(--yellow); }
         .badge-blue   { background: rgba(88,166,255,.18); color: var(--blue); }
 
+        /* ── GOAL PANEL ── */
+        .goal-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--card-r);
+            padding: 20px;
+        }
+        .goal-header-row {
+            display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .goal-title-block { display: flex; flex-direction: column; }
+        .goal-main-pct {
+            font-size: 36px; font-weight: 800; line-height: 1;
+            color: var(--goal-color, var(--red));
+        }
+        .goal-main-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing:.6px; margin-top: 4px; }
+        .goal-divider { width: 1px; height: 40px; background: var(--border); }
+        .goal-target-block { display: flex; flex-direction: column; }
+        .goal-target-val { font-size: 22px; font-weight: 700; color: var(--green); }
+        .goal-target-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing:.6px; margin-top: 4px; }
+        .goal-progress-pct {
+            margin-left: auto; font-size: 28px; font-weight: 800;
+            color: var(--goal-color, var(--red));
+            background: rgba(255,255,255,.04);
+            border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px 18px;
+        }
+        .goal-bar-bg {
+            background: #21262d; border-radius: 6px; height: 16px;
+            overflow: visible; position: relative; margin-bottom: 8px;
+        }
+        .goal-bar-fill {
+            height: 100%; border-radius: 6px; transition: width .8s ease;
+            background: var(--goal-gradient, linear-gradient(90deg, #f85149, #d29922));
+            position: relative; z-index: 1;
+        }
+        .goal-bar-markers {
+            position: absolute; top: 20px; left: 0; right: 0;
+            pointer-events: none;
+        }
+        .goal-bar-markers span {
+            position: absolute; transform: translateX(-50%);
+            font-size: 10px; color: var(--muted);
+        }
+        .goal-metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px; margin-top: 28px;
+        }
+        .goal-metric {
+            background: #21262d; border-radius: 6px; padding: 12px 14px;
+            border-left: 3px solid var(--border);
+        }
+        .goal-metric-val { font-size: 20px; font-weight: 700; color: var(--text); }
+        .goal-metric-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+        .goal-metric-target { font-size: 10px; color: var(--muted); opacity:.6; margin-top: 2px; }
+        .goal-footer {
+            margin-top: 14px; padding-top: 12px;
+            border-top: 1px solid var(--border);
+            font-size: 12px; color: var(--muted); text-align: center;
+        }
+
         /* ── BEST STRATEGY PANEL ── */
         .best-panel {
             background: var(--surface);
@@ -940,6 +1002,86 @@ DASHBOARD_HTML = """
             <span id="prog-comp">✓ 0 completados</span>
             <span id="prog-pend">⏳ 0 pendientes</span>
             <span id="prog-inp">⚡ 0 en progreso</span>
+        </div>
+    </div>
+
+    <!-- OBJETIVO 5% DIARIO -->
+    <div class="section-title">🎯 Objetivo: 5% Diario</div>
+    <div class="goal-wrap" id="goal-wrap">
+        <div class="goal-header-row">
+            <div class="goal-title-block">
+                <span class="goal-main-pct" id="goal-current-pct">0.00%</span>
+                <span class="goal-main-lbl">retorno diario actual</span>
+            </div>
+            <div class="goal-divider"></div>
+            <div class="goal-target-block">
+                <span class="goal-target-val">5.00%</span>
+                <span class="goal-target-lbl">objetivo diario</span>
+            </div>
+            <div class="goal-progress-pct" id="goal-pct-badge">0.0%</div>
+        </div>
+
+        <div class="goal-bar-bg">
+            <div class="goal-bar-fill" id="goal-fill" style="width:0%"></div>
+            <div class="goal-bar-markers">
+                <span style="left:20%">1%</span>
+                <span style="left:40%">2%</span>
+                <span style="left:60%">3%</span>
+                <span style="left:80%">4%</span>
+                <span style="left:100%">5%</span>
+            </div>
+        </div>
+
+        <div class="goal-metrics-grid">
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-daily-pnl">$-</div>
+                <div class="goal-metric-lbl">PnL diario actual</div>
+                <div class="goal-metric-target" id="gm-daily-target">objetivo $25/día en $500</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-total-pnl">$-</div>
+                <div class="goal-metric-lbl">PnL total (backtest)</div>
+                <div class="goal-metric-target" id="gm-total-target">objetivo $-</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-total-return">-%</div>
+                <div class="goal-metric-lbl">Retorno total acumulado</div>
+                <div class="goal-metric-target" id="gm-total-return-target">objetivo -%</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-capital">$500 / $10k</div>
+                <div class="goal-metric-lbl">Real / Backtest capital</div>
+                <div class="goal-metric-target">% calculado sobre $10k backtest</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-days">- días</div>
+                <div class="goal-metric-lbl">Período del backtest</div>
+                <div class="goal-metric-target" id="gm-candles">- candles</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-multiplier" style="color:var(--yellow)">-x</div>
+                <div class="goal-metric-lbl">Mejora necesaria</div>
+                <div class="goal-metric-target">para alcanzar el objetivo</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-winrate">-%</div>
+                <div class="goal-metric-lbl">Win Rate actual</div>
+                <div class="goal-metric-target">objetivo ≥ 60%</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-sharpe">-</div>
+                <div class="goal-metric-lbl">Sharpe Ratio</div>
+                <div class="goal-metric-target">objetivo ≥ 2.0</div>
+            </div>
+            <div class="goal-metric">
+                <div class="goal-metric-val" id="gm-drawdown" style="color:var(--yellow)">-%</div>
+                <div class="goal-metric-lbl">Max Drawdown</div>
+                <div class="goal-metric-target">límite ≤ 10%</div>
+            </div>
+        </div>
+
+        <div class="goal-footer">
+            <span id="goal-status-msg">Calculando...</span>
         </div>
     </div>
 
@@ -1138,7 +1280,7 @@ async function updateDashboard() {
         document.getElementById('k-totalres').textContent  = (perf.total_results || 0).toLocaleString() + ' total';
 
         // Best strategy
-        const best = status.best_strategy || dash.best_strategy;
+        const best = dash.best_strategy || status.best_strategy;
         if (best && best.pnl) {
             document.getElementById('k-bestpnl').textContent = '$' + fmt(best.pnl, 0);
             document.getElementById('k-bestwr').textContent  = (best.win_rate * 100).toFixed(0) + '% win rate';
@@ -1148,6 +1290,82 @@ async function updateDashboard() {
             document.getElementById('b-sharpe').textContent  = fmt(best.sharpe_ratio, 2);
             document.getElementById('b-dd').textContent      = ((best.max_drawdown || 0) * 100).toFixed(1) + '%';
             document.getElementById('b-worker').textContent  = (best.worker_id || '-').split('_').slice(-1)[0];
+        }
+
+        // ── Objetivo 5% Diario ──
+        if (best && best.pnl) {
+            // NOTA: el backtester corre con $10,000 capital fijo (numba_backtester.py).
+            // El PnL en USD es sobre esa base. Para medir el % diario real usamos
+            // BACKTEST_CAPITAL. REAL_CAPITAL ($500) solo se usa para mostrar
+            // cuánto ganarías en dólares con tu cuenta real.
+            const BACKTEST_CAPITAL = 10000;  // capital que usa el backtester
+            const REAL_CAPITAL     = 500;    // tu cuenta real objetivo
+            const TARGET_DAILY_PCT = 5.0;
+            const MAX_CANDLES      = 80000;
+            const CANDLES_PER_DAY  = 1440;
+            const BACKTEST_DAYS    = MAX_CANDLES / CANDLES_PER_DAY;
+
+            // % de retorno basado en capital real del backtest
+            const totalReturn    = best.pnl / BACKTEST_CAPITAL * 100;
+            const dailyReturnPct = totalReturn / BACKTEST_DAYS;
+            // PnL diario equivalente sobre cuenta real de $500
+            const dailyPnl       = REAL_CAPITAL * (dailyReturnPct / 100);
+            const targetDailyPnl = REAL_CAPITAL * (TARGET_DAILY_PCT / 100);
+            const targetTotalPnl = targetDailyPnl * BACKTEST_DAYS;
+            const targetTotalReturn = TARGET_DAILY_PCT * BACKTEST_DAYS;
+            const progressPct    = Math.min(dailyReturnPct / TARGET_DAILY_PCT * 100, 100);
+            const multiplier     = targetTotalPnl / Math.max(REAL_CAPITAL * (totalReturn/100), 0.01);
+
+            // Color based on progress
+            let goalColor, goalGradient, statusMsg;
+            if (progressPct < 20) {
+                goalColor = '#f85149'; goalGradient = 'linear-gradient(90deg,#f85149,#d29922)';
+                statusMsg = `⚡ Inicio del camino — necesitamos ${fmt(multiplier,1)}x de mejora en PnL diario para alcanzar el objetivo.`;
+            } else if (progressPct < 50) {
+                goalColor = '#d29922'; goalGradient = 'linear-gradient(90deg,#d29922,#e3b341)';
+                statusMsg = `📈 Buen progreso — ${fmt(progressPct,1)}% del objetivo alcanzado. Seguir optimizando indicadores y leverage.`;
+            } else if (progressPct < 80) {
+                goalColor = '#58a6ff'; goalGradient = 'linear-gradient(90deg,#58a6ff,#3fb950)';
+                statusMsg = `🚀 Muy cerca — ${fmt(100 - progressPct, 1)}% restante para el 5% diario. Refinando la estrategia...`;
+            } else {
+                goalColor = '#3fb950'; goalGradient = 'linear-gradient(90deg,#238636,#3fb950)';
+                statusMsg = `🏆 ¡Objetivo casi alcanzado! Retorno diario de ${fmt(dailyReturnPct,2)}%. Validar en live trading.`;
+            }
+
+            // Apply color CSS var via style
+            const gw = document.getElementById('goal-wrap');
+            gw.style.setProperty('--goal-color', goalColor);
+            gw.style.setProperty('--goal-gradient', goalGradient);
+
+            document.getElementById('goal-current-pct').textContent = fmt(dailyReturnPct, 2) + '%';
+            document.getElementById('goal-pct-badge').textContent   = fmt(progressPct, 1) + '%';
+            document.getElementById('goal-fill').style.width        = progressPct.toFixed(1) + '%';
+
+            document.getElementById('gm-daily-pnl').textContent     = '$' + fmt(dailyPnl, 2) + '/día';
+            document.getElementById('gm-total-pnl').textContent     = '$' + fmt(best.pnl, 2);
+            document.getElementById('gm-total-target').textContent  = 'objetivo $' + fmt(targetTotalPnl, 0);
+            document.getElementById('gm-total-return').textContent  = fmt(totalReturn, 2) + '%';
+            document.getElementById('gm-total-return-target').textContent = 'objetivo ' + fmt(targetTotalReturn, 0) + '%';
+            document.getElementById('gm-days').textContent          = fmt(BACKTEST_DAYS, 1) + ' días';
+            document.getElementById('gm-candles').textContent       = MAX_CANDLES.toLocaleString() + ' candles 1min';
+            document.getElementById('gm-multiplier').textContent    = fmt(multiplier, 1) + 'x';
+
+            const wr = best.win_rate || 0;
+            const wrEl = document.getElementById('gm-winrate');
+            wrEl.textContent = (wr * 100).toFixed(1) + '%';
+            wrEl.style.color = wr >= 0.6 ? 'var(--green)' : wr >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+
+            const srEl = document.getElementById('gm-sharpe');
+            const sr = best.sharpe_ratio || 0;
+            srEl.textContent = fmt(sr, 2);
+            srEl.style.color = sr >= 2 ? 'var(--green)' : sr >= 1 ? 'var(--yellow)' : 'var(--red)';
+
+            const ddEl = document.getElementById('gm-drawdown');
+            const dd = (best.max_drawdown || 0) * 100;
+            ddEl.textContent = fmt(dd, 1) + '%';
+            ddEl.style.color = dd <= 10 ? 'var(--green)' : dd <= 25 ? 'var(--yellow)' : 'var(--red)';
+
+            document.getElementById('goal-status-msg').textContent = statusMsg;
         }
 
         // ── Progress bar ──
