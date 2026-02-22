@@ -1,0 +1,304 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Strategy Miner - Coordinator Dashboard</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #0f0;
+            padding: 20px;
+            margin: 0;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #0f0;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            border-bottom: 1px solid #0f0;
+            padding-bottom: 5px;
+            margin-top: 30px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: #0a0a0a;
+            border: 2px solid #0f0;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #0f0;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #0f0;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+        .stat-sub {
+            font-size: 10px;
+            color: #0f0;
+            opacity: 0.5;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 12px;
+        }
+        th, td {
+            border: 1px solid #0f0;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background: #0f0;
+            color: #000;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background: #0a0a0a;
+        }
+        .positive { color: #0f0; }
+        .negative { color: #f00; }
+        .timestamp {
+            text-align: center;
+            margin-top: 20px;
+            opacity: 0.5;
+            font-size: 12px;
+        }
+        .best-strategy {
+            background: #0a2a0a;
+            border: 2px solid #0f0;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .best-strategy h3 {
+            margin-top: 0;
+            color: #0f0;
+        }
+        .param-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .param {
+            background: #000;
+            padding: 8px;
+            border: 1px solid #0a0;
+        }
+        .param-label {
+            font-size: 10px;
+            opacity: 0.7;
+        }
+        .param-value {
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧬 STRATEGY MINER - COORDINATOR DASHBOARD</h1>
+
+        <!-- Stats Row 1: General -->
+        <h2>📊 ESTADO GENERAL</h2>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-value" id="total-work">-</div>
+                <div class="stat-label">Total WUs</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="completed-work">-</div>
+                <div class="stat-label">Completadas</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="pending-work">-</div>
+                <div class="stat-label">Pendientes</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="active-workers">-</div>
+                <div class="stat-label">Workers Activos</div>
+            </div>
+        </div>
+
+        <!-- Best Strategy -->
+        <h2>🏆 MEJOR ESTRATEGIA</h2>
+        <div class="best-strategy" id="best-strategy">
+            <div class="param-grid">
+                <div class="param">
+                    <div class="param-label">PnL</div>
+                    <div class="param-value" id="best-pnl">$-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Trades</div>
+                    <div class="param-value" id="best-trades">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Win Rate</div>
+                    <div class="param-value" id="best-winrate">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Sharpe</div>
+                    <div class="param-value" id="best-sharpe">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Max DD</div>
+                    <div class="param-value" id="best-dd">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Leverage</div>
+                    <div class="param-value" id="best-leverage">-</div>
+                </div>
+            </div>
+            <div class="param-grid" style="margin-top:10px;">
+                <div class="param">
+                    <div class="param-label">Stop Loss</div>
+                    <div class="param-value" id="best-sl">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Take Profit</div>
+                    <div class="param-value" id="best-tp">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Contratos</div>
+                    <div class="param-value" id="best-contracts">-</div>
+                </div>
+                <div class="param">
+                    <div class="param-label">Capital Backtest</div>
+                    <div class="param-value">$10,000</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Results -->
+        <h2>📈 TOP 10 RESULTADOS</h2>
+        <table id="results-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>PnL ($)</th>
+                    <th>Trades</th>
+                    <th>Win %</th>
+                    <th>Sharpe</th>
+                    <th>Max DD %</th>
+                    <th>Lev</th>
+                    <th>SL %</th>
+                    <th>TP %</th>
+                </tr>
+            </thead>
+            <tbody id="results-body">
+                <tr><td colspan="9">Loading...</td></tr>
+            </tbody>
+        </table>
+
+        <div class="timestamp" id="timestamp">Last update: -</div>
+    </div>
+
+    <script>
+        async function updateDashboard() {
+            try {
+                // Get status
+                const statusResp = await fetch('/api/status');
+                const status = await statusResp.json();
+
+                // General stats
+                document.getElementById('total-work').textContent = status.work_units.total;
+                document.getElementById('completed-work').textContent = status.work_units.completed;
+                document.getElementById('pending-work').textContent = status.work_units.pending;
+                document.getElementById('active-workers').textContent = status.workers.active;
+
+                // Best strategy
+                if (status.best_strategy) {
+                    const bs = status.best_strategy;
+                    document.getElementById('best-pnl').textContent = '$' + bs.pnl.toFixed(2);
+                    document.getElementById('best-pnl').className = bs.pnl >= 0 ? 'param-value positive' : 'param-value negative';
+                    
+                    document.getElementById('best-trades').textContent = bs.trades || '-';
+                    document.getElementById('best-winrate').textContent = (bs.win_rate * 100).toFixed(1) + '%';
+                    document.getElementById('best-sharpe').textContent = bs.sharpe_ratio ? bs.sharpe_ratio.toFixed(2) : '-';
+                    document.getElementById('best-dd').textContent = bs.max_drawdown ? (bs.max_drawdown * 100).toFixed(1) + '%' : '-';
+                    
+                    // Params from strategy_params
+                    if (bs.strategy_params) {
+                        document.getElementById('best-leverage').textContent = bs.strategy_params.leverage || '-';
+                        document.getElementById('best-sl').textContent = (bs.strategy_params.stop_loss || '-') + '%';
+                        document.getElementById('best-tp').textContent = (bs.strategy_params.take_profit || '-') + '%';
+                        
+                        const contracts = bs.strategy_params.contracts || [];
+                        document.getElementById('best-contracts').textContent = contracts.length;
+                    }
+                }
+
+                // Get results
+                const resultsResp = await fetch('/api/results');
+                const resultsData = await resultsResp.json();
+
+                const tbody = document.getElementById('results-body');
+                tbody.innerHTML = '';
+
+                if (resultsData.results && resultsData.results.length > 0) {
+                    resultsData.results.slice(0, 10).forEach((r, i) => {
+                        const row = tbody.insertRow();
+                        
+                        // Params
+                        const params = r.strategy_params || {};
+                        const leverage = params.leverage || '-';
+                        const sl = params.stop_loss || '-';
+                        const tp = params.take_profit || '-';
+                        
+                        row.insertCell(0).textContent = i + 1;
+                        
+                        const pnlCell = row.insertCell(1);
+                        pnlCell.textContent = '$' + r.pnl.toFixed(2);
+                        pnlCell.className = r.pnl >= 0 ? 'positive' : 'negative';
+                        
+                        row.insertCell(2).textContent = r.trades;
+                        
+                        const winCell = row.insertCell(3);
+                        winCell.textContent = (r.win_rate * 100).toFixed(1) + '%';
+                        winCell.className = r.win_rate >= 0.5 ? 'positive' : '';
+                        
+                        row.insertCell(4).textContent = r.sharpe_ratio ? r.sharpe_ratio.toFixed(2) : '-';
+                        
+                        const ddCell = row.insertCell(5);
+                        ddCell.textContent = r.max_drawdown ? (r.max_drawdown * 100).toFixed(1) + '%' : '-';
+                        ddCell.className = r.max_drawdown > 0.3 ? 'negative' : '';
+                        
+                        row.insertCell(6).textContent = leverage;
+                        row.insertCell(7).textContent = sl + '%';
+                        row.insertCell(8).textContent = tp + '%';
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="9">No results yet</td></tr>';
+                }
+
+                document.getElementById('timestamp').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Update every 10 seconds
+        setInterval(updateDashboard, 10000);
+        updateDashboard();
+    </script>
+</body>
+</html>

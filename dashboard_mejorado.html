@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Strategy Miner - Dashboard Mejorado</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="10">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Monaco, Courier New, monospace;
+            background: #0a0a0a;
+            color: #0f0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #0f0;
+            padding: 15px 0;
+            font-size: 24px;
+        }
+        h2 {
+            border-bottom: 1px solid #0f0;
+            padding: 10px 0;
+            margin: 20px 0 10px;
+            font-size: 16px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .box {
+            background: #000;
+            border: 2px solid #0f0;
+            padding: 15px;
+            text-align: center;
+        }
+        .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #0f0;
+        }
+        .label {
+            font-size: 11px;
+            color: #0f0;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #0f0;
+            padding: 8px;
+            text-align: left;
+        }
+        th { background: #0f0; color: #000; }
+        .pos { color: #0f0; }
+        .neg { color: #f00; }
+        .best-section {
+            background: #0a0a0a;
+            border: 3px solid #0f0;
+            padding: 20px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧬 STRATEGY MINER - DASHBOARD MEJORADO</h1>
+    
+    <h2>📊 ESTADO GENERAL</h2>
+    <div class="grid">
+        <div class="box"><div class="value" id="total">-</div><div class="label">Total WUs</div></div>
+        <div class="box"><div class="value" id="completed">-</div><div class="label">Completadas</div></div>
+        <div class="box"><div class="value" id="pending">-</div><div class="label">Pendientes</div></div>
+        <div class="box"><div class="value" id="workers">-</div><div class="label">Workers</div></div>
+        <div class="box"><div class="value" id="results">-</div><div class="label">Resultados</div></div>
+        <div class="box"><div class="value" id="positive">-</div><div class="label">Positivos</div></div>
+    </div>
+    
+    <h2>🏆 MEJOR ESTRATEGIA</h2>
+    <div class="best-section">
+        <div class="grid">
+            <div class="box"><div class="value" id="best-pnl">$-</div><div class="label">PnL (Capital: $10k)</div></div>
+            <div class="box"><div class="value" id="best-trades">-</div><div class="label">Trades</div></div>
+            <div class="box"><div class="value" id="best-win">-</div><div class="label">Win Rate %</div></div>
+            <div class="box"><div class="value" id="best-sharpe">-</div><div class="label">Sharpe</div></div>
+            <div class="box"><div class="value" id="best-dd">-</div><div class="label">Max DD %</div></div>
+            <div class="box"><div class="value" id="best-lev">-</div><div class="label">Leverage</div></div>
+        </div>
+        <div class="grid" style="margin-top:10px">
+            <div class="box"><div class="label">Stop Loss %</div><div class="value" id="best-sl">-</div></div>
+            <div class="box"><div class="label">Take Profit %</div><div class="value" id="best-tp">-</div></div>
+            <div class="box"><div class="label">Contratos</div><div class="value" id="best-contracts">-</div></div>
+            <div class="box"><div class="label">Período</div><div class="value">56 días</div></div>
+            <div class="box"><div class="label">Return %</div><div class="value" id="best-return">-</div></div>
+            <div class="box"><div class="label">Return/Día %</div><div class="value" id="best-daily">-</div></div>
+        </div>
+    </div>
+    
+    <h2>📈 TOP 10 RESULTADOS</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th><th>PnL ($)</th><th>Trades</th><th>Win%</th><th>Sharpe</th><th>DD%</th><th>Lev</th><th>SL%</th><th>TP%</th>
+            </tr>
+        </thead>
+        <tbody id="results"></tbody>
+    </table>
+    
+    <div style="text-align:center; margin-top:20px; opacity:0.5; font-size:11px" id="time"></div>
+    
+    <script>
+    async function update() {
+        const status = await fetch('/api/status').then(r => r.json());
+        
+        // General
+        document.getElementById('total').textContent = status.work_units.total;
+        document.getElementById('completed').textContent = status.work_units.completed;
+        document.getElementById('pending').textContent = status.work_units.pending;
+        document.getElementById('workers').textContent = status.workers.active;
+        
+        // Best
+        const bs = status.best_strategy;
+        if (bs) {
+            document.getElementById('best-pnl').textContent = '$' + bs.pnl.toFixed(0);
+            document.getElementById('best-pnl').className = bs.pnl >= 0 ? 'value pos' : 'value neg';
+            document.getElementById('best-trades').textContent = bs.trades || '-';
+            document.getElementById('best-win').textContent = (bs.win_rate * 100).toFixed(1) + '%';
+            document.getElementById('best-sharpe').textContent = bs.sharpe_ratio ? bs.sharpe_ratio.toFixed(2) : '-';
+            document.getElementById('best-dd').textContent = bs.max_drawdown ? (bs.max_drawdown * 100).toFixed(1) + '%' : '-';
+            
+            const params = bs.strategy_params || {};
+            document.getElementById('best-sl').textContent = (params.stop_loss || '-') + '%';
+            document.getElementById('best-tp').textContent = (params.take_profit || '-') + '%';
+            document.getElementById('best-lev').textContent = (params.leverage || '-') + 'x';
+            document.getElementById('best-contracts').textContent = (params.contracts || []).length;
+            
+            // Returns
+            const retorno = (bs.pnl / 10000 * 100).toFixed(1);
+            const daily = (retorno / 56).toFixed(2);
+            document.getElementById('best-return').textContent = retorno + '%';
+            document.getElementById('best-daily').textContent = daily + '%';
+        }
+        
+        // Results
+        const results = await fetch('/api/results').then(r => r.json());
+        const tbody = document.getElementById('results');
+        tbody.innerHTML = '';
+        results.results.slice(0, 10).forEach((r, i) => {
+            const row = tbody.insertRow();
+            const params = r.strategy_params || {};
+            
+            row.insertCell(0).textContent = i + 1;
+            
+            const pnlCell = row.insertCell(1);
+            pnlCell.textContent = '$' + r.pnl.toFixed(0);
+            pnlCell.className = r.pnl >= 0 ? 'pos' : 'neg';
+            
+            row.insertCell(2).textContent = r.trades;
+            row.insertCell(3).textContent = (r.win_rate * 100).toFixed(1) + '%';
+            row.insertCell(4).textContent = r.sharpe_ratio ? r.sharpe_ratio.toFixed(2) : '-';
+            row.insertCell(5).textContent = r.max_drawdown ? (r.max_drawdown * 100).toFixed(1) + '%' : '-';
+            row.insertCell(6).textContent = params.leverage || '-';
+            row.insertCell(7).textContent = params.stop_loss || '-';
+            row.insertCell(8).textContent = params.take_profit || '-';
+        });
+        
+        document.getElementById('time').textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
+    }
+    setInterval(update, 10000);
+    update();
+    </script>
+</body>
+</html>
