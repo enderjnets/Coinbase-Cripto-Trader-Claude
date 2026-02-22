@@ -56,6 +56,54 @@ workers: id, hostname, platform, last_seen, work_units_completed, total_executio
 
 ---
 
+## Coinbase API Authentication (Verified 2026-02-21)
+
+### Key File
+- **Path:** `/Users/enderj/Downloads/cdp_api_key.json`
+- **Format:** `{"id": "<uuid>", "privateKey": "<base64-64bytes>"}`
+- **Key ID:** `f2b19384-cbfd-4e6b-ab21-38a29f53650b`
+- **NOTE:** The old `cdp_api_key.json` in the project root is an **expired ECDSA key** — always use the Downloads one.
+
+### JWT Generation (Ed25519)
+```python
+import json, time, base64, requests
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+def load_coinbase_key(path="/Users/enderj/Downloads/cdp_api_key.json"):
+    with open(path) as f:
+        data = json.load(f)
+    raw = base64.b64decode(data["privateKey"])
+    return data["id"], Ed25519PrivateKey.from_private_bytes(raw[:32])  # first 32 bytes = seed
+
+def make_jwt(key_id, private_key, method, path):
+    now = int(time.time())
+    def b64url(d):
+        if isinstance(d, str): d = d.encode()
+        return base64.urlsafe_b64encode(d).rstrip(b"=").decode()
+    header = b64url(json.dumps({"alg":"EdDSA","kid":key_id,"typ":"JWT"}, separators=(",",":")))
+    payload = b64url(json.dumps({
+        "iss":"cdp","nbf":now,"exp":now+120,"sub":key_id,
+        "uri":f"{method} api.coinbase.com{path}"  # NO https://
+    }, separators=(",",":")))
+    msg = f"{header}.{payload}"
+    return f"{msg}.{b64url(private_key.sign(msg.encode()))}"
+```
+
+### Key Endpoints
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `/api/v3/brokerage/market/products?product_type=FUTURE` | No | Public futures prices |
+| `/api/v3/brokerage/products?product_type=FUTURE` | Yes | Authenticated futures |
+| `/api/v3/brokerage/accounts` | Yes | All wallets + balances |
+| `/api/v3/brokerage/cfm/balance_summary` | Yes | Futures CFM balance |
+| `/api/v3/brokerage/cfm/positions` | Yes | Open futures positions |
+
+### Account Balances (2026-02-21)
+- BTC: 0.012496 BTC | SOL: 0.102893 SOL | USDC: $15.02
+- CFM futures balance: null (no funds in futures)
+
+---
+
 ## Network Configuration
 
 ### Machines

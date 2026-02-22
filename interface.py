@@ -1038,7 +1038,7 @@ st.sidebar.header("Control Panel")
 # Theme Toggle Button - Mejorado
 theme_icon = "🌙" if st.session_state['dark_mode'] else "☀️"
 theme_text = "Modo Claro" if st.session_state['dark_mode'] else "Modo Oscuro"
-if st.sidebar.button(f"{theme_icon} {theme_text}", use_container_width=True, key="theme_toggle"):
+if st.sidebar.button(f"{theme_icon} {theme_text}", width='stretch', key="theme_toggle"):
     st.session_state['dark_mode'] = not st.session_state['dark_mode']
     st.rerun()
 
@@ -1482,7 +1482,7 @@ if nav_mode == "🤖 Live Dashboard":
                 if c not in final_cols:
                     final_cols.append(c)
             
-            st.dataframe(df_pos[final_cols], use_container_width=True)
+            st.dataframe(df_pos[final_cols], width='stretch')
             
             if st.button("🚨 PANIC SELL ALL", type="primary", key="panic_btn"):
                 if bot_instance.mode == "PAPER":
@@ -1499,7 +1499,7 @@ if nav_mode == "🤖 Live Dashboard":
         st.subheader("📜 Recent Trade History")
         if bot_instance.trade_history:
             df_hist = pd.DataFrame(bot_instance.trade_history)
-            st.dataframe(df_hist.iloc[::-1], use_container_width=True)
+            st.dataframe(df_hist.iloc[::-1], width='stretch')
         else:
             st.caption("No trades executed yet in this session.")
 
@@ -1507,7 +1507,7 @@ if nav_mode == "🤖 Live Dashboard":
         st.subheader("📡 Live Feed")
         
         # Refresh Button
-        if st.button("🔄 Refresh Dashboard", use_container_width=True):
+        if st.button("🔄 Refresh Dashboard", width='stretch'):
             st.rerun()
 
         st.markdown("**System Logs**")
@@ -1899,7 +1899,7 @@ elif nav_mode == "⚙️ Optimizer":
             col_rec1, col_rec2, col_rec3 = st.columns(3)
             
             with col_rec1:
-                if st.button("📥 Load Configuration", use_container_width=True):
+                if st.button("📥 Load Configuration", width='stretch'):
                     # Restore parameters to session state keys
                     pr = selected_meta.get('param_ranges', {})
                     
@@ -1936,7 +1936,7 @@ elif nav_mode == "⚙️ Optimizer":
                     st.rerun()
 
             with col_rec2:
-                if st.button("🗑️ Delete Checkpoint", use_container_width=True):
+                if st.button("🗑️ Delete Checkpoint", width='stretch'):
                     try:
                         os.remove(selected_path)
                         st.success("Checkpoint Deleted!")
@@ -2385,7 +2385,7 @@ elif nav_mode == "⚙️ Optimizer":
             if not df_res.empty:
                 st.markdown("---")
                 st.subheader("📊 Top Results")
-                st.dataframe(df_res.head(10), use_container_width=True)
+                st.dataframe(df_res.head(10), width='stretch')
 
                 # Show execution log in expander
                 if 'opt_logs' in st.session_state:
@@ -2421,7 +2421,7 @@ elif nav_mode == "⚙️ Optimizer":
                 col_apply, col_save, col_clear = st.columns(3)
 
                 with col_apply:
-                    if st.button("✅ Apply to Backtester", use_container_width=True):
+                    if st.button("✅ Apply to Backtester", width='stretch'):
                         idx = options.index(selected_option)
                         selected_row = df_res.iloc[idx]
                         metric_keys = ['Total Trades', 'Win Rate %', 'Total PnL', 'Final Balance']
@@ -2438,11 +2438,11 @@ elif nav_mode == "⚙️ Optimizer":
                         data=json_str,
                         file_name=f"opt_config_rank_{idx+1}.json",
                         mime="application/json",
-                        use_container_width=True
+                        width='stretch'
                     )
 
                 with col_clear:
-                    if st.button("🗑️ Clear Results", use_container_width=True):
+                    if st.button("🗑️ Clear Results", width='stretch'):
                         if 'opt_results' in st.session_state:
                             del st.session_state['opt_results']
                         if 'opt_logs' in st.session_state:
@@ -2858,7 +2858,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
             )
 
         with col_header3:
-            if st.button("🔄", use_container_width=True, key="dash_refresh_btn", help="Refrescar ahora"):
+            if st.button("🔄", width='stretch', key="dash_refresh_btn", help="Refrescar ahora"):
                 st.rerun()
 
         if not coordinator_running:
@@ -3087,7 +3087,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                     showlegend=False
                 )
 
-                st.plotly_chart(fig_globe, use_container_width=True, key="chart_world_map")
+                st.plotly_chart(fig_globe, width='stretch', key="chart_world_map")
 
                 # Legend
                 active_count = sum(1 for m in machine_workers.values() if m['active'] > 0)
@@ -3129,7 +3129,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
                             showlegend=True
                         )
-                        st.plotly_chart(fig_pnl, use_container_width=True, key="chart_pnl_timeline")
+                        st.plotly_chart(fig_pnl, width='stretch', key="chart_pnl_timeline")
                     else:
                         st.info("No hay datos de PnL disponibles")
 
@@ -3157,7 +3157,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                                               x=0.5, y=0.5, font_size=24, showarrow=False,
                                               font_color="white")]
                         )
-                        st.plotly_chart(fig_donut, use_container_width=True, key="chart_donut")
+                        st.plotly_chart(fig_donut, width='stretch', key="chart_donut")
                     else:
                         st.info("Sin work units")
 
@@ -3188,7 +3188,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                             hovertemplate="%{y}: $%{x:.2f}<extra></extra>"
                         ), row=1, col=2)
                         fig_workers.update_layout(**plotly_layout, height=300, showlegend=False)
-                        st.plotly_chart(fig_workers, use_container_width=True, key="chart_workers")
+                        st.plotly_chart(fig_workers, width='stretch', key="chart_workers")
                     else:
                         st.info("No hay workers activos")
 
@@ -3208,7 +3208,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                                            annotation_text=f"Prom: ${avg_pnl:.0f}")
                         fig_hist.update_layout(**plotly_layout, height=300,
                                                xaxis_title="PnL ($)", yaxis_title="Frecuencia")
-                        st.plotly_chart(fig_hist, use_container_width=True, key="chart_hist")
+                        st.plotly_chart(fig_hist, width='stretch', key="chart_hist")
                     else:
                         st.info("Sin datos de distribucion")
 
@@ -3226,7 +3226,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                         ))
                         fig_rate.update_layout(**plotly_layout, height=300,
                                                xaxis_title="", yaxis_title="Resultados")
-                        st.plotly_chart(fig_rate, use_container_width=True, key="chart_rate")
+                        st.plotly_chart(fig_rate, width='stretch', key="chart_rate")
                     else:
                         st.info("Sin datos de timeline")
 
@@ -3445,7 +3445,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                                 height=220,
                                 margin=dict(l=20, r=20, t=60, b=10)
                             )
-                            st.plotly_chart(fig_gauge, use_container_width=True,
+                            st.plotly_chart(fig_gauge, width='stretch',
                                             key=f"gauge_{machine.replace(' ', '_')}")
 
                     # Energy metrics in last column
@@ -3505,7 +3505,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                     st.dataframe(
                         df_filtered[['timestamp', 'work_unit_id', 'pnl', 'worker_id', 'is_canonical']],
-                        use_container_width=True,
+                        width='stretch',
                         column_config={
                             "timestamp": st.column_config.DatetimeColumn("Fecha", format="DD/MM HH:mm"),
                             "work_unit_id": st.column_config.NumberColumn("WU ID"),
@@ -3757,11 +3757,11 @@ elif nav_mode == "🌐 Sistema Distribuido":
                 col_action1, col_action2 = st.columns(2)
 
                 with col_action1:
-                    if st.button("🔄 Actualizar Lista", use_container_width=True):
+                    if st.button("🔄 Actualizar Lista", width='stretch'):
                         st.rerun()
 
                 with col_action2:
-                    if st.button("🗑️ Limpiar Workers Antiguos", use_container_width=True,
+                    if st.button("🗑️ Limpiar Workers Antiguos", width='stretch',
                                help="Elimina workers no vistos en las últimas 24 horas"):
                         try:
                             conn = sqlite3.connect(COORDINATOR_DB)
@@ -3935,7 +3935,7 @@ pkill -f crypto_worker""", language="bash")
             with col_log1:
                 st.markdown("### 📡 Coordinator Log")
             with col_log2:
-                if st.button("🔄 Actualizar", use_container_width=True, key="refresh_coordinator"):
+                if st.button("🔄 Actualizar", width='stretch', key="refresh_coordinator"):
                     st.rerun()
             with col_log3:
                 auto_refresh_coord = st.checkbox("🔁 Auto", value=False, key="auto_refresh_coord")
@@ -3953,7 +3953,7 @@ pkill -f crypto_worker""", language="bash")
             with col_log1:
                 st.markdown("### 🍎 MacBook Pro Workers (3)")
             with col_log2:
-                if st.button("🔄 Actualizar", use_container_width=True, key="refresh_worker_pro"):
+                if st.button("🔄 Actualizar", width='stretch', key="refresh_worker_pro"):
                     st.rerun()
             with col_log3:
                 auto_refresh_log = st.checkbox("🔁 Auto", value=False, key="auto_refresh_worker_pro")
@@ -3980,7 +3980,7 @@ pkill -f crypto_worker""", language="bash")
             with col_log1:
                 st.markdown("### 🐧 Linux ROG Workers (5)")
             with col_log2:
-                if st.button("🔄 Actualizar", use_container_width=True, key="refresh_worker_linux"):
+                if st.button("🔄 Actualizar", width='stretch', key="refresh_worker_linux"):
                     st.rerun()
             with col_log3:
                 auto_refresh_linux = st.checkbox("🔁 Auto", value=False, key="auto_refresh_linux")
@@ -3989,7 +3989,7 @@ pkill -f crypto_worker""", language="bash")
             lines_ssh = st.slider("Líneas", 10, 200, 30, key="worker_linux_lines")
             linux_wn = st.radio("Worker:", [1, 2, 3, 4, 5], horizontal=True, key="linux_w_sel")
 
-            if st.button("📥 Leer Log vía SSH", use_container_width=True, key="read_linux_log"):
+            if st.button("📥 Leer Log vía SSH", width='stretch', key="read_linux_log"):
                 with st.spinner("Conectando a 10.0.0.240..."):
                     try:
                         result = subprocess.run(
@@ -4275,7 +4275,7 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
                 for key, info in timeframe_options.items():
                     col1, col2 = st.columns([1, 4])
                     with col1:
-                        if st.button(info['label'], key=f"tf_{key}", use_container_width=True):
+                        if st.button(info['label'], key=f"tf_{key}", width='stretch'):
                             selected_timeframe = key
                     with col2:
                         st.write(f"*{info['desc']}*")
@@ -4317,16 +4317,16 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
 
                 preset_selected = None
                 with col1:
-                    if st.button("📊 1 Semana", use_container_width=True):
+                    if st.button("📊 1 Semana", width='stretch'):
                         preset_selected = 7
                 with col2:
-                    if st.button("📊 1 Mes", use_container_width=True):
+                    if st.button("📊 1 Mes", width='stretch'):
                         preset_selected = 30
                 with col3:
-                    if st.button("📊 3 Meses", use_container_width=True):
+                    if st.button("📊 3 Meses", width='stretch'):
                         preset_selected = 90
                 with col4:
-                    if st.button("📊 1 Año", use_container_width=True):
+                    if st.button("📊 1 Año", width='stretch'):
                         preset_selected = 365
 
                 st.divider()
@@ -4429,7 +4429,7 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
                         st.session_state['download_step'] = 3
                         st.rerun()
                 with col_btn3:
-                    if st.button("🚀 Descargar Ahora", type="primary", use_container_width=True):
+                    if st.button("🚀 Descargar Ahora", type="primary", width='stretch'):
                         # Execute download
                         st.markdown("---")
                         st.markdown("### 📥 Descargando Datos...")
@@ -4515,7 +4515,7 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
             Y sugiere parámetros óptimos para maximizar la búsqueda.
             """)
 
-            if st.button("🔍 Calcular Parámetros Óptimos", use_container_width=True, type="primary"):
+            if st.button("🔍 Calcular Parámetros Óptimos", width='stretch', type="primary"):
                 with st.spinner("Analizando datos y recursos..."):
                     try:
                         # 1. Analyze available data - use selected file
@@ -4614,7 +4614,7 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
 
         # Button to apply optimal parameters
         if st.session_state.get('show_optimal', False):
-            if st.button("🎯 Aplicar Parámetros Óptimos", use_container_width=True, type="secondary"):
+            if st.button("🎯 Aplicar Parámetros Óptimos", width='stretch', type="secondary"):
                 st.session_state['apply_optimal'] = True
                 st.rerun()
 
@@ -4710,13 +4710,13 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button("⚡ Búsqueda Rápida", use_container_width=True):
+            if st.button("⚡ Búsqueda Rápida", width='stretch'):
                 st.info("Población: 20, Generaciones: 15, Risk: LOW")
 
         with col2:
-            if st.button("🎯 Búsqueda Estándar", use_container_width=True):
+            if st.button("🎯 Búsqueda Estándar", width='stretch'):
                 st.info("Población: 40, Generaciones: 30, Risk: MEDIUM")
 
         with col3:
-            if st.button("🔥 Búsqueda Exhaustiva", use_container_width=True):
+            if st.button("🔥 Búsqueda Exhaustiva", width='stretch'):
                 st.info("Población: 60, Generaciones: 50, Risk: HIGH")
