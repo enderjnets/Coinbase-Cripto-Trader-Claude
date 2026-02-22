@@ -291,6 +291,11 @@ def index():
     """Dashboard web principal"""
     return render_template_string(DASHBOARD_HTML)
 
+@app.route('/mobile')
+def mobile():
+    """Dashboard mobile-optimizado (PWA)"""
+    return render_template_string(MOBILE_HTML)
+
 @app.route('/api/status', methods=['GET'])
 def api_status():
     """Obtiene estadísticas generales del sistema"""
@@ -714,6 +719,479 @@ def api_dashboard_stats():
         'worker_stats': worker_stats,
         'timestamp': time.time()
     })
+
+# ============================================================================
+# MOBILE DASHBOARD HTML (PWA)
+# ============================================================================
+
+MOBILE_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bittrader">
+<title>Bittrader Monitor</title>
+<style>
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --surface2:#1c2128;
+  --border:  #30363d;
+  --green:   #3fb950;
+  --green2:  #238636;
+  --yellow:  #d29922;
+  --red:     #f85149;
+  --blue:    #58a6ff;
+  --text:    #e6edf3;
+  --muted:   #8b949e;
+  --nav-h:   64px;
+  --header-h:56px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden}
+
+/* ── HEADER ── */
+.app-header{
+  position:fixed;top:0;left:0;right:0;height:var(--header-h);
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 16px;z-index:100;
+}
+.app-header h1{font-size:17px;font-weight:700;letter-spacing:.3px}
+.app-header h1 span{color:var(--green)}
+.header-right{display:flex;align-items:center;gap:10px}
+.clock{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite}
+.dot.off{background:var(--red);box-shadow:0 0 6px var(--red);animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── SCROLL AREA ── */
+.scroll-area{
+  position:fixed;
+  top:var(--header-h);
+  bottom:var(--nav-h);
+  left:0;right:0;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:12px 12px 8px;
+}
+
+/* ── BOTTOM NAV ── */
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);
+  background:var(--surface);border-top:1px solid var(--border);
+  display:flex;z-index:100;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.nav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:4px;border:none;background:transparent;
+  color:var(--muted);font-size:10px;font-weight:500;cursor:pointer;
+  transition:color .15s;padding:8px 0;
+}
+.nav-btn.active{color:var(--green)}
+.nav-btn svg{width:22px;height:22px;stroke-width:1.8}
+
+/* ── TABS ── */
+.tab{display:none}
+.tab.active{display:block}
+
+/* ── KPI GRID ── */
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.kpi{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:14px 12px;position:relative;overflow:hidden;
+}
+.kpi::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--accent,var(--green));border-radius:3px 3px 0 0;
+}
+.kpi-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+.kpi-value{font-size:32px;font-weight:800;color:var(--accent,var(--green));line-height:1.1;margin:4px 0 2px}
+.kpi-sub{font-size:11px;color:var(--muted)}
+
+/* ── CARD ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden}
+.card-title{
+  font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--muted);padding:12px 14px 8px;border-bottom:1px solid var(--border);
+}
+
+/* ── PROGRESS ── */
+.prog-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+.prog-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.prog-title{font-size:13px;font-weight:600}
+.prog-pct{font-size:20px;font-weight:800;color:var(--green)}
+.prog-bg{background:#21262d;border-radius:6px;height:10px;overflow:hidden}
+.prog-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--green2),var(--green));transition:width .6s}
+.prog-sub{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
+.prog-sub span{font-size:11px;color:var(--muted)}
+
+/* ── GOAL ── */
+.goal-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+.goal-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.goal-pct-big{font-size:36px;font-weight:800;color:var(--gcolor,var(--red));line-height:1}
+.goal-info{display:flex;flex-direction:column;gap:2px}
+.goal-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.goal-badge{
+  margin-left:auto;font-size:22px;font-weight:800;
+  color:var(--gcolor,var(--red));
+  background:rgba(255,255,255,.04);border:1px solid var(--border);
+  border-radius:8px;padding:6px 12px;white-space:nowrap;
+}
+.goal-bg{background:#21262d;border-radius:6px;height:12px;overflow:hidden;margin-bottom:6px}
+.goal-fill{height:100%;border-radius:6px;background:var(--ggradient,linear-gradient(90deg,#f85149,#d29922));transition:width .8s}
+.goal-msg{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
+.goal-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.gm{background:#21262d;border-radius:8px;padding:10px 12px;border-left:3px solid var(--border)}
+.gm-val{font-size:18px;font-weight:700}
+.gm-lbl{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* ── BEST STRATEGY ── */
+.best-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.best-item{background:var(--surface2);border-radius:8px;padding:10px;text-align:center}
+.best-val{font-size:20px;font-weight:700;color:var(--green)}
+.best-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+
+/* ── WORKERS LIST ── */
+.worker-item{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 14px;border-bottom:1px solid var(--border);
+}
+.worker-item:last-child{border-bottom:none}
+.worker-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.worker-dot.alive{background:var(--green);box-shadow:0 0 5px var(--green)}
+.worker-dot.dead{background:var(--red)}
+.worker-name{font-size:13px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.worker-wus{font-size:12px;color:var(--blue);font-weight:600;white-space:nowrap}
+.worker-ago{font-size:11px;color:var(--muted);white-space:nowrap}
+
+/* ── TOP RESULTS ── */
+.result-item{padding:12px 14px;border-bottom:1px solid var(--border)}
+.result-item:last-child{border-bottom:none}
+.result-row1{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.result-rank{font-size:12px;color:var(--muted);width:24px}
+.result-pnl{font-size:18px;font-weight:700;color:var(--green)}
+.result-pnl.neg{color:var(--red)}
+.result-row2{display:flex;gap:12px}
+.result-stat{font-size:11px;color:var(--muted)}
+.result-stat b{color:var(--text)}
+
+/* ── REFRESH INDICATOR ── */
+.refresh-bar{height:2px;background:var(--border);margin-bottom:12px;border-radius:1px;overflow:hidden}
+.refresh-fill{height:100%;background:var(--green);transition:width 1s linear;border-radius:1px}
+
+/* ── EMPTY STATE ── */
+.empty{text-align:center;padding:32px 16px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>🧬 Bit<span>trader</span></h1>
+  <div class="header-right">
+    <span class="clock" id="clock">--:--</span>
+    <div class="dot" id="dot"></div>
+  </div>
+</header>
+
+<!-- TAB: DASHBOARD -->
+<div class="scroll-area tab active" id="tab-dash">
+  <div class="refresh-bar"><div class="refresh-fill" id="rfill" style="width:100%"></div></div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi" style="--accent:var(--blue)">
+      <div class="kpi-label">Workers</div>
+      <div class="kpi-value" id="d-workers">-</div>
+      <div class="kpi-sub">activos ahora</div>
+    </div>
+    <div class="kpi" style="--accent:var(--green)">
+      <div class="kpi-label">Mejor PnL</div>
+      <div class="kpi-value" id="d-pnl">$-</div>
+      <div class="kpi-sub" id="d-wr">- win rate</div>
+    </div>
+    <div class="kpi" style="--accent:var(--yellow)">
+      <div class="kpi-label">Pendientes</div>
+      <div class="kpi-value" id="d-pending">-</div>
+      <div class="kpi-sub">work units</div>
+    </div>
+    <div class="kpi" style="--accent:var(--green)">
+      <div class="kpi-label">Completados</div>
+      <div class="kpi-value" id="d-done">-</div>
+      <div class="kpi-sub" id="d-pct">- % del total</div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="prog-wrap">
+    <div class="prog-row">
+      <span class="prog-title">Progreso total</span>
+      <span class="prog-pct" id="d-prog-pct">0%</span>
+    </div>
+    <div class="prog-bg"><div class="prog-fill" id="d-prog-fill" style="width:0%"></div></div>
+    <div class="prog-sub">
+      <span id="d-prog-comp">✓ 0</span>
+      <span id="d-prog-inp">⚡ 0</span>
+      <span id="d-prog-pend">⏳ 0</span>
+    </div>
+  </div>
+
+  <!-- OBJETIVO 5% -->
+  <div class="goal-card" id="goal-card">
+    <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">🎯 Objetivo: 5% Diario</div>
+    <div class="goal-top">
+      <div>
+        <div class="goal-pct-big" id="g-daily">0.00%</div>
+        <div class="goal-label">retorno diario</div>
+      </div>
+      <div class="goal-badge" id="g-badge">0.0%</div>
+    </div>
+    <div class="goal-bg"><div class="goal-fill" id="g-fill" style="width:0%"></div></div>
+    <div class="goal-msg" id="g-msg">Esperando datos...</div>
+    <div class="goal-metrics">
+      <div class="gm"><div class="gm-val" id="g-pnl">$-</div><div class="gm-lbl">PnL total</div></div>
+      <div class="gm"><div class="gm-val" id="g-dailypnl">$-</div><div class="gm-lbl">PnL/día</div></div>
+      <div class="gm"><div class="gm-val" id="g-sharpe" style="color:var(--yellow)">-</div><div class="gm-lbl">Sharpe</div></div>
+      <div class="gm"><div class="gm-val" id="g-dd" style="color:var(--yellow)">-%</div><div class="gm-lbl">Max Drawdown</div></div>
+    </div>
+  </div>
+
+  <!-- MEJOR ESTRATEGIA -->
+  <div class="card">
+    <div class="card-title">🏆 Mejor Estrategia</div>
+    <div class="best-grid">
+      <div class="best-item"><div class="best-val" id="b-pnl">$-</div><div class="best-lbl">PnL</div></div>
+      <div class="best-item"><div class="best-val" id="b-wr">-%</div><div class="best-lbl">Win Rate</div></div>
+      <div class="best-item"><div class="best-val" id="b-trades">-</div><div class="best-lbl">Trades</div></div>
+      <div class="best-item"><div class="best-val" id="b-sharpe">-</div><div class="best-lbl">Sharpe</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: WORKERS -->
+<div class="scroll-area tab" id="tab-workers">
+  <div class="card">
+    <div class="card-title">🖥️ Workers activos</div>
+    <div id="workers-list"><div class="empty">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- TAB: RESULTADOS -->
+<div class="scroll-area tab" id="tab-results">
+  <div class="card">
+    <div class="card-title">📊 Top Estrategias</div>
+    <div id="results-list"><div class="empty">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" id="nav-dash" onclick="switchTab('dash')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Panel
+  </button>
+  <button class="nav-btn" id="nav-workers" onclick="switchTab('workers')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg>
+    Workers
+  </button>
+  <button class="nav-btn" id="nav-results" onclick="switchTab('results')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Resultados
+  </button>
+</nav>
+
+<script>
+const REFRESH_S = 10;
+let countdown = REFRESH_S;
+let timer = null;
+
+// ── Tab switching ────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+}
+
+// ── Clock ────────────────────────────────────────────────────────
+function tickClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.getHours().toString().padStart(2,'0') + ':' +
+    now.getMinutes().toString().padStart(2,'0') + ':' +
+    now.getSeconds().toString().padStart(2,'0');
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+// ── Refresh bar ──────────────────────────────────────────────────
+function tickRefresh() {
+  countdown--;
+  const pct = (countdown / REFRESH_S * 100).toFixed(0);
+  document.getElementById('rfill').style.width = pct + '%';
+  if (countdown <= 0) {
+    countdown = REFRESH_S;
+    fetchAll();
+  }
+}
+setInterval(tickRefresh, 1000);
+
+// ── Helpers ──────────────────────────────────────────────────────
+function fmt(n, d=2) {
+  if (n === null || n === undefined) return '-';
+  return Number(n).toLocaleString('es-ES', {minimumFractionDigits: d, maximumFractionDigits: d});
+}
+function fmtMin(m) {
+  if (m < 1)   return 'ahora';
+  if (m < 60)  return Math.round(m) + 'm';
+  return Math.round(m/60) + 'h ' + (Math.round(m)%60) + 'm';
+}
+function setColor(el, val, good, warn) {
+  el.style.color = val >= good ? 'var(--green)' : val >= warn ? 'var(--yellow)' : 'var(--red)';
+}
+
+// ── Main fetch ───────────────────────────────────────────────────
+async function fetchAll() {
+  try {
+    const [s, d, r] = await Promise.all([
+      fetch('/api/status').then(x => x.json()),
+      fetch('/api/dashboard_stats').then(x => x.json()),
+      fetch('/api/results').then(x => x.json())
+    ]);
+
+    document.getElementById('dot').className = 'dot';
+
+    const wu = s.work_units;
+    const pct = wu.total > 0 ? (wu.completed / wu.total * 100) : 0;
+
+    // ── KPIs ──
+    document.getElementById('d-workers').textContent = d.workers.active;
+    document.getElementById('d-pending').textContent = wu.pending.toLocaleString();
+    document.getElementById('d-done').textContent    = wu.completed.toLocaleString();
+    document.getElementById('d-pct').textContent     = pct.toFixed(1) + '% del total';
+
+    // Progress
+    document.getElementById('d-prog-pct').textContent     = pct.toFixed(1) + '%';
+    document.getElementById('d-prog-fill').style.width    = pct.toFixed(1) + '%';
+    document.getElementById('d-prog-comp').textContent    = '✓ ' + wu.completed.toLocaleString();
+    document.getElementById('d-prog-inp').textContent     = '⚡ ' + wu.in_progress;
+    document.getElementById('d-prog-pend').textContent    = '⏳ ' + wu.pending.toLocaleString();
+
+    // Best strategy
+    const best = d.best_strategy || s.best_strategy;
+    if (best && best.pnl) {
+      document.getElementById('d-pnl').textContent = '$' + fmt(best.pnl, 0);
+      document.getElementById('d-wr').textContent  = (best.win_rate*100).toFixed(0) + '% win rate';
+      document.getElementById('b-pnl').textContent    = '$' + fmt(best.pnl, 2);
+      document.getElementById('b-wr').textContent     = (best.win_rate*100).toFixed(1) + '%';
+      document.getElementById('b-trades').textContent = best.trades || '-';
+      document.getElementById('b-sharpe').textContent = fmt(best.sharpe_ratio, 2);
+
+      // Objetivo 5%
+      const CAP = 500, TARGET = 5.0, DAYS = 80000/1440;
+      const totalRet  = best.pnl / CAP * 100;
+      const dailyPct  = totalRet / DAYS;
+      const dailyPnl  = CAP * (dailyPct / 100);
+      const progress  = Math.min(dailyPct / TARGET * 100, 100);
+
+      let gc, gg, msg;
+      if (progress < 20) {
+        gc='#f85149'; gg='linear-gradient(90deg,#f85149,#d29922)';
+        msg = '⚡ Inicio — sigue minando estrategias';
+      } else if (progress < 50) {
+        gc='#d29922'; gg='linear-gradient(90deg,#d29922,#e3b341)';
+        msg = '📈 Buen progreso — ' + fmt(progress,1) + '% del objetivo';
+      } else if (progress < 80) {
+        gc='#58a6ff'; gg='linear-gradient(90deg,#58a6ff,#3fb950)';
+        msg = '🚀 Muy cerca — ' + fmt(100-progress,1) + '% restante';
+      } else {
+        gc='#3fb950'; gg='linear-gradient(90deg,#238636,#3fb950)';
+        msg = '🏆 ¡Objetivo casi alcanzado!';
+      }
+
+      const gc_card = document.getElementById('goal-card');
+      gc_card.style.setProperty('--gcolor', gc);
+      gc_card.style.setProperty('--ggradient', gg);
+
+      document.getElementById('g-daily').textContent  = fmt(dailyPct,2) + '%';
+      document.getElementById('g-badge').textContent  = fmt(progress,1) + '%';
+      document.getElementById('g-fill').style.width   = progress.toFixed(1) + '%';
+      document.getElementById('g-msg').textContent    = msg;
+      document.getElementById('g-pnl').textContent    = '$' + fmt(best.pnl,2);
+      document.getElementById('g-dailypnl').textContent = '$' + fmt(dailyPnl,2) + '/día';
+
+      const srEl = document.getElementById('g-sharpe');
+      srEl.textContent = fmt(best.sharpe_ratio,2);
+      setColor(srEl, best.sharpe_ratio||0, 2, 1);
+
+      const ddEl = document.getElementById('g-dd');
+      const dd = (best.max_drawdown||0)*100;
+      ddEl.textContent = fmt(dd,1) + '%';
+      ddEl.style.color = dd<=10 ? 'var(--green)' : dd<=25 ? 'var(--yellow)' : 'var(--red)';
+    }
+
+    // ── Workers list ──
+    const now = Date.now()/1000;
+    const workers = d.worker_stats || [];
+    const wDiv = document.getElementById('workers-list');
+    if (!workers.length) {
+      wDiv.innerHTML = '<div class="empty">Sin workers registrados</div>';
+    } else {
+      wDiv.innerHTML = workers.map(w => {
+        const minsAgo = w.last_seen_minutes_ago || 999;
+        const alive = minsAgo < 5;
+        const name = w.id.includes('_W')
+          ? w.id.replace('_Darwin','').replace('_Linux','')
+          : w.id;
+        return `<div class="worker-item">
+          <div class="worker-dot ${alive?'alive':'dead'}"></div>
+          <div class="worker-name">${name}</div>
+          <div class="worker-wus">${(w.work_units_completed||0).toLocaleString()} WU</div>
+          <div class="worker-ago">${fmtMin(minsAgo)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    // ── Top results ──
+    const results = r.results || [];
+    const rDiv = document.getElementById('results-list');
+    const medals = ['🥇','🥈','🥉'];
+    if (!results.length) {
+      rDiv.innerHTML = '<div class="empty">Sin resultados canónicos aún</div>';
+    } else {
+      rDiv.innerHTML = results.slice(0,15).map((res,i) => {
+        const pnlClass = res.pnl>=0 ? '' : ' neg';
+        const wkr = (res.worker_id||'').split('_Darwin_').pop() || res.worker_id;
+        return `<div class="result-item">
+          <div class="result-row1">
+            <span class="result-rank">${medals[i]||('#'+(i+1))}</span>
+            <span class="result-pnl${pnlClass}">$${fmt(res.pnl,2)}</span>
+          </div>
+          <div class="result-row2">
+            <span class="result-stat">WR: <b>${(res.win_rate*100).toFixed(1)}%</b></span>
+            <span class="result-stat">Sharpe: <b>${fmt(res.sharpe_ratio,2)}</b></span>
+            <span class="result-stat">Trades: <b>${res.trades}</b></span>
+            <span class="result-stat" style="color:var(--muted)">${wkr}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+  } catch(e) {
+    document.getElementById('dot').className = 'dot off';
+    console.error(e);
+  }
+}
+
+fetchAll();
+</script>
+</body>
+</html>"""
 
 # ============================================================================
 # DASHBOARD HTML
