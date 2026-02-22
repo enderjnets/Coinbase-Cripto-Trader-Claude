@@ -322,7 +322,7 @@ if HAS_NUMBA:
         if max_positions > 3:
             max_positions = 3
 
-        balance = 10000.0
+        balance = 500.0
 
         # Fixed arrays for up to 3 positions
         pos_active = np.zeros(3, dtype=np.int64)      # 0 or 1

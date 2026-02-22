@@ -32,7 +32,7 @@ db_lock = Lock()
 # Configuración
 DATABASE = 'coordinator.db'
 REDUNDANCY_FACTOR = 2  # Cada work unit se envía a 2 workers
-VALIDATION_THRESHOLD = 0.9  # 90% de similitud para considerar válido
+BACKTEST_CAPITAL = 500.0  # Capital inicial del backtester (numba_backtester.py)
 
 # ============================================================================
 # DATABASE FUNCTIONS
@@ -237,8 +237,8 @@ def validate_work_unit(work_id):
             return False  # Necesita más réplicas
 
         # Seleccionar el mejor resultado válido como canónico
-        # Filtramos resultados imposibles: PnL > 5000 con < 10 trades es bug del backtester
-        PNL_MAX = 5000
+        # Filtramos resultados imposibles: con $500 capital, >$1000 (200% return) es bug del backtester
+        PNL_MAX = 1000
         MIN_TRADES = 5
         valid_results = [r for r in results
                          if r['pnl'] is not None
@@ -369,7 +369,7 @@ def api_get_work():
         if c.rowcount == 0:
             c.execute("""INSERT INTO workers
                 (id, hostname, platform, last_seen, work_units_completed, total_execution_time, status)
-                VALUES (?, ?, ?, julianday('now'), 0, 0, 'active')""",
+                VALUES (?, ?, ?, strftime('%s', 'now'), 0, 0, 'active')""",
                 (worker_id, request.headers.get('Host', 'unknown'),
                  request.headers.get('User-Agent', 'unknown')))
 
@@ -500,6 +500,7 @@ def api_results():
             'win_rate': row['win_rate'],
             'sharpe_ratio': row['sharpe_ratio'],
             'max_drawdown': row['max_drawdown'],
+            'execution_time': row['execution_time'],
             'strategy_params': json.loads(row['strategy_params'])
         })
 
@@ -533,7 +534,7 @@ def api_all_results():
             'sharpe_ratio': row['sharpe_ratio'],
             'max_drawdown': row['max_drawdown'],
             'execution_time': row['execution_time'],
-            'submitted_at': row['submitted_at'],
+            'submitted_at': (row['submitted_at'] - 2440587.5) * 86400 if row['submitted_at'] and row['submitted_at'] > 2000000 else row['submitted_at'],
             'validated': row['validated'],
             'is_canonical': row['is_canonical'],
             'strategy_params': json.loads(row['strategy_params'])
@@ -598,12 +599,13 @@ def api_dashboard_stats():
             'is_canonical': bool(row[4])
         })
     
-    # Completion timeline - group by hour
-    c.execute("""SELECT COUNT(*), submitted_at FROM results 
-                 WHERE submitted_at > (julianday('now') - 1) 
-                 GROUP BY CAST(submitted_at * 24 AS INT) % 24
-                 ORDER BY submitted_at DESC""")
-    completion_timeline = [{'hour_unix': (row[1] - 2440588) * 86400, 'count': row[0]} for row in c.fetchall()]
+    # Completion timeline - group by hour (Julian Day * 24 gives unique integer per hour)
+    c.execute("""SELECT COUNT(*), MIN(submitted_at) as bucket_start
+                 FROM results
+                 WHERE submitted_at > (julianday('now') - 1)
+                 GROUP BY CAST(submitted_at * 24 AS INT)
+                 ORDER BY bucket_start ASC""")
+    completion_timeline = [{'hour_unix': (row[1] - 2440587.5) * 86400, 'count': row[0]} for row in c.fetchall()]
     
     # Best strategy
     c.execute("""SELECT r.*, w.strategy_params
@@ -627,40 +629,38 @@ def api_dashboard_stats():
             'is_canonical': best_row['is_canonical']
         }
     
-    # Worker performance stats
-    c.execute("""SELECT id, hostname, work_units_completed, total_execution_time, 
+    # Worker performance stats — pre-fetch max_pnl for ALL workers in one query
+    c.execute("""SELECT worker_id, MAX(pnl) as max_pnl
+                 FROM results
+                 WHERE pnl < 1000 AND trades >= 5
+                 GROUP BY worker_id""")
+    worker_max_pnl = {row[0]: row[1] for row in c.fetchall()}
+
+    c.execute("""SELECT id, hostname, work_units_completed, total_execution_time,
                          last_seen, status
                   FROM workers ORDER BY work_units_completed DESC""")
-    
+
+    now_unix = time.time()
     worker_stats = []
     for row in c.fetchall():
-        # Convert sqlite3.Row to dict for easier access
         row_dict = dict(row)
-        
-        # last_seen is now stored as Unix timestamp from strftime('%s', 'now')
+
+        # last_seen is stored as Unix timestamp from strftime('%s', 'now')
         last_seen_unix = row_dict.get('last_seen') or 0
-        if last_seen_unix > 0:
-            now_unix = time.time()
-            mins_ago = (now_unix - last_seen_unix) / 60
-        else:
-            mins_ago = 999
-        
+        mins_ago = (now_unix - last_seen_unix) / 60 if last_seen_unix > 0 else 999
+
         short_name = row_dict['id'].split('_W')[0].split('_')[-1] if '_W' in row_dict['id'] else row_dict['id'][:10]
-        
-        # Get max_pnl for this worker
-        c2 = conn.cursor()
-        c2.execute("SELECT MAX(pnl) FROM results WHERE worker_id = ? AND pnl < 5000 AND trades >= 5", (row_dict['id'],))
-        max_pnl = c2.fetchone()[0] or 0
-        
+        max_pnl = worker_max_pnl.get(row_dict['id'], 0) or 0
+
         worker_stats.append({
             'id': row_dict['id'],
             'short_name': short_name,
             'hostname': row_dict['hostname'],
             'work_units_completed': row_dict['work_units_completed'],
             'total_execution_time': row_dict['total_execution_time'],
-            'last_seen': row_dict['last_seen'],
+            'last_seen': last_seen_unix,
             'last_seen_minutes_ago': mins_ago,
-            'status': 'active' if mins_ago < 30 else 'inactive',
+            'status': 'active' if mins_ago < 5 else 'inactive',
             'max_pnl': max_pnl
         })
     
@@ -671,12 +671,23 @@ def api_dashboard_stats():
     # Performance metrics
     c.execute("SELECT AVG(execution_time) FROM results WHERE execution_time > 0")
     avg_exec_time = c.fetchone()[0] or 0
-    
+
     c.execute("SELECT SUM(execution_time) FROM results")
     total_compute_time = c.fetchone()[0] or 0
-    
+
+    # results_per_hour: use wall-clock time from first result submission to now
+    c.execute("SELECT MIN(submitted_at) FROM results")
+    first_submitted_jd = c.fetchone()[0]
+    if first_submitted_jd and first_submitted_jd > 2000000:
+        # Julian Day → Unix timestamp
+        first_unix = (first_submitted_jd - 2440587.5) * 86400
+        wall_clock_hours = max((time.time() - first_unix) / 3600, 1/60)
+    else:
+        wall_clock_hours = 1
+    results_per_hour = total_results / wall_clock_hours
+
     conn.close()
-    
+
     return jsonify({
         'work_units': {
             'total': total_wu,
@@ -692,7 +703,7 @@ def api_dashboard_stats():
             'total_results': total_results,
             'positive_pnl_count': positive_results,
             'avg_pnl': avg_pnl,
-            'results_per_hour': total_results / max(1, total_compute_time / 3600),
+            'results_per_hour': results_per_hour,
             'avg_execution_time': avg_exec_time,
             'total_compute_time': total_compute_time
         },
@@ -1036,7 +1047,7 @@ DASHBOARD_HTML = """
             <div class="goal-metric">
                 <div class="goal-metric-val" id="gm-daily-pnl">$-</div>
                 <div class="goal-metric-lbl">PnL diario actual</div>
-                <div class="goal-metric-target" id="gm-daily-target">objetivo $25/día en $500</div>
+                <div class="goal-metric-target" id="gm-daily-target">objetivo $25/día</div>
             </div>
             <div class="goal-metric">
                 <div class="goal-metric-val" id="gm-total-pnl">$-</div>
@@ -1049,9 +1060,9 @@ DASHBOARD_HTML = """
                 <div class="goal-metric-target" id="gm-total-return-target">objetivo -%</div>
             </div>
             <div class="goal-metric">
-                <div class="goal-metric-val" id="gm-capital">$500 / $10k</div>
-                <div class="goal-metric-lbl">Real / Backtest capital</div>
-                <div class="goal-metric-target">% calculado sobre $10k backtest</div>
+                <div class="goal-metric-val" id="gm-capital">$500</div>
+                <div class="goal-metric-lbl">Capital del backtest</div>
+                <div class="goal-metric-target">% calculado sobre $500</div>
             </div>
             <div class="goal-metric">
                 <div class="goal-metric-val" id="gm-days">- días</div>
@@ -1294,27 +1305,24 @@ async function updateDashboard() {
 
         // ── Objetivo 5% Diario ──
         if (best && best.pnl) {
-            // NOTA: el backtester corre con $10,000 capital fijo (numba_backtester.py).
-            // El PnL en USD es sobre esa base. Para medir el % diario real usamos
-            // BACKTEST_CAPITAL. REAL_CAPITAL ($500) solo se usa para mostrar
-            // cuánto ganarías en dólares con tu cuenta real.
-            const BACKTEST_CAPITAL = 10000;  // capital que usa el backtester
-            const REAL_CAPITAL     = 500;    // tu cuenta real objetivo
+            // El backtester corre con $500 capital (numba_backtester.py, balance = 500).
+            // Todos los cálculos de % y PnL son directamente sobre esa base.
+            const BACKTEST_CAPITAL = 500;    // capital del backtester
             const TARGET_DAILY_PCT = 5.0;
             const MAX_CANDLES      = 80000;
             const CANDLES_PER_DAY  = 1440;
             const BACKTEST_DAYS    = MAX_CANDLES / CANDLES_PER_DAY;
 
-            // % de retorno basado en capital real del backtest
+            // % de retorno basado en $500 capital
             const totalReturn    = best.pnl / BACKTEST_CAPITAL * 100;
             const dailyReturnPct = totalReturn / BACKTEST_DAYS;
-            // PnL diario equivalente sobre cuenta real de $500
-            const dailyPnl       = REAL_CAPITAL * (dailyReturnPct / 100);
-            const targetDailyPnl = REAL_CAPITAL * (TARGET_DAILY_PCT / 100);
+            // PnL diario equivalente sobre $500
+            const dailyPnl       = BACKTEST_CAPITAL * (dailyReturnPct / 100);
+            const targetDailyPnl = BACKTEST_CAPITAL * (TARGET_DAILY_PCT / 100);
             const targetTotalPnl = targetDailyPnl * BACKTEST_DAYS;
             const targetTotalReturn = TARGET_DAILY_PCT * BACKTEST_DAYS;
             const progressPct    = Math.min(dailyReturnPct / TARGET_DAILY_PCT * 100, 100);
-            const multiplier     = targetTotalPnl / Math.max(REAL_CAPITAL * (totalReturn/100), 0.01);
+            const multiplier     = targetTotalPnl / Math.max(BACKTEST_CAPITAL * (totalReturn/100), 0.01);
 
             // Color based on progress
             let goalColor, goalGradient, statusMsg;
