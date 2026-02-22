@@ -1,0 +1,69 @@
+{
+  "work_id": null,
+  "generation": 45,
+  "best_genome": {
+    "entry_rules": [
+      {
+        "left": {
+          "indicator": "RSI",
+          "period": 50
+        },
+        "op": "<",
+        "right": {
+          "value": 20
+        }
+      },
+      {
+        "left": {
+          "field": "volume"
+        },
+        "op": "==",
+        "right": {
+          "indicator": "VOLSMA",
+          "period": 200
+        }
+      },
+      {
+        "left": {
+          "indicator": "ICHIMOKU_Base",
+          "period": 9
+        },
+        "op": "<=",
+        "right": {
+          "value": 50
+        }
+      },
+      {
+        "left": {
+          "indicator": "ATR_Pct",
+          "period": 30
+        },
+        "op": ">=",
+        "right": {
+          "value": 0.5
+        }
+      },
+      {
+        "left": {
+          "indicator": "ICHIMOKU_SpanB",
+          "period": 50
+        },
+        "op": "==",
+        "right": {
+          "value": 50
+        }
+      }
+    ],
+    "params": {
+      "sl_pct": 0.03155470054958153,
+      "tp_pct": 0.07812189860442424,
+      "size_pct": 0.05005826630173209,
+      "max_positions": 2.0,
+      "trailing_stop_pct": 0.010937500000000001,
+      "breakeven_after": 0.014375
+    }
+  },
+  "best_pnl": 453.35,
+  "timestamp": 1771786695.950911,
+  "worker_id": "Enders-MacBook-Pro.local_Darwin_W2"
+}
