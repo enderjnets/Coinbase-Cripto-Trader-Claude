@@ -119,26 +119,32 @@ def get_work():
         print(f"❌ Error contactando coordinator: {e}")
         return None
 
-def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time):
+def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time, strategy_genome=None):
     """
-    Envía resultado al coordinator
+    Envía resultado al coordinator (incluye el genoma de la estrategia)
 
     Returns:
         True si se envió exitosamente, False en caso contrario
     """
     try:
+        payload = {
+            'work_id': work_id,
+            'worker_id': WORKER_ID,
+            'pnl': pnl,
+            'trades': trades,
+            'win_rate': win_rate,
+            'sharpe_ratio': sharpe_ratio,
+            'max_drawdown': max_drawdown,
+            'execution_time': execution_time
+        }
+
+        # Incluir genoma si está disponible
+        if strategy_genome:
+            payload['strategy_genome'] = json.dumps(strategy_genome)
+
         response = requests.post(
             f"{COORDINATOR_URL}/api/submit_result",
-            json={
-                'work_id': work_id,
-                'worker_id': WORKER_ID,
-                'pnl': pnl,
-                'trades': trades,
-                'win_rate': win_rate,
-                'sharpe_ratio': sharpe_ratio,
-                'max_drawdown': max_drawdown,
-                'execution_time': execution_time
-            },
+            json=payload,
             timeout=30
         )
 
@@ -167,15 +173,32 @@ def execute_backtest(strategy_params):
     print(f"   Generaciones: {strategy_params.get('generations', 20)}")
     print(f"   Risk Level: {strategy_params.get('risk_level', 'MEDIUM')}")
 
-    # Cargar datos - usar archivo especificado en params o default
+    # Cargar datos - buscar en múltiples ubicaciones
     data_file_name = strategy_params.get('data_file', os.path.basename(DATA_FILE))
-    data_file_path = os.path.join("data", data_file_name)
 
-    print(f"   Archivo de datos: {data_file_name}")
+    # Intentar múltiples ubicaciones para encontrar el archivo
+    possible_paths = []
+    if strategy_params.get('data_dir'):
+        possible_paths.append(os.path.join(strategy_params['data_dir'], data_file_name))
+    possible_paths.extend([
+        os.path.join("data", data_file_name),
+        os.path.join("data_futures", data_file_name),
+        os.path.join("data_coingecko", data_file_name),
+        data_file_name,  # Ruta absoluta
+    ])
 
-    if not os.path.exists(data_file_path):
-        print(f"❌ Error: Archivo de datos no encontrado: {data_file_path}")
+    data_file_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            data_file_path = path
+            break
+
+    if not data_file_path:
+        print(f"❌ Error: Archivo de datos no encontrado: {data_file_name}")
+        print(f"   Rutas buscadas: {possible_paths}")
         return None
+
+    print(f"   Archivo de datos: {data_file_path}")
 
     # Read max_candles from strategy_params (0 = all candles)
     max_candles = strategy_params.get('max_candles', 0)
@@ -188,14 +211,22 @@ def execute_backtest(strategy_params):
     total_available = len(df)
     print(f"   📊 Usando {total_available:,} velas" + (f" (cap: {max_candles:,})" if max_candles > 0 else " (todas)"))
 
-    # Crear miner
+    # Crear miner con soporte para seed_genomes (élite global)
     # IMPORTANTE: force_local=False permite que Ray paralelice usando los 9 cores
+    seed_genomes = strategy_params.get('seed_genomes', [])
+    seed_ratio = strategy_params.get('seed_ratio', 0.5)
+
+    if seed_genomes:
+        print(f"   🌱 Usando {len(seed_genomes)} genomas élite como semilla ({seed_ratio*100:.0f}% de población)")
+
     miner = StrategyMiner(
         df=df,
         population_size=strategy_params.get('population_size', 30),
         generations=strategy_params.get('generations', 20),
         risk_level=strategy_params.get('risk_level', 'MEDIUM'),
-        force_local=True  # Procesamiento secuencial estable (Ray inestable en este sistema)
+        force_local=True,  # Procesamiento secuencial estable (Ray inestable en este sistema)
+        seed_genomes=seed_genomes,
+        seed_ratio=seed_ratio
     )
 
     # Ejecutar búsqueda
@@ -240,7 +271,8 @@ def execute_backtest(strategy_params):
         'win_rate': round(win_rate, 4),
         'sharpe_ratio': round(sharpe_ratio, 4),
         'max_drawdown': round(max_drawdown, 4),
-        'execution_time': execution_time
+        'execution_time': execution_time,
+        'genome': best_genome  # Incluir el mejor genoma encontrado
     }
 
     print(f"✅ Backtest completado en {execution_time:.0f}s")
@@ -324,7 +356,8 @@ def main():
                         win_rate=result['win_rate'],
                         sharpe_ratio=result['sharpe_ratio'],
                         max_drawdown=result['max_drawdown'],
-                        execution_time=result['execution_time']
+                        execution_time=result['execution_time'],
+                        strategy_genome=result.get('genome')  # Enviar genoma para élite global
                     )
 
                     if success:

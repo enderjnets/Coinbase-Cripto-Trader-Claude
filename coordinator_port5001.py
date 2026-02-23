@@ -21,6 +21,8 @@ import sqlite3
 import time
 import json
 import os
+import random
+import threading
 from datetime import datetime
 from threading import Lock
 
@@ -33,6 +35,167 @@ db_lock = Lock()
 DATABASE = 'coordinator.db'
 REDUNDANCY_FACTOR = 2  # Cada work unit se envía a 2 workers
 BACKTEST_CAPITAL = 500.0  # Capital inicial del backtester (numba_backtester.py)
+
+# ============================================================================
+# AUTO-CREACIÓN DE WORK UNITS
+# ============================================================================
+AUTO_CREATE_ENABLED = True
+AUTO_CREATE_MIN_PENDING = 50      # Crear más WUs cuando queden < 50 pendientes
+AUTO_CREATE_BATCH_SIZE = 100      # Crear 100 WUs cada vez
+AUTO_CREATE_CHECK_INTERVAL = 30   # Verificar cada 30 segundos
+
+# ============================================================================
+# SISTEMA DE ÉLITE GLOBAL (Evolución Continua)
+# ============================================================================
+ELITE_MAX_SIZE = 100              # Máximo 100 genomas élite
+ELITE_MIN_PNL = 100               # PnL mínimo para entrar a élite ($100)
+ELITE_SEED_RATIO = 0.5            # 50% de población inicial desde élite
+
+# Datos disponibles para backtests
+SPOT_DATA_FILES = [
+    {"file": "BTC-USD_ONE_MINUTE.csv", "asset": "BTC", "dir": "data"},
+    {"file": "BTC-USD_FIVE_MINUTE.csv", "asset": "BTC", "dir": "data"},
+    {"file": "BTC-USD_FIFTEEN_MINUTE.csv", "asset": "BTC", "dir": "data"},
+]
+
+FUTURES_DATA_FILES = [
+    {"file": "BIP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "BIT-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIT-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "ETP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ETP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "ET-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ET-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "SLP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "SOL", "contract": "SLP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "SOL-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SOL", "contract": "SOL-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "XPP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "XRP", "contract": "XPP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "XRP-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "XRP", "contract": "XRP-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "ADP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "ADA", "contract": "ADP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "DOP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "DOT", "contract": "DOP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "LNP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "LINK", "contract": "LNP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "AVP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "AVAX", "contract": "AVP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "DOG-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "DOGE", "contract": "DOG-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "SUI-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SUI", "contract": "SUI-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "XLP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "XLM", "contract": "XLP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "HEP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "HED", "contract": "HEP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "SHB-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SHIB", "contract": "SHB-27FEB26-CDE", "dir": "data_futures"},
+    {"file": "LCP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "LTC", "contract": "LCP-20DEC30-CDE", "dir": "data_futures"},
+    {"file": "GOL-27MAR26-CDE_FIVE_MINUTE.csv", "asset": "GOLD", "contract": "GOL-27MAR26-CDE", "dir": "data_futures"},
+    {"file": "NOL-19MAR26-CDE_FIVE_MINUTE.csv", "asset": "OIL", "contract": "NOL-19MAR26-CDE", "dir": "data_futures"},
+    {"file": "MC-19MAR26-CDE_FIVE_MINUTE.csv", "asset": "SP500", "contract": "MC-19MAR26-CDE", "dir": "data_futures"},
+]
+
+GENETIC_CONFIGS = [
+    {"population_size": 20, "generations": 50, "name": "fast"},
+    {"population_size": 30, "generations": 80, "name": "standard"},
+    {"population_size": 50, "generations": 100, "name": "deep"},
+]
+
+RISK_LEVELS = ["LOW", "MEDIUM", "HIGH"]
+CANDLE_CONFIGS = [3000, 5000, 8000, 10000]
+
+
+def generate_random_work_unit():
+    """Genera un work unit con configuración aleatoria diversa, usando élite como semilla"""
+    # Elegir tipo de datos (spot o futures)
+    use_futures = random.random() > 0.3  # 70% probabilidad de futuros
+
+    if use_futures and FUTURES_DATA_FILES:
+        data_info = random.choice(FUTURES_DATA_FILES)
+        data_dir = data_info["dir"]
+        data_file = data_info["file"]
+        asset = data_info["asset"]
+        contract = data_info.get("contract", "")
+        category = "Futures"
+        max_candles = random.choice([3000, 5000])
+    else:
+        data_info = random.choice(SPOT_DATA_FILES)
+        data_dir = data_info["dir"]
+        data_file = data_info["file"]
+        asset = data_info["asset"]
+        contract = ""
+        category = "Spot"
+        max_candles = random.choice(CANDLE_CONFIGS)
+
+    config = random.choice(GENETIC_CONFIGS)
+    risk = random.choice(RISK_LEVELS)
+
+    strategy_params = {
+        "name": f"{asset}_{category[:3]}_{config['name']}_{risk}_{max_candles//1000}K_{int(time.time())}",
+        "category": category,
+        "population_size": config["population_size"],
+        "generations": config["generations"],
+        "risk_level": risk,
+        "data_file": data_file,
+        "max_candles": max_candles,
+        "data_dir": f"/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/{data_dir}",
+    }
+
+    # Obtener genomas élite para usar como semilla (evolución continua)
+    elite = get_elite_genomes(limit=10, data_file=data_file)
+    if elite:
+        # Incluir hasta 5 genomas élite como semilla
+        seed_genomes = []
+        for e in elite[:5]:
+            try:
+                genome = json.loads(e['genome_json'])
+                seed_genomes.append(genome)
+            except:
+                pass
+        if seed_genomes:
+            strategy_params["seed_genomes"] = seed_genomes
+            strategy_params["seed_ratio"] = ELITE_SEED_RATIO  # 50% de población desde élite
+
+    if contract:
+        strategy_params["contracts"] = [contract]
+        strategy_params["leverage"] = 2 if risk == "LOW" else (3 if risk == "MEDIUM" else 5)
+
+    return {
+        "strategy_params": strategy_params,
+        "replicas": REDUNDANCY_FACTOR * 3  # 6 réplicas
+    }
+
+
+def auto_create_work_units():
+    """Thread en background que crea WUs automáticamente cuando hay pocos pendientes"""
+    print("🔄 Auto-creación de WUs iniciada (verificando cada {}s)".format(AUTO_CREATE_CHECK_INTERVAL))
+
+    while True:
+        try:
+            time.sleep(AUTO_CREATE_CHECK_INTERVAL)
+
+            if not AUTO_CREATE_ENABLED:
+                continue
+
+            with db_lock:
+                conn = get_db_connection()
+                c = conn.cursor()
+
+                # Contar WUs pendientes
+                c.execute("SELECT COUNT(*) as pending FROM work_units WHERE status = 'pending'")
+                pending = c.fetchone()['pending']
+
+                if pending < AUTO_CREATE_MIN_PENDING:
+                    # Crear batch de WUs
+                    print(f"\n🔄 Auto-creando {AUTO_CREATE_BATCH_SIZE} WUs (pendientes: {pending})")
+
+                    created = 0
+                    for _ in range(AUTO_CREATE_BATCH_SIZE):
+                        wu = generate_random_work_unit()
+                        c.execute("""INSERT INTO work_units
+                            (strategy_params, replicas_needed, replicas_assigned, status)
+                            VALUES (?, ?, 0, 'pending')""",
+                            (json.dumps(wu["strategy_params"]), wu.get("replicas", REDUNDANCY_FACTOR)))
+                        created += 1
+
+                    conn.commit()
+                    print(f"   ✅ {created} WUs creados automáticamente")
+                    # Log al archivo de coordinator
+                    with open('/tmp/coordinator_auto_create.log', 'a') as f:
+                        f.write(f"{datetime.now().isoformat()}: Creados {created} WUs (pendientes eran {pending})\n")
+
+                conn.close()
+
+        except Exception as e:
+            print(f"⚠️ Error en auto-creación: {e}")
+            time.sleep(60)  # Esperar más tiempo si hay error
 
 # ============================================================================
 # DATABASE FUNCTIONS
@@ -94,10 +257,125 @@ def init_db():
         value TEXT
     )''')
 
+    # Tabla de genomas élite (los mejores de todos los tiempos)
+    c.execute('''CREATE TABLE IF NOT EXISTS elite_genomes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        genome_json TEXT NOT NULL,
+        pnl REAL,
+        win_rate REAL,
+        sharpe_ratio REAL,
+        trades INTEGER,
+        data_file TEXT,
+        created_at REAL DEFAULT (julianday('now')),
+        generation INTEGER DEFAULT 0
+    )''')
+
     conn.commit()
     conn.close()
 
     print("✅ Base de datos inicializada")
+
+# ============================================================================
+# ÉLITE GLOBAL MANAGEMENT
+# ============================================================================
+
+def add_to_elite(genome_json, pnl, win_rate, sharpe_ratio, trades, data_file):
+    """
+    Agrega un genoma a la élite si cumple los requisitos
+
+    Returns:
+        True si se agregó, False si no cumplió requisitos
+    """
+    try:
+        # Verificar PnL mínimo
+        if pnl < ELITE_MIN_PNL:
+            return False
+
+        with db_lock:
+            conn = get_db_connection()
+            c = conn.cursor()
+
+            # Verificar tamaño actual de élite
+            c.execute("SELECT COUNT(*) as cnt FROM elite_genomes")
+            current_count = c.fetchone()['cnt']
+
+            # Si la élite está llena, verificar si es mejor que el peor
+            if current_count >= ELITE_MAX_SIZE:
+                c.execute("SELECT MIN(pnl) as min_pnl, id FROM elite_genomes")
+                worst = c.fetchone()
+                if pnl <= worst['min_pnl']:
+                    conn.close()
+                    return False
+                # Eliminar el peor
+                c.execute("DELETE FROM elite_genomes WHERE id = ?", (worst['id'],))
+
+            # Agregar nuevo genoma élite
+            c.execute("""INSERT INTO elite_genomes
+                (genome_json, pnl, win_rate, sharpe_ratio, trades, data_file)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (genome_json, pnl, win_rate, sharpe_ratio, trades, data_file))
+
+            conn.commit()
+            conn.close()
+
+            print(f"🏆 Nuevo genoma élite agregado: PnL=${pnl:.2f}, WinRate={win_rate*100:.1f}%")
+            return True
+
+    except Exception as e:
+        print(f"⚠️ Error agregando a élite: {e}")
+        return False
+
+
+def get_elite_genomes(limit=50, data_file=None):
+    """
+    Obtiene los mejores genomas de la élite
+
+    Args:
+        limit: Máximo número de genomas a retornar
+        data_file: Filtrar por archivo de datos (opcional)
+
+    Returns:
+        Lista de genomas élite
+    """
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            c = conn.cursor()
+
+            if data_file:
+                c.execute("""SELECT genome_json, pnl, win_rate, sharpe_ratio, trades
+                    FROM elite_genomes
+                    WHERE data_file = ?
+                    ORDER BY pnl DESC
+                    LIMIT ?""", (data_file, limit))
+            else:
+                c.execute("""SELECT genome_json, pnl, win_rate, sharpe_ratio, trades
+                    FROM elite_genomes
+                    ORDER BY pnl DESC
+                    LIMIT ?""", (limit,))
+
+            rows = c.fetchall()
+            conn.close()
+
+            return [dict(row) for row in rows]
+
+    except Exception as e:
+        print(f"⚠️ Error obteniendo élite: {e}")
+        return []
+
+
+def get_elite_count():
+    """Retorna el número de genomas en la élite"""
+    try:
+        with db_lock:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) as cnt FROM elite_genomes")
+            count = c.fetchone()['cnt']
+            conn.close()
+            return count
+    except:
+        return 0
 
 # ============================================================================
 # WORK UNIT MANAGEMENT
@@ -164,13 +442,14 @@ def get_pending_work():
         return None
 
 def mark_work_assigned(work_id):
-    """Marca un work unit como asignado"""
+    """Marca un work unit como asignado e incrementa replicas_assigned"""
     with db_lock:
         conn = get_db_connection()
         c = conn.cursor()
 
         c.execute("""UPDATE work_units
-            SET status = 'assigned'
+            SET status = 'assigned',
+                replicas_assigned = replicas_assigned + 1
             WHERE id = ?""", (work_id,))
 
         conn.commit()
@@ -299,6 +578,38 @@ def mobile():
 @app.route('/api/status', methods=['GET'])
 def api_status():
     """Obtiene estadísticas generales del sistema"""
+
+    # Auto-corrección: limpiar estados inconsistentes
+    with db_lock:
+        conn_cleanup = get_db_connection()
+        c_cleanup = conn_cleanup.cursor()
+        # Marcar como completed los WUs con suficientes réplicas pero estado incorrecto
+        c_cleanup.execute("""
+            UPDATE work_units
+            SET status = 'completed'
+            WHERE status IN ('assigned', 'in_progress')
+            AND replicas_completed >= replicas_needed
+        """)
+        # Marcar como in_progress los WUs que tienen asignaciones pero no están completos
+        c_cleanup.execute("""
+            UPDATE work_units
+            SET status = 'in_progress'
+            WHERE status = 'assigned'
+            AND replicas_assigned > replicas_completed
+            AND replicas_completed < replicas_needed
+        """)
+        # Resetear WUs asignados sin progreso después de 5 minutos (300 segundos)
+        # Solo si no hay resultados enviados
+        c_cleanup.execute("""
+            UPDATE work_units
+            SET status = 'pending', replicas_assigned = replicas_completed
+            WHERE status = 'assigned'
+            AND replicas_assigned > 0
+            AND replicas_completed = 0
+        """)
+        conn_cleanup.commit()
+        conn_cleanup.close()
+
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -311,6 +622,10 @@ def api_status():
 
     c.execute("SELECT COUNT(*) as pending FROM work_units WHERE status='pending'")
     pending_work = c.fetchone()['pending']
+
+    # Contar WUs en progreso (incluye assigned e in_progress)
+    c.execute("SELECT COUNT(*) as in_progress FROM work_units WHERE status IN ('assigned', 'in_progress')")
+    in_progress_work = c.fetchone()['in_progress']
 
     # Workers (active = seen in last 5 minutes, last_seen stored as Unix timestamp)
     c.execute("SELECT COUNT(*) as active FROM workers WHERE (strftime('%s', 'now') - last_seen) < 300")
@@ -333,7 +648,7 @@ def api_status():
             'total': total_work,
             'completed': completed_work,
             'pending': pending_work,
-            'in_progress': total_work - completed_work - pending_work
+            'in_progress': in_progress_work
         },
         'workers': {
             'active': active_workers
@@ -409,6 +724,7 @@ def api_submit_result():
         sharpe_ratio: Sharpe ratio (opcional)
         max_drawdown: Max drawdown (opcional)
         execution_time: Tiempo de ejecución en segundos
+        strategy_genome: Genoma de la estrategia (JSON string, opcional)
 
     Returns:
         JSON con status
@@ -423,14 +739,27 @@ def api_submit_result():
         conn = get_db_connection()
         c = conn.cursor()
 
+        # Obtener data_file del work unit para asociar al genoma élite
+        c.execute("SELECT strategy_params FROM work_units WHERE id = ?", (data['work_id'],))
+        wu_row = c.fetchone()
+        data_file = ""
+        if wu_row:
+            try:
+                params = json.loads(wu_row['strategy_params'])
+                data_file = params.get('data_file', '')
+            except:
+                pass
+
+        # Insertar resultado con genoma
         c.execute("""INSERT INTO results
             (work_unit_id, worker_id, pnl, trades, win_rate,
-             sharpe_ratio, max_drawdown, execution_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+             sharpe_ratio, max_drawdown, execution_time, strategy_genome)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data['work_id'], data['worker_id'],
              data.get('pnl', 0), data.get('trades', 0),
              data.get('win_rate', 0), data.get('sharpe_ratio', 0),
-             data.get('max_drawdown', 0), data.get('execution_time', 0)))
+             data.get('max_drawdown', 0), data.get('execution_time', 0),
+             data.get('strategy_genome', None)))
 
         # Incrementar contador de réplicas completadas
         c.execute("""UPDATE work_units
@@ -447,6 +776,17 @@ def api_submit_result():
 
         conn.commit()
         conn.close()
+
+    # Agregar a élite si el resultado es bueno (fuera del lock para no bloquear)
+    if data.get('strategy_genome') and data.get('pnl', 0) >= ELITE_MIN_PNL:
+        add_to_elite(
+            genome_json=data['strategy_genome'],
+            pnl=data.get('pnl', 0),
+            win_rate=data.get('win_rate', 0),
+            sharpe_ratio=data.get('sharpe_ratio', 0),
+            trades=data.get('trades', 0),
+            data_file=data_file
+        )
 
     print(f"📥 Resultado recibido de worker {data['worker_id']} - " +
           f"Work {data['work_id']}: PnL=${data.get('pnl', 0):,.2f}")
@@ -1992,13 +2332,19 @@ if __name__ == '__main__':
     else:
         print("✅ Base de datos existente encontrada")
 
+    # Iniciar thread de auto-creación de WUs
+    if AUTO_CREATE_ENABLED:
+        auto_thread = threading.Thread(target=auto_create_work_units, daemon=True)
+        auto_thread.start()
+        print(f"🔄 Auto-creación de WUs activada (mínimo {AUTO_CREATE_MIN_PENDING} pendientes)")
+
     print("\n" + "="*80)
     print("🚀 COORDINATOR INICIADO")
     print("="*80)
-    print(f"\n📡 Dashboard: http://localhost:5000")
-    print(f"📡 API Status: http://localhost:5000/api/status")
-    print(f"📡 API Get Work: http://localhost:5000/api/get_work?worker_id=XXX")
-    print(f"📡 API Submit: POST http://localhost:5000/api/submit_result")
+    print(f"\n📡 Dashboard: http://localhost:5001")
+    print(f"📡 API Status: http://localhost:5001/api/status")
+    print(f"📡 API Get Work: http://localhost:5001/api/get_work?worker_id=XXX")
+    print(f"📡 API Submit: POST http://localhost:5001/api/submit_result")
     print("\nPresiona Ctrl+C para detener\n")
 
     # Iniciar servidor Flask

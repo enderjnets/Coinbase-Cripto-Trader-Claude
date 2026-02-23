@@ -33,14 +33,17 @@ class StrategyMiner:
     - Multi-timeframe support
     - ML-enhanced fitness function
     """
-    def __init__(self, df, population_size=100, generations=20, risk_level="LOW", 
-                 force_local=False, ray_address="auto", ml_enhanced=False):
+    def __init__(self, df, population_size=100, generations=20, risk_level="LOW",
+                 force_local=False, ray_address="auto", ml_enhanced=False,
+                 seed_genomes=None, seed_ratio=0.5):
         self.df = df
         self.pop_size = population_size
         self.generations = generations
         self.risk_level = risk_level
         self.force_local = force_local
         self.ml_enhanced = ml_enhanced
+        self.seed_genomes = seed_genomes or []
+        self.seed_ratio = seed_ratio
         ray_init = HAS_RAY and ray.is_initialized()
         
         # === TODOS LOS INDICADORES DISPONIBLES ===
@@ -425,7 +428,7 @@ class StrategyMiner:
         return fitness_scores
 
     def run(self, progress_callback=None, cancel_event=None, return_metrics=False):
-        """Main Evolution Loop with adaptive optimization."""
+        """Main Evolution Loop with adaptive optimization and elite seeding."""
 
         def debug_log(msg):
             with open("miner_debug.log", "a") as f:
@@ -433,9 +436,39 @@ class StrategyMiner:
 
         debug_log("Strategy Miner RUN started with ML-enhanced fitness.")
 
-        # Initialize Population
+        # Initialize Population with elite seeding support
         debug_log(f"Generating initial population ({self.pop_size})...")
-        population = [self.generate_random_genome() for _ in range(self.pop_size)]
+
+        # Calculate how many individuals come from elite seeds
+        num_from_seeds = 0
+        if self.seed_genomes:
+            num_from_seeds = min(len(self.seed_genomes), int(self.pop_size * self.seed_ratio))
+            debug_log(f"Using {num_from_seeds} elite seed genomes from {len(self.seed_genomes)} available")
+
+        # Build population: first from seeds, rest random
+        population = []
+
+        # Add seed genomes (élite from previous best results)
+        for i in range(num_from_seeds):
+            seed = self.seed_genomes[i]
+            if isinstance(seed, dict):
+                # Validate seed has required keys
+                if 'entry_rules' in seed or 'params' in seed:
+                    population.append(seed)
+                    debug_log(f"Added elite seed genome {i+1}")
+                else:
+                    # Invalid seed, generate random
+                    population.append(self.generate_random_genome())
+            else:
+                population.append(self.generate_random_genome())
+
+        # Fill rest with random genomes
+        remaining = self.pop_size - len(population)
+        for _ in range(remaining):
+            population.append(self.generate_random_genome())
+
+        debug_log(f"Population initialized: {len(population)} total ({num_from_seeds} from elite, {remaining} random)")
+
         best_genome = None
         best_pnl = -float('inf')
         best_metrics = {}
