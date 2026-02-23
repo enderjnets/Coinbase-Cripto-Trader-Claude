@@ -164,34 +164,39 @@ def auto_create_work_units():
             if not AUTO_CREATE_ENABLED:
                 continue
 
-            with db_lock:
-                conn = get_db_connection()
-                c = conn.cursor()
+            # PASO 1: Verificar pendientes SIN lock (solo lectura)
+            conn_check = get_db_connection()
+            c_check = conn_check.cursor()
+            c_check.execute("SELECT COUNT(*) as pending FROM work_units WHERE status = 'pending'")
+            pending = c_check.fetchone()['pending']
+            conn_check.close()
 
-                # Contar WUs pendientes
-                c.execute("SELECT COUNT(*) as pending FROM work_units WHERE status = 'pending'")
-                pending = c.fetchone()['pending']
+            if pending < AUTO_CREATE_MIN_PENDING:
+                # PASO 2: Generar WUs fuera del lock (para evitar deadlock con get_elite_genomes)
+                print(f"\n🔄 Auto-creando {AUTO_CREATE_BATCH_SIZE} WUs (pendientes: {pending})")
+                work_units_to_create = []
+                for _ in range(AUTO_CREATE_BATCH_SIZE):
+                    wu = generate_random_work_unit()
+                    work_units_to_create.append(wu)
 
-                if pending < AUTO_CREATE_MIN_PENDING:
-                    # Crear batch de WUs
-                    print(f"\n🔄 Auto-creando {AUTO_CREATE_BATCH_SIZE} WUs (pendientes: {pending})")
-
+                # PASO 3: Insertar con lock (operación rápida)
+                with db_lock:
+                    conn = get_db_connection()
+                    c = conn.cursor()
                     created = 0
-                    for _ in range(AUTO_CREATE_BATCH_SIZE):
-                        wu = generate_random_work_unit()
+                    for wu in work_units_to_create:
                         c.execute("""INSERT INTO work_units
                             (strategy_params, replicas_needed, replicas_assigned, status)
                             VALUES (?, ?, 0, 'pending')""",
                             (json.dumps(wu["strategy_params"]), wu.get("replicas", REDUNDANCY_FACTOR)))
                         created += 1
-
                     conn.commit()
-                    print(f"   ✅ {created} WUs creados automáticamente")
-                    # Log al archivo de coordinator
-                    with open('/tmp/coordinator_auto_create.log', 'a') as f:
-                        f.write(f"{datetime.now().isoformat()}: Creados {created} WUs (pendientes eran {pending})\n")
+                    conn.close()
 
-                conn.close()
+                print(f"   ✅ {created} WUs creados automáticamente")
+                # Log al archivo de coordinator
+                with open('/tmp/coordinator_auto_create.log', 'a') as f:
+                    f.write(f"{datetime.now().isoformat()}: Creados {created} WUs (pendientes eran {pending})\n")
 
         except Exception as e:
             print(f"⚠️ Error en auto-creación: {e}")
