@@ -3761,7 +3761,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                                 with col2:
                                     st.write(f"WU: {w.get('work_units_completed', 0)}")
                                 with col3:
-                                    st.write(f"⏰ {mins:.0f} min")
+                                    st.write(f"⏰ {int(mins//60)}h {int(mins%60)}m" if mins >= 60 else f"⏰ {mins:.0f}m")
                                 with col4:
                                     if mins > 60:
                                         st.error(f"💀 Offline ({mins/60:.0f}h)")

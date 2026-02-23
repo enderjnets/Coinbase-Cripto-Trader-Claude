@@ -687,15 +687,26 @@ def api_get_work():
         conn = get_db_connection()
         c = conn.cursor()
 
-        # First try to update existing worker
-        c.execute("UPDATE workers SET last_seen = strftime('%s', 'now'), status = 'active' WHERE id = ?", (worker_id,))
-        
+        # Derive real machine hostname from worker_id
+        # e.g. "Enders-MacBook-Pro.local_Darwin_W1" -> "Enders-MacBook-Pro"
+        # e.g. "ender-rog_Linux_W3" -> "ender-rog"
+        _raw = worker_id.rsplit('_W', 1)[0] if '_W' in worker_id else worker_id
+        for _sfx in ('_Darwin', '_Linux', '_Windows'):
+            if _raw.endswith(_sfx):
+                _raw = _raw[:-len(_sfx)]
+                break
+        machine_hostname = _raw.replace('.local', '')
+
+        # First try to update existing worker (also fix hostname on each check-in)
+        c.execute("UPDATE workers SET last_seen = strftime('%s', 'now'), hostname = ?, status = 'active' WHERE id = ?",
+                  (machine_hostname, worker_id))
+
         # If no row was updated (new worker), insert
         if c.rowcount == 0:
             c.execute("""INSERT INTO workers
                 (id, hostname, platform, last_seen, work_units_completed, total_execution_time, status)
                 VALUES (?, ?, ?, strftime('%s', 'now'), 0, 0, 'active')""",
-                (worker_id, request.headers.get('Host', 'unknown'),
+                (worker_id, machine_hostname,
                  request.headers.get('User-Agent', 'unknown')))
 
         conn.commit()
@@ -812,16 +823,25 @@ def api_workers():
         FROM workers
         ORDER BY last_seen DESC""")
 
+    now_unix = time.time()
     workers = []
     for row in c.fetchall():
+        last_seen_raw = row['last_seen'] or 0
+        # Handle legacy Julian Day values stored before Unix-timestamp migration
+        if 0 < last_seen_raw < 2500000:
+            last_seen_unix = (last_seen_raw - 2440587.5) * 86400
+        else:
+            last_seen_unix = last_seen_raw
+        mins_ago = (now_unix - last_seen_unix) / 60.0 if last_seen_unix > 0 else 9999.0
         workers.append({
             'id': row['id'],
             'hostname': row['hostname'],
             'platform': row['platform'],
-            'last_seen': row['last_seen'],
+            'last_seen': last_seen_unix,
+            'last_seen_minutes_ago': round(mins_ago, 1),
             'work_units_completed': row['work_units_completed'],
             'total_execution_time': row['total_execution_time'],
-            'status': row['status']
+            'status': 'active' if mins_ago < 5 else 'inactive'
         })
 
     conn.close()
@@ -938,8 +958,8 @@ def api_dashboard_stats():
     pnl_timeline = []
     for row in c.fetchall():
         # Convert Julian day to Unix timestamp
-        # Unix epoch = julian 2440588
-        unix_ts = (row[1] - 2440588) * 86400
+        # Unix epoch = JD 2440587.5 (Jan 1, 1970 00:00 UTC)
+        unix_ts = (row[1] - 2440587.5) * 86400
         pnl_timeline.append({
             'pnl': row[0], 
             'timestamp': unix_ts,
@@ -999,12 +1019,36 @@ def api_dashboard_stats():
         last_seen_unix = row_dict.get('last_seen') or 0
         mins_ago = (now_unix - last_seen_unix) / 60 if last_seen_unix > 0 else 999
 
-        short_name = row_dict['id'].split('_W')[0].split('_')[-1] if '_W' in row_dict['id'] else row_dict['id'][:10]
+        # Build short_name: "MacBook-Pro W1", "ender-rog W3", "enderj W2"
+        wid = row_dict['id']
+        _base = wid.rsplit('_W', 1)[0] if '_W' in wid else wid
+        for _sfx in ('_Darwin', '_Linux', '_Windows'):
+            if _base.endswith(_sfx):
+                _base = _base[:-len(_sfx)]
+                break
+        _base = _base.replace('.local', '')
+        _inst = wid.rsplit('_W', 1)[1] if '_W' in wid else ''
+        short_name = _base + (' W' + _inst if _inst else '')
+
+        # Machine classification for Streamlit globe grouping
+        _wid_l = wid.lower()
+        if 'macbook-pro' in _wid_l:
+            machine = 'MacBook Pro'
+        elif 'macbook-air' in _wid_l:
+            machine = 'MacBook Air'
+        elif 'macbook' in _wid_l:
+            machine = 'MacBook'
+        elif 'rog' in _wid_l or 'linux' in _wid_l:
+            machine = 'Linux ROG'
+        else:
+            machine = 'Otro'
+
         max_pnl = worker_max_pnl.get(row_dict['id'], 0) or 0
 
         worker_stats.append({
             'id': row_dict['id'],
             'short_name': short_name,
+            'machine': machine,
             'hostname': row_dict['hostname'],
             'work_units_completed': row_dict['work_units_completed'],
             'total_execution_time': row_dict['total_execution_time'],
@@ -1490,9 +1534,9 @@ async function fetchAll() {
       wDiv.innerHTML = workers.map(w => {
         const minsAgo = w.last_seen_minutes_ago || 999;
         const alive = minsAgo < 5;
-        const name = w.id.includes('_W')
-          ? w.id.replace('_Darwin','').replace('_Linux','')
-          : w.id;
+        const name = w.short_name || (w.id.includes('_W')
+          ? w.id.replace('_Darwin','').replace('_Linux','').replace('.local','')
+          : w.id);
         return `<div class="worker-item">
           <div class="worker-dot ${alive?'alive':'dead'}"></div>
           <div class="worker-name">${name}</div>
@@ -1511,7 +1555,10 @@ async function fetchAll() {
     } else {
       rDiv.innerHTML = results.slice(0,15).map((res,i) => {
         const pnlClass = res.pnl>=0 ? '' : ' neg';
-        const wkr = (res.worker_id||'').split('_Darwin_').pop() || res.worker_id;
+        const _wid = res.worker_id || '';
+        const _base = _wid.replace(/_W\d+$/, '').replace(/_Darwin$|_Linux$|_Windows$/, '').replace('.local', '');
+        const _im = _wid.match(/_W(\d+)$/);
+        const wkr = (_base + (_im ? ' W' + _im[1] : '')) || _wid;
         return `<div class="result-item">
           <div class="result-row1">
             <span class="result-rank">${medals[i]||('#'+(i+1))}</span>
@@ -2221,9 +2268,9 @@ async function updateDashboard() {
                 const badge = alive
                     ? '<span class="badge badge-green">activo</span>'
                     : '<span class="badge badge-red">inactivo</span>';
-                const name = (w.id || '').includes('_W')
-                    ? w.id.split('_W').slice(-1)[0] ? w.hostname + ' W' + w.id.split('_W').slice(-1)[0] : w.hostname
-                    : (w.short_name || w.hostname || w.id);
+                const name = w.short_name || ((w.id || '').includes('_W')
+                    ? w.id.split('_W').slice(-1)[0] ? (w.hostname||w.id) + ' W' + w.id.split('_W').slice(-1)[0] : (w.hostname||w.id)
+                    : (w.hostname || w.id));
                 const maxPnl = (w.max_pnl || 0) > 0
                     ? '<span style="color:var(--green)">$' + fmt(w.max_pnl, 0) + '</span>'
                     : '<span style="color:var(--muted)">-</span>';
@@ -2256,7 +2303,7 @@ async function updateDashboard() {
                     <td>${(r.win_rate * 100).toFixed(1)}%</td>
                     <td>${r.sharpe_ratio ? fmt(r.sharpe_ratio, 2) : '-'}</td>
                     <td style="color:var(--yellow)">${ddVal}</td>
-                    <td style="font-size:11px;color:var(--muted)">${(r.worker_id || '').split('_Darwin_').pop() || r.worker_id}</td>
+                    <td style="font-size:11px;color:var(--muted)">${(()=>{const w=r.worker_id||'';const b=w.replace(/_W\d+$/,'').replace(/_Darwin$|_Linux$|_Windows$/,'').replace('.local','');const m=w.match(/_W(\d+)$/);return(b+(m?' W'+m[1]:''))||w;})()} </td>
                 </tr>`;
             }).join('');
         }
