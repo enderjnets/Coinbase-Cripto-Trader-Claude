@@ -219,18 +219,18 @@ def init_db():
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Tabla de work units
+    # Tabla de work units (timestamps en Unix epoch)
     c.execute('''CREATE TABLE IF NOT EXISTS work_units (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         strategy_params TEXT NOT NULL,
         status TEXT DEFAULT 'pending',
-        created_at REAL DEFAULT (julianday('now')),
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
         replicas_needed INTEGER DEFAULT 2,
         replicas_completed INTEGER DEFAULT 0,
         canonical_result_id INTEGER DEFAULT NULL
     )''')
 
-    # Tabla de resultados
+    # Tabla de resultados (timestamps en Unix epoch)
     c.execute('''CREATE TABLE IF NOT EXISTS results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         work_unit_id INTEGER NOT NULL,
@@ -241,18 +241,18 @@ def init_db():
         sharpe_ratio REAL,
         max_drawdown REAL,
         execution_time REAL,
-        submitted_at REAL DEFAULT (julianday('now')),
+        submitted_at INTEGER DEFAULT (strftime('%s', 'now')),
         validated BOOLEAN DEFAULT 0,
         is_canonical BOOLEAN DEFAULT 0,
         FOREIGN KEY (work_unit_id) REFERENCES work_units (id)
     )''')
 
-    # Tabla de workers
+    # Tabla de workers (timestamps en Unix epoch)
     c.execute('''CREATE TABLE IF NOT EXISTS workers (
         id TEXT PRIMARY KEY,
         hostname TEXT,
         platform TEXT,
-        last_seen REAL DEFAULT (julianday('now')),
+        last_seen INTEGER DEFAULT (strftime('%s', 'now')),
         work_units_completed INTEGER DEFAULT 0,
         total_execution_time REAL DEFAULT 0,
         status TEXT DEFAULT 'active'
@@ -264,7 +264,7 @@ def init_db():
         value TEXT
     )''')
 
-    # Tabla de genomas élite (los mejores de todos los tiempos)
+    # Tabla de genomas élite (timestamps en Unix epoch)
     c.execute('''CREATE TABLE IF NOT EXISTS elite_genomes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         genome_json TEXT NOT NULL,
@@ -273,7 +273,7 @@ def init_db():
         sharpe_ratio REAL,
         trades INTEGER,
         data_file TEXT,
-        created_at REAL DEFAULT (julianday('now')),
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
         generation INTEGER DEFAULT 0
     )''')
 
@@ -522,9 +522,20 @@ def validate_work_unit(work_id):
             conn.close()
             return False  # Necesita más réplicas
 
+        # Obtener leverage del work_unit para escalar PNL_MAX
+        c.execute("SELECT strategy_params FROM work_units WHERE id = ?", (work_id,))
+        work_unit_row = c.fetchone()
+        leverage = 2  # Default
+        if work_unit_row and work_unit_row['strategy_params']:
+            try:
+                params = json.loads(work_unit_row['strategy_params'])
+                leverage = params.get('leverage', 2)
+            except:
+                pass
+
         # Seleccionar el mejor resultado válido como canónico
-        # Filtramos resultados imposibles: con $500 capital, >$1000 (200% return) es bug del backtester
-        PNL_MAX = 1000
+        # PNL_MAX escala con leverage: $1000 base * leverage
+        PNL_MAX = 1000 * leverage
         MIN_TRADES = 5
         valid_results = [r for r in results
                          if r['pnl'] is not None

@@ -4,15 +4,19 @@ TELEGRAM BOT - Strategy Miner Monitor
 Escucha comandos y envía notificaciones de progreso
 """
 
+import os
 import requests
 import time
 import json
 import subprocess
 import threading
 
-# Configuración
-BOT_TOKEN = "TELEGRAM_BOT_TOKEN_REDACTED"
-CHAT_ID = "771213858"
+# Configuración - desde variables de entorno
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+if not BOT_TOKEN or not CHAT_ID:
+    raise ValueError("ERROR: TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID deben estar configurados en .env")
 COORDINATOR_URL = "http://localhost:5001"
 LINUX_HOST = "enderj@10.0.0.240"
 

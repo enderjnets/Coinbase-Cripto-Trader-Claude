@@ -34,8 +34,8 @@ from strategy_miner import StrategyMiner
 # CONFIGURACIÓN
 # ============================================================================
 
-# URL del coordinator (cambiar según tu configuración)
-COORDINATOR_URL = os.getenv('COORDINATOR_URL', "http://100.118.215.73:5000")
+# URL del coordinator (IP del Mac local por defecto)
+COORDINATOR_URL = os.getenv('COORDINATOR_URL', "http://10.0.0.56:5001")
 
 # Instancia del worker (para múltiples workers en la misma máquina)
 WORKER_INSTANCE = os.getenv('WORKER_INSTANCE', '1')
@@ -60,8 +60,10 @@ RESERVED_CPUS = 1  # Se ajusta dinámicamente más abajo
 # CHECKPOINT SYSTEM
 # ============================================================================
 
-def save_checkpoint(work_id, generation, best_genome, best_pnl):
-    """Guarda checkpoint del trabajo actual"""
+def save_checkpoint(work_id, generation, best_genome, best_pnl, timeout=5):
+    """Guarda checkpoint del trabajo actual con timeout"""
+    import threading
+
     checkpoint = {
         'work_id': work_id,
         'generation': generation,
@@ -71,8 +73,17 @@ def save_checkpoint(work_id, generation, best_genome, best_pnl):
         'worker_id': WORKER_ID
     }
 
-    with open(CHECKPOINT_FILE, 'w') as f:
-        json.dump(checkpoint, f, indent=2)
+    def _write():
+        with open(CHECKPOINT_FILE, 'w') as f:
+            json.dump(checkpoint, f, indent=2)
+
+    # Ejecutar con timeout
+    writer = threading.Thread(target=_write, daemon=True)
+    writer.start()
+    writer.join(timeout=timeout)
+
+    if writer.is_alive():
+        print(f"⚠️  Checkpoint timeout después de {timeout}s")
 
 def load_checkpoint():
     """Carga checkpoint si existe"""
@@ -158,12 +169,13 @@ def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, ex
 # BACKTEST EXECUTION
 # ============================================================================
 
-def execute_backtest(strategy_params):
+def execute_backtest(strategy_params, work_id=None):
     """
     Ejecuta backtest con los parámetros dados
 
     Args:
         strategy_params: Dict con population_size, generations, risk_level
+        work_id: ID del trabajo actual (para checkpoints)
 
     Returns:
         Dict con pnl, trades, win_rate, sharpe_ratio, max_drawdown
@@ -246,7 +258,7 @@ def execute_backtest(strategy_params):
             # Guardar checkpoint cada 5 generaciones
             if gen % 5 == 0:
                 save_checkpoint(
-                    work_id=None,  # Se actualizará después
+                    work_id=work_id,  # Usar ID real del trabajo
                     generation=gen,
                     best_genome=data.get('genome'),
                     best_pnl=pnl
@@ -342,8 +354,8 @@ def main():
                 print(f"   Réplica {replica_num}/{replicas_needed}")
                 print(f"{'='*80}\n")
 
-                # Ejecutar backtest
-                result = execute_backtest(params)
+                # Ejecutar backtest con work_id para checkpoints
+                result = execute_backtest(params, work_id=work_id)
 
                 if result:
                     # Enviar resultado
