@@ -83,13 +83,15 @@ FUTURES_DATA_FILES = [
 ]
 
 GENETIC_CONFIGS = [
-    {"population_size": 20, "generations": 50, "name": "fast"},
-    {"population_size": 30, "generations": 80, "name": "standard"},
-    {"population_size": 50, "generations": 100, "name": "deep"},
+    {"population_size": 100, "generations": 150, "name": "enhanced"},      # NUEVO: más exploración
+    {"population_size": 150, "generations": 200, "name": "intensive"},     # NUEVO: búsqueda profunda
+    {"population_size": 200, "generations": 300, "name": "exhaustive"},    # NUEVO: máximo
+    {"population_size": 50, "generations": 100, "name": "standard"},       # Legacy: balanceado
+    {"population_size": 30, "generations": 80, "name": "fast"},            # Legacy: rápido
 ]
 
 RISK_LEVELS = ["LOW", "MEDIUM", "HIGH"]
-CANDLE_CONFIGS = [3000, 5000, 8000, 10000]
+CANDLE_CONFIGS = [5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000]  # Más opciones = mejor exploración
 
 
 def generate_random_work_unit():
@@ -104,7 +106,7 @@ def generate_random_work_unit():
         asset = data_info["asset"]
         contract = data_info.get("contract", "")
         category = "Futures"
-        max_candles = random.choice([3000, 5000])
+        max_candles = random.choice([3000, 5000, 7500, 10000])
     else:
         data_info = random.choice(SPOT_DATA_FILES)
         data_dir = data_info["dir"]
@@ -1038,7 +1040,11 @@ def api_dashboard_stats():
             machine = 'MacBook Air'
         elif 'macbook' in _wid_l:
             machine = 'MacBook'
-        elif 'rog' in _wid_l or 'linux' in _wid_l:
+        elif 'rog' in _wid_l:
+            machine = 'Linux ROG'
+        elif 'enderj' in _wid_l and 'linux' in _wid_l:
+            machine = 'Asus Dorada'
+        elif 'linux' in _wid_l:
             machine = 'Linux ROG'
         else:
             machine = 'Otro'
@@ -1080,6 +1086,80 @@ def api_dashboard_stats():
         wall_clock_hours = 1
     results_per_hour = total_results / wall_clock_hours
 
+    # =====================================================
+    # ESTADÍSTICAS POR ACTIVO (NUEVO)
+    # =====================================================
+    # Filtrar resultados válidos: PnL realista (< $5000), suficientes trades (>=10), Sharpe real (< 10)
+    c.execute("""
+        SELECT
+            json_extract(w.strategy_params, '$.data_file') as data_file,
+            COUNT(*) as total_wus,
+            SUM(CASE WHEN w.status='completed' THEN 1 ELSE 0 END) as completed,
+            AVG(CASE WHEN r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as avg_pnl,
+            MAX(CASE WHEN r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as max_pnl,
+            SUM(CASE WHEN r.trades >= 10 THEN r.trades END) as total_trades,
+            SUM(r.execution_time) as total_time
+        FROM work_units w
+        LEFT JOIN results r ON w.id = r.work_unit_id
+        GROUP BY data_file
+        ORDER BY max_pnl DESC
+        LIMIT 20
+    """)
+    asset_stats = []
+    for row in c.fetchall():
+        data_file = row[0] or 'Unknown'
+        # Extraer nombre del activo del archivo
+        if 'BTC' in data_file:
+            asset = 'BTC'
+            category = 'Spot' if 'USD' in data_file else 'Futures'
+        elif 'ETH' in data_file or 'ETP' in data_file or data_file.startswith('ET'):
+            asset = 'ETH'
+            category = 'Futures'
+        elif 'SOL' in data_file or 'SLP' in data_file:
+            asset = 'SOL'
+            category = 'Futures'
+        elif 'XRP' in data_file or 'XPP' in data_file:
+            asset = 'XRP'
+            category = 'Futures'
+        elif 'GOL' in data_file:
+            asset = 'GOLD'
+            category = 'Futures'
+        elif 'MC' in data_file:
+            asset = 'SP500'
+            category = 'Futures'
+        elif 'DOG' in data_file:
+            asset = 'DOGE'
+            category = 'Futures'
+        elif 'SHB' in data_file:
+            asset = 'SHIB'
+            category = 'Futures'
+        else:
+            # Intentar extraer del nombre del archivo
+            parts = data_file.replace('.csv', '').split('_')[0].split('-')[0]
+            asset = parts[:4] if len(parts) > 4 else parts
+            category = 'Futures' if '-' in data_file else 'Spot'
+
+        asset_stats.append({
+            'data_file': data_file,
+            'asset': asset,
+            'category': category,
+            'total_wus': row[1] or 0,
+            'completed': row[2] or 0,
+            'avg_pnl': round(row[3] or 0, 2),
+            'max_pnl': round(row[4] or 0, 2),
+            'total_trades': row[5] or 0,
+            'total_time': round(row[6] or 0, 1)
+        })
+
+    # Capital simulado total - solo resultados válidos (cada backtest usa $500)
+    c.execute("SELECT COUNT(*) FROM results WHERE pnl > -5000 AND pnl < 5000 AND trades >= 10")
+    valid_results = c.fetchone()[0]
+    simulated_capital = valid_results * 500
+
+    # Élite count
+    c.execute("SELECT COUNT(*) FROM elite_genomes")
+    elite_count = c.fetchone()[0]
+
     conn.close()
 
     return jsonify({
@@ -1099,13 +1179,16 @@ def api_dashboard_stats():
             'avg_pnl': avg_pnl,
             'results_per_hour': results_per_hour,
             'avg_execution_time': avg_exec_time,
-            'total_compute_time': total_compute_time
+            'total_compute_time': total_compute_time,
+            'simulated_capital': simulated_capital
         },
         'best_strategy': best_strategy,
         'pnl_distribution': pnl_distribution,
         'pnl_timeline': pnl_timeline,
         'completion_timeline': completion_timeline,
         'worker_stats': worker_stats,
+        'asset_stats': asset_stats,
+        'elite_count': elite_count,
         'timestamp': time.time()
     })
 
@@ -1378,6 +1461,35 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   </div>
 </div>
 
+<!-- TAB: ACTIVOS -->
+<div class="scroll-area tab" id="tab-assets">
+  <div class="card">
+    <div class="card-title">📈 Por Activo</div>
+    <div id="assets-list"><div class="empty">Cargando...</div></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="card-title">💰 Capital Simulado</div>
+    <div style="padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span style="color:var(--muted);font-size:12px">Por backtest</span>
+        <span style="font-weight:600">$500</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span style="color:var(--muted);font-size:12px">Total backtests</span>
+        <span style="font-weight:600" id="m-total-tests">-</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span style="color:var(--muted);font-size:12px">Capital simulado</span>
+        <span style="font-weight:600;color:var(--green)" id="m-sim-cap">$-</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:var(--muted);font-size:12px">Tiempo cómputo</span>
+        <span style="font-weight:600;color:var(--yellow)" id="m-compute-time">-</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- BOTTOM NAV -->
 <nav class="bottom-nav">
   <button class="nav-btn active" id="nav-dash" onclick="switchTab('dash')">
@@ -1391,6 +1503,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <button class="nav-btn" id="nav-results" onclick="switchTab('results')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     Resultados
+  </button>
+  <button class="nav-btn" id="nav-assets" onclick="switchTab('assets')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    Activos
   </button>
 </nav>
 
@@ -1573,6 +1689,41 @@ async function fetchAll() {
         </div>`;
       }).join('');
     }
+
+    // ── Asset stats ──
+    const assetStats = d.asset_stats || [];
+    const aDiv = document.getElementById('assets-list');
+    if (!assetStats.length) {
+      aDiv.innerHTML = '<div class="empty">Sin datos de activos</div>';
+    } else {
+      aDiv.innerHTML = assetStats.slice(0,15).map(a => {
+        const pnlColor = a.max_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const catBadge = a.category === 'Futures' ? '🔶' : '🔵';
+        return `<div class="result-item">
+          <div class="result-row1">
+            <span class="result-rank">${catBadge}</span>
+            <span style="font-weight:600">${a.asset}</span>
+            <span class="result-pnl" style="color:${pnlColor};margin-left:auto">$${fmt(a.max_pnl,0)}</span>
+          </div>
+          <div class="result-row2">
+            <span class="result-stat">WUs: <b>${a.total_wus}</b></span>
+            <span class="result-stat">Avg: <b>$${fmt(a.avg_pnl,0)}</b></span>
+            <span class="result-stat">Trades: <b>${(a.total_trades||0).toLocaleString()}</b></span>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ── Capital summary ──
+    const perf = d.performance || {};
+    const totalResults = perf.total_results || 0;
+    const simulatedCapital = perf.simulated_capital || (totalResults * 500);
+    const totalComputeTime = perf.total_compute_time || 0;
+    const computeHours = totalComputeTime / 3600;
+
+    document.getElementById('m-total-tests').textContent = totalResults.toLocaleString();
+    document.getElementById('m-sim-cap').textContent = '$' + fmt(simulatedCapital, 0);
+    document.getElementById('m-compute-time').textContent = fmt(computeHours, 1) + 'h';
 
   } catch(e) {
     document.getElementById('dot').className = 'dot off';
@@ -2036,6 +2187,56 @@ DASHBOARD_HTML = """
         </div>
     </div>
 
+    <!-- ESTADÍSTICAS POR ACTIVO -->
+    <div class="section-title">📈 Estadísticas por Activo</div>
+    <div class="card">
+        <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Activo</th>
+                        <th>Categoría</th>
+                        <th>Archivo</th>
+                        <th>WUs</th>
+                        <th>Completados</th>
+                        <th>PnL Promedio</th>
+                        <th>Max PnL</th>
+                        <th>Total Trades</th>
+                        <th>Tiempo (s)</th>
+                    </tr>
+                </thead>
+                <tbody id="assets-body">
+                    <tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- RESUMEN DE CAPITAL -->
+    <div class="section-title">💰 Resumen de Capital Simulado</div>
+    <div class="kpi-grid" style="margin-bottom:16px">
+        <div class="kpi" style="--accent:var(--green)">
+            <div class="kpi-label">Capital por Backtest</div>
+            <div class="kpi-value">$500</div>
+            <div class="kpi-sub">configuración fija</div>
+        </div>
+        <div class="kpi" style="--accent:var(--blue)">
+            <div class="kpi-label">Total Backtests</div>
+            <div class="kpi-value" id="cap-total-tests">-</div>
+            <div class="kpi-sub">resultados</div>
+        </div>
+        <div class="kpi" style="--accent:var(--yellow)">
+            <div class="kpi-label">Capital Simulado Total</div>
+            <div class="kpi-value" id="cap-simulated">$-</div>
+            <div class="kpi-sub">si fueran reales</div>
+        </div>
+        <div class="kpi" style="--accent:var(--green)">
+            <div class="kpi-label">Tiempo Total Cómputo</div>
+            <div class="kpi-value" id="cap-compute-time">-</div>
+            <div class="kpi-sub" id="cap-compute-hours">- horas</div>
+        </div>
+    </div>
+
     <div class="footer">
         <span id="last-update">Última actualización: -</span> &nbsp;·&nbsp; Auto-refresh cada 10s
     </div>
@@ -2307,6 +2508,44 @@ async function updateDashboard() {
                 </tr>`;
             }).join('');
         }
+
+        // ── Asset stats table ──
+        const assetsBody = document.getElementById('assets-body');
+        const assetStats = dash.asset_stats || [];
+        if (assetStats.length === 0) {
+            assetsBody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Sin datos de activos</td></tr>';
+        } else {
+            assetsBody.innerHTML = assetStats.map(a => {
+                const catBadge = a.category === 'Futures'
+                    ? '<span class="badge badge-yellow">Futures</span>'
+                    : '<span class="badge badge-blue">Spot</span>';
+                const avgPnlColor = a.avg_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                const maxPnlColor = a.max_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                const shortFile = a.data_file.length > 25 ? a.data_file.substring(0, 22) + '...' : a.data_file;
+                return `<tr>
+                    <td style="font-weight:600">${a.asset}</td>
+                    <td>${catBadge}</td>
+                    <td style="font-size:11px;color:var(--muted)" title="${a.data_file}">${shortFile}</td>
+                    <td>${a.total_wus}</td>
+                    <td style="color:var(--green)">${a.completed}</td>
+                    <td style="color:${avgPnlColor}">$${fmt(a.avg_pnl, 2)}</td>
+                    <td style="color:${maxPnlColor};font-weight:600">$${fmt(a.max_pnl, 2)}</td>
+                    <td>${(a.total_trades || 0).toLocaleString()}</td>
+                    <td style="color:var(--muted)">${fmt(a.total_time || 0, 1)}s</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // ── Capital summary ──
+        const totalResults = perf.total_results || 0;
+        const simulatedCapital = perf.simulated_capital || (totalResults * 500);
+        const totalComputeTime = perf.total_compute_time || 0;
+        const computeHours = totalComputeTime / 3600;
+
+        document.getElementById('cap-total-tests').textContent = totalResults.toLocaleString();
+        document.getElementById('cap-simulated').textContent = '$' + fmt(simulatedCapital, 0);
+        document.getElementById('cap-compute-time').textContent = fmt(totalComputeTime, 0) + 's';
+        document.getElementById('cap-compute-hours').textContent = fmt(computeHours, 1) + ' horas';
 
         document.getElementById('last-update').textContent =
             'Última actualización: ' + new Date().toLocaleTimeString('es-ES');

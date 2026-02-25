@@ -3438,6 +3438,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                     "MacBook Pro": {"total_cpus": 12, "cpus_per_worker": 4, "power_w": 30, "gpu": "M-series Metal", "numba": True},
                     "Linux ROG": {"total_cpus": 16, "cpus_per_worker": 3.2, "power_w": 65, "gpu": "NVIDIA CUDA", "numba": True},
                     "MacBook Air": {"total_cpus": 8, "cpus_per_worker": 4, "power_w": 15, "gpu": "M-series Metal", "numba": True},
+                    "Asus Dorada": {"total_cpus": 16, "cpus_per_worker": 5, "power_w": 45, "gpu": "AMD/NVIDIA", "numba": True},
                     "Otro": {"total_cpus": 8, "cpus_per_worker": 4, "power_w": 20, "gpu": "N/A", "numba": False},
                 }
 
