@@ -2775,6 +2775,209 @@ def create_test_work_units():
     print(f"✅ {len(ids)} work units de prueba creados: {ids}")
 
 # ============================================================================
+# FUTURES API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/futures/products', methods=['GET'])
+def api_futures_products():
+    """Lista productos futures disponibles con metadata."""
+    products = []
+
+    # Group by contract
+    seen_contracts = set()
+    for f in FUTURES_DATA_FILES:
+        contract = f.get('contract', '')
+        if contract and contract not in seen_contracts:
+            seen_contracts.add(contract)
+
+            # Determine underlying
+            asset = f.get('asset', '')
+            contract_type = f.get('type', 'dated')
+
+            # Get data file info
+            data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), f.get('dir', 'data_futures'))
+            data_file = os.path.join(data_dir, f['file'])
+
+            has_data = os.path.exists(data_file)
+            candles = 0
+            if has_data:
+                try:
+                    import pandas as pd
+                    df = pd.read_csv(data_file)
+                    candles = len(df)
+                except:
+                    pass
+
+            products.append({
+                'contract': contract,
+                'asset': asset,
+                'type': contract_type,
+                'file': f['file'],
+                'dir': f.get('dir', 'data_futures'),
+                'has_data': has_data,
+                'candles': candles,
+                'is_perpetual': contract_type == 'perpetual'
+            })
+
+    return jsonify({
+        'products': products,
+        'total': len(products),
+        'perpetuals': len([p for p in products if p['is_perpetual']]),
+        'dated': len([p for p in products if not p['is_perpetual']])
+    })
+
+@app.route('/api/futures/create_work_unit', methods=['POST'])
+def api_futures_create_work_unit():
+    """Crea un work unit de futures con parámetros específicos."""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+
+    # Required parameters
+    contract = data.get('contract')
+    if not contract:
+        return jsonify({'error': 'contract parameter required'}), 400
+
+    # Find the data file
+    data_file = None
+    for f in FUTURES_DATA_FILES:
+        if f.get('contract') == contract and 'FIVE_MINUTE' in f['file']:
+            data_file = f
+            break
+
+    if not data_file:
+        # Fallback to any file for this contract
+        for f in FUTURES_DATA_FILES:
+            if f.get('contract') == contract:
+                data_file = f
+                break
+
+    if not data_file:
+        return jsonify({'error': f'No data file found for contract {contract}'}), 400
+
+    # Build strategy params
+    strategy_params = {
+        'population_size': data.get('population_size', 30),
+        'generations': data.get('generations', 50),
+        'risk_level': data.get('risk_level', 'MEDIUM'),
+        'data_file': f"{data_file['dir']}/{data_file['file']}",
+        'max_candles': data.get('max_candles', 50000),
+        'market_type': 'FUTURES',
+        'is_perpetual': data_file.get('type') == 'perpetual',
+        'contract': contract,
+        'asset': data_file.get('asset', 'UNKNOWN'),
+        # Futures-specific params
+        'max_leverage': data.get('max_leverage', 5),
+        'direction': data.get('direction', 'BOTH'),
+    }
+
+    replicas = data.get('replicas', REDUNDANCY_FACTOR)
+
+    # Create work unit
+    with db_lock:
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+
+        c.execute("""
+            INSERT INTO work_units (strategy_params, status, replicas_needed, replicas_assigned, created_at)
+            VALUES (?, 'pending', ?, 0, ?)
+        """, (json.dumps(strategy_params), replicas, time.time()))
+
+        work_unit_id = c.lastrowid
+        conn.commit()
+        conn.close()
+
+    return jsonify({
+        'status': 'success',
+        'work_unit_id': work_unit_id,
+        'strategy_params': strategy_params,
+        'replicas': replicas
+    })
+
+@app.route('/api/futures/status', methods=['GET'])
+def api_futures_status():
+    """Obtiene status del sistema de futures."""
+    # Get futures paper trading state
+    paper_state_file = "/tmp/paper_futures_state.json"
+    paper_status = None
+
+    if os.path.exists(paper_state_file):
+        try:
+            with open(paper_state_file, 'r') as f:
+                paper_status = json.load(f)
+        except:
+            pass
+
+    # Get futures orchestrator state
+    orchestrator_state_file = "/tmp/futures_orchestrator_state.json"
+    orchestrator_status = None
+
+    if os.path.exists(orchestrator_state_file):
+        try:
+            with open(orchestrator_state_file, 'r') as f:
+                orchestrator_status = json.load(f)
+        except:
+            pass
+
+    # Get risk manager state
+    risk_db_file = "/tmp/risk_manager.db"
+    risk_status = None
+
+    if os.path.exists(risk_db_file):
+        try:
+            conn = sqlite3.connect(risk_db_file)
+            c = conn.cursor()
+
+            # Get today's stats
+            today = datetime.now().strftime("%Y-%m-%d")
+            c.execute("""
+                SELECT total_pnl, total_trades, winning_trades, max_drawdown, liquidations
+                FROM daily_stats WHERE date = ?
+            """, (today,))
+            row = c.fetchone()
+            conn.close()
+
+            if row:
+                risk_status = {
+                    'daily_pnl': row[0],
+                    'daily_trades': row[1],
+                    'daily_wins': row[2],
+                    'max_drawdown': row[3],
+                    'liquidations': row[4]
+                }
+        except:
+            pass
+
+    # Count futures work units
+    with db_lock:
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+
+        c.execute("""
+            SELECT COUNT(*) FROM work_units
+            WHERE strategy_params LIKE '%FUTURES%' OR strategy_params LIKE '%market_type%'
+        """)
+        futures_wu = c.fetchone()[0]
+
+        c.execute("""
+            SELECT COUNT(*) FROM results
+            WHERE strategy_genome LIKE '%leverage%' OR strategy_genome LIKE '%FUTURES%'
+        """)
+        futures_results = c.fetchone()[0]
+
+        conn.close()
+
+    return jsonify({
+        'paper_trading': paper_status,
+        'orchestrator': orchestrator_status,
+        'risk_manager': risk_status,
+        'futures_work_units': futures_wu,
+        'futures_results': futures_results,
+        'available_data_files': len(FUTURES_DATA_FILES)
+    })
+
+# ============================================================================
 # MAIN
 # ============================================================================
 

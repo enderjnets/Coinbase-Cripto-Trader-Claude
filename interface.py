@@ -2838,7 +2838,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
     st.divider()
 
     # Tabs for different sections
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Dashboard", "👥 Workers", "⚙️ Control", "📜 Logs", "➕ Crear Work Units", "📈 Paper Trading"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Dashboard", "👥 Workers", "⚙️ Control", "📜 Logs", "➕ Crear Work Units", "📈 Paper Trading", "🚀 Futures"])
 
     # TAB 1: Dashboard
     with tab1:
@@ -5087,3 +5087,280 @@ python live_paper_trader.py --product {product_id} --capital {initial_capital} -
 # ejecutará la mejor estrategia encontrada en tiempo real.
             """, language="bash")
 
+    # TAB 7: Futures Trading
+    with tab7:
+        st.subheader("🚀 Coinbase Futures Trading")
+
+        # Futures data directory
+        futures_data_dir = os.path.join(BASE_DIR, "data_futures")
+
+        # Check for futures data
+        futures_files = []
+        if os.path.exists(futures_data_dir):
+            futures_files = [f for f in os.listdir(futures_data_dir) if f.endswith('.csv')]
+
+        if not futures_files:
+            st.warning("⚠️ No hay datos de futuros. Descarga datos primero.")
+            st.code(f"""
+# Descargar datos de futuros con data_manager:
+cd "{BASE_DIR}"
+source ~/coinbase_trader_venv/bin/activate
+python data_manager.py --futures --products BIP-20DEC30-CDE ETP-20DEC30-CDE
+            """, language="bash")
+        else:
+            # Initialize session state for futures
+            if 'futures_contract' not in st.session_state:
+                st.session_state['futures_contract'] = futures_files[0].replace('_FIVE_MINUTE.csv', '').replace('_ONE_MINUTE.csv', '')
+            if 'futures_leverage' not in st.session_state:
+                st.session_state['futures_leverage'] = 5
+            if 'futures_direction' not in st.session_state:
+                st.session_state['futures_direction'] = 'BOTH'
+            if 'futures_capital' not in st.session_state:
+                st.session_state['futures_capital'] = 10000
+            if 'futures_paper_running' not in st.session_state:
+                st.session_state['futures_paper_running'] = False
+
+            # KPI Row
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+            with kpi1:
+                st.metric("📊 Datos Futures", f"{len(futures_files)} archivos")
+
+            with kpi2:
+                # Count perpetuals vs dated
+                perpetuals = len([f for f in futures_files if any(x in f for x in ['BIP', 'ETP', 'SLP', 'XPP', 'ADP', 'AVP', 'DOP', 'HEP', 'LCP', 'LNP', 'XLP'])])
+                st.metric("♾️ Perpetuos", f"{perpetuals}")
+
+            with kpi3:
+                dated = len(futures_files) - perpetuals
+                st.metric("📅 Dated", f"{dated}")
+
+            with kpi4:
+                st.metric("⚡ Max Leverage", "10x")
+
+            st.divider()
+
+            # Configuration section
+            col_config1, col_config2 = st.columns([2, 1])
+
+            with col_config1:
+                st.markdown("### ⚙️ Configuración")
+
+                # Contract selector
+                col_contract1, col_contract2 = st.columns(2)
+
+                with col_contract1:
+                    # Categorize products
+                    perpetual_products = sorted([f.replace('_FIVE_MINUTE.csv', '').replace('_ONE_MINUTE.csv', '')
+                                                  for f in futures_files
+                                                  if any(x in f for x in ['BIP', 'ETP', 'SLP', 'XPP', 'ADP', 'AVP', 'DOP', 'HEP', 'LCP', 'LNP', 'XLP'])])
+                    dated_products = sorted([f.replace('_FIVE_MINUTE.csv', '').replace('_ONE_MINUTE.csv', '')
+                                             for f in futures_files
+                                             if not any(x in f for x in ['BIP', 'ETP', 'SLP', 'XPP', 'ADP', 'AVP', 'DOP', 'HEP', 'LCP', 'LNP', 'XLP'])])
+
+                    product_category = st.radio("Tipo", ["♾️ Perpetuos", "📅 Dated"], horizontal=True, key="futures_category")
+
+                    available_products = perpetual_products if product_category == "♾️ Perpetuos" else dated_products
+
+                    selected_product = st.selectbox(
+                        "Contrato",
+                        available_products,
+                        key="futures_product_select"
+                    )
+
+                with col_contract2:
+                    # Check if perpetual
+                    is_perpetual = any(x in selected_product for x in ['BIP', 'ETP', 'SLP', 'XPP', 'ADP', 'AVP', 'DOP', 'HEP', 'LCP', 'LNP', 'XLP'])
+
+                    if is_perpetual:
+                        st.info(f"♾️ **Perpetuo**\n\nFunding rate: ~0.01%/8h")
+                    else:
+                        # Extract expiry from contract name
+                        parts = selected_product.split('-')
+                        if len(parts) >= 2:
+                            expiry = parts[1]
+                            st.info(f"📅 **Vencimiento: {expiry}**\n\nSin funding rate")
+
+                # Trading parameters
+                col_params1, col_params2, col_params3 = st.columns(3)
+
+                with col_params1:
+                    leverage = st.slider("Apalancamiento", 1, 10, 5, key="futures_leverage_slider")
+                    st.caption(f"Margen requerido: {100/leverage:.1f}%")
+
+                with col_params2:
+                    direction = st.selectbox(
+                        "Dirección",
+                        ["BOTH", "LONG", "SHORT"],
+                        key="futures_direction_select"
+                    )
+                    st.caption(f"Estrategia: {direction}")
+
+                with col_params3:
+                    capital = st.number_input(
+                        "Capital (USDC)",
+                        min_value=100,
+                        max_value=100000,
+                        value=10000,
+                        step=100,
+                        key="futures_capital_input"
+                    )
+                    margin_required = capital / leverage
+                    st.caption(f"Margen por trade: ${margin_required:.2f}")
+
+            with col_config2:
+                st.markdown("### 📊 Risk Manager")
+
+                # Risk limits display
+                st.markdown("""
+                **Límites Activos:**
+                - 📉 Pérdida diaria máx: **3%**
+                - 📊 Pérdida mensual máx: **15%**
+                - 🔢 Posiciones máx: **5**
+                - ⚡ Leverage máx: **5x** (total: 15x)
+                - ⏱️ Trades/día máx: **50**
+
+                **Circuit Breakers:**
+                - 🚨 Volatilidad >5% en 5min
+                - 💰 Funding rate >0.1%
+                """)
+
+                # Risk level indicator
+                st.markdown("**Estado de Riesgo:**")
+                st.success("🟢 SAFE - Trading permitido")
+
+            st.divider()
+
+            # Action buttons
+            st.markdown("### 🎮 Acciones")
+
+            col_action1, col_action2, col_action3, col_action4 = st.columns(4)
+
+            with col_action1:
+                if st.button("📝 Paper Trading", type="primary", use_container_width=True):
+                    st.session_state['futures_paper_running'] = True
+                    st.success("✅ Paper Trading iniciado")
+
+            with col_action2:
+                if st.button("⛏️ Mining", use_container_width=True):
+                    st.info("Creando work unit de futures...")
+
+            with col_action3:
+                if st.button("⏹️ Detener", use_container_width=True):
+                    st.session_state['futures_paper_running'] = False
+                    st.warning("⏹️ Detenido")
+
+            with col_action4:
+                if st.button("🔄 Refresh", use_container_width=True):
+                    st.rerun()
+
+            st.divider()
+
+            # Paper Trading Status
+            st.markdown("### 📈 Paper Trading Status")
+
+            paper_state_file = "/tmp/paper_futures_state.json"
+            if os.path.exists(paper_state_file):
+                try:
+                    with open(paper_state_file, 'r') as f:
+                        paper_state = json.load(f)
+
+                    col_status1, col_status2, col_status3, col_status4 = st.columns(4)
+
+                    with col_status1:
+                        st.metric("Balance", f"${paper_state.get('balance', 10000):,.2f}")
+
+                    with col_status2:
+                        trades = paper_state.get('trades', [])
+                        st.metric("Trades", len(trades))
+
+                    with col_status3:
+                        if trades:
+                            total_pnl = sum(t.get('pnl', 0) for t in trades)
+                            st.metric("PnL Total", f"${total_pnl:+,.2f}")
+                        else:
+                            st.metric("PnL Total", "$0.00")
+
+                    with col_status4:
+                        liqs = paper_state.get('liquidations', 0)
+                        st.metric("Liquidaciones", liqs, delta="⚠️" if liqs > 0 else "✅")
+
+                    # Recent trades
+                    if trades:
+                        with st.expander("📋 Últimos Trades", expanded=False):
+                            df_trades = pd.DataFrame(trades[-10:])
+                            display_cols = ['entry_time', 'exit_time', 'entry_price', 'exit_price', 'side', 'pnl', 'leverage']
+                            available_cols = [c for c in display_cols if c in df_trades.columns]
+                            st.dataframe(df_trades[available_cols], use_container_width=True)
+
+                except Exception as e:
+                    st.warning(f"Error leyendo estado: {e}")
+            else:
+                st.info("📊 Sin datos de paper trading. Inicia el paper trader para ver estadísticas.")
+
+            st.divider()
+
+            # How to run
+            with st.expander("🔧 Cómo Ejecutar Futures Trading", expanded=False):
+                st.markdown("""
+                #### Paper Trading (Simulado)
+                ```bash
+                # Activar entorno
+                source ~/coinbase_trader_venv/bin/activate
+                cd "{base_dir}"
+
+                # Ejecutar paper trader
+                python paper_futures_trader.py \\
+                    --contract {contract} \\
+                    --capital {capital} \\
+                    --leverage {leverage} \\
+                    --direction {direction}
+                ```
+
+                #### Backtesting de Estrategias
+                ```bash
+                python futures_orchestrator.py --mine --product {contract}
+                ```
+
+                #### Orquestador (Completo)
+                ```bash
+                # Modo dry-run (sin dinero real)
+                python futures_orchestrator.py --start --dry-run --balance 10000
+
+                # Ver status
+                python futures_orchestrator.py --status
+                ```
+
+                #### ⚠️ IMPORTANTE - Live Trading
+                El modo live requiere:
+                1. Validación completa en paper trading (mínimo 4 horas)
+                2. Estrategia con win rate >45%, Sharpe >1.0
+                3. Risk manager activo
+                4. Capital en cuenta CFM de Coinbase
+
+                ```bash
+                # NUNCA ejecutar sin dry_run hasta estar 100% listo
+                python futures_orchestrator.py --start --balance 10000
+                ```
+                """.format(
+                    base_dir=BASE_DIR,
+                    contract=selected_product,
+                    capital=capital,
+                    leverage=leverage,
+                    direction=direction
+                ))
+
+            # Available products table
+            with st.expander("📊 Productos Futures Disponibles", expanded=False):
+                st.markdown("#### ♾️ Perpetuos (Nano Contracts)")
+
+                perpetual_info = [
+                    {"Contrato": "BIP-20DEC30-CDE", "Activo": "Bitcoin", "Size": "0.01 BTC", "Funding": "~0.01%/8h"},
+                    {"Contrato": "ETP-20DEC30-CDE", "Activo": "Ethereum", "Size": "0.10 ETH", "Funding": "~0.01%/8h"},
+                    {"Contrato": "SLP-20DEC30-CDE", "Activo": "Solana", "Size": "5 SOL", "Funding": "~0.01%/8h"},
+                    {"Contrato": "XPP-20DEC30-CDE", "Activo": "XRP", "Size": "500 XRP", "Funding": "~0.01%/8h"},
+                ]
+                st.dataframe(pd.DataFrame(perpetual_info), use_container_width=True, hide_index=True)
+
+                st.markdown("#### 📅 Dated (Con Vencimiento)")
+                st.caption("Los contratos dated vencen en la fecha indicada. Sin funding rate.")
