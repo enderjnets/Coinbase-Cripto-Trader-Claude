@@ -1,5 +1,41 @@
 # SKILL: Crypto Strategy Miner - Distributed Computing System
-**Last Updated**: 2026-02-05
+**Last Updated**: 2026-02-26
+
+## Recent Updates (Feb 2026)
+
+### New Files Added
+- `live_paper_trader.py` - Paper trading with Coinbase WebSocket real-time data
+- `monitor_daemon.py` - Autonomous monitoring and auto-restart system
+- `risk_metrics.py` - Professional risk metrics (Sharpe, Sortino, VaR, CVaR, etc.)
+- `production_checklist.py` - Pre-production validation checklist
+- `position_sizing.py` - Kelly Criterion and position sizing methods
+
+### Critical Bug Fixes
+1. **Absurd PnL values** (100+ digits): Added safety limits in `numba_backtester.py`
+   - `MAX_BALANCE = 1_000_000.0`
+   - `MAX_POSITION_VALUE = 100_000.0`
+   - `MAX_PNL = 1_000_000.0`
+   - Data validation with `np.nan_to_num()`
+
+2. **macOS Google Drive access blocked**: Workers now check local paths first
+   - `~/trader_data/data/` and `~/trader_data/data_futures/`
+   - `~/crypto_worker/data/`
+
+### Workers Configuration (15 total)
+| Machine | IP | Workers | Access |
+|---------|-----|---------|--------|
+| MacBook Pro | 10.0.0.232 | 3 | Local |
+| MacBook Air | 10.0.0.97 | 4 | SSH (password: 571947) |
+| Linux ROG | 10.0.0.240 | 5 | SSH key-based |
+| Asus Dorada | 10.0.0.56 | 3 | SSH key-based |
+
+### Monitor Daemon
+Auto-restarts all services if:
+- Coordinator not responding
+- Less than 8 workers alive
+- Telegram bot not running
+
+---
 
 ## Project Identity
 - **Name**: Coinbase Crypto Trader - Strategy Miner
