@@ -2838,7 +2838,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
     st.divider()
 
     # Tabs for different sections
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "👥 Workers", "⚙️ Control", "📜 Logs", "➕ Crear Work Units"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Dashboard", "👥 Workers", "⚙️ Control", "📜 Logs", "➕ Crear Work Units", "📈 Paper Trading"])
 
     # TAB 1: Dashboard
     with tab1:
@@ -4762,3 +4762,260 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
         with col3:
             if st.button("🔥 Búsqueda Exhaustiva", width='stretch'):
                 st.info("Población: 60, Generaciones: 50, Risk: HIGH")
+
+    # TAB 6: Paper Trading
+    with tab6:
+        st.subheader("📈 Paper Trading en Vivo")
+        st.markdown("""
+        Sistema de paper trading que usa la mejor estrategia encontrada para operar en tiempo real con datos de Coinbase.
+        **NO ejecuta órdenes reales**, solo simula con condiciones realistas.
+        """)
+
+        # Initialize paper trader state
+        if 'paper_trader' not in st.session_state:
+            st.session_state['paper_trader'] = None
+        if 'paper_trading_running' not in st.session_state:
+            st.session_state['paper_trading_running'] = False
+
+        # Load paper trading state from file
+        paper_state_file = "/tmp/paper_trading_state.json"
+        if os.path.exists(paper_state_file):
+            try:
+                with open(paper_state_file, 'r') as f:
+                    paper_state = json.load(f)
+                st.session_state['paper_capital'] = paper_state.get('capital', 10000)
+                st.session_state['paper_trades'] = paper_state.get('trades', [])
+            except:
+                st.session_state['paper_capital'] = 10000
+                st.session_state['paper_trades'] = []
+        else:
+            st.session_state['paper_capital'] = 10000
+            st.session_state['paper_trades'] = []
+
+        # Configuration section
+        with st.expander("⚙️ Configuración", expanded=False):
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                initial_capital = st.number_input(
+                    "Capital Inicial ($)",
+                    min_value=1000,
+                    max_value=1000000,
+                    value=10000,
+                    step=1000,
+                    key="paper_initial_capital"
+                )
+
+            with col2:
+                position_size_pct = st.slider(
+                    "Tamaño de Posición (%)",
+                    min_value=1,
+                    max_value=50,
+                    value=10,
+                    key="paper_position_size"
+                )
+
+            with col3:
+                product_id = st.selectbox(
+                    "Par de Trading",
+                    options=["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"],
+                    index=0,
+                    key="paper_product"
+                )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                fee_rate = st.number_input(
+                    "Fee Rate (%)",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.4,
+                    step=0.1,
+                    key="paper_fee_rate"
+                ) / 100
+
+            with col2:
+                slippage = st.number_input(
+                    "Slippage (%)",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.05,
+                    step=0.01,
+                    key="paper_slippage"
+                ) / 100
+
+        # Get best strategy from database
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+
+            # Try canonical first
+            c.execute("""
+                SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio
+                FROM results r
+                WHERE r.is_canonical = 1
+                ORDER BY r.pnl DESC
+                LIMIT 1
+            """)
+            best_row = c.fetchone()
+
+            # Fallback to best overall
+            if not best_row:
+                c.execute("""
+                    SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio
+                    FROM results r
+                    WHERE r.pnl > 0 AND r.trades >= 10
+                    ORDER BY r.sharpe_ratio DESC
+                    LIMIT 1
+                """)
+                best_row = c.fetchone()
+
+            conn.close()
+        except:
+            best_row = None
+
+        # Status metrics
+        st.markdown("### 📊 Estado Actual")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        paper_capital = st.session_state.get('paper_capital', 10000)
+        paper_trades = st.session_state.get('paper_trades', [])
+        paper_initial = st.session_state.get('paper_initial_capital', 10000)
+
+        total_pnl = sum(t.get('pnl', 0) for t in paper_trades)
+        return_pct = ((paper_capital / paper_initial) - 1) * 100 if paper_initial > 0 else 0
+
+        with col1:
+            st.metric("💰 Capital Virtual", f"${paper_capital:,.2f}", f"{return_pct:+.2f}%")
+
+        with col2:
+            st.metric("📊 Total Trades", len(paper_trades))
+
+        with col3:
+            wins = sum(1 for t in paper_trades if t.get('pnl', 0) > 0)
+            win_rate = (wins / len(paper_trades) * 100) if paper_trades else 0
+            st.metric("🎯 Win Rate", f"{win_rate:.1f}%")
+
+        with col4:
+            st.metric("💵 PnL Total", f"${total_pnl:+,.2f}")
+
+        st.divider()
+
+        # Strategy info
+        if best_row:
+            st.markdown("### 🧠 Estrategia Activa")
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric("PnL Backtest", f"${best_row[1]:,.2f}")
+            with col2:
+                st.metric("Trades Backtest", best_row[2])
+            with col3:
+                st.metric("Win Rate Backtest", f"{best_row[3]*100:.1f}%")
+            with col4:
+                st.metric("Sharpe Backtest", f"{best_row[4]:.2f}")
+
+            # Show strategy rules
+            try:
+                strategy_genome = json.loads(best_row[0]) if best_row[0] else {}
+                entry_rules = strategy_genome.get('entry_rules', [])
+                params = strategy_genome.get('params', {})
+
+                if entry_rules:
+                    st.markdown("**Reglas de Entrada:**")
+                    for i, rule in enumerate(entry_rules):
+                        left = rule.get('left', {})
+                        right = rule.get('right', {})
+                        op = rule.get('op', '>')
+
+                        left_str = left.get('indicator', left.get('field', left.get('value', '?')))
+                        if 'period' in left:
+                            left_str += f"_{left['period']}"
+                        right_str = right.get('indicator', right.get('field', right.get('value', '?')))
+                        if 'period' in right:
+                            right_str += f"_{right['period']}"
+
+                        st.code(f"  {i+1}. {left_str} {op} {right_str}")
+
+                if params:
+                    st.markdown(f"**Parámetros:** SL={params.get('sl_pct', 0.05)*100:.1f}%, TP={params.get('tp_pct', 0.10)*100:.1f}%")
+            except:
+                st.warning("No se pudo cargar la estrategia")
+        else:
+            st.warning("⚠️ No hay estrategias válidas en la base de datos. Ejecuta más work units primero.")
+
+        st.divider()
+
+        # Control buttons
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if st.button("▶️ Iniciar Paper Trading", type="primary", disabled=st.session_state['paper_trading_running']):
+                st.session_state['paper_trading_running'] = True
+                st.success("Paper Trading iniciado! (Se ejecuta en background)")
+                st.info("Nota: El paper trader se ejecuta como proceso separado. Monitorea los logs para ver las operaciones.")
+
+        with col2:
+            if st.button("⏹️ Detener", disabled=not st.session_state['paper_trading_running']):
+                st.session_state['paper_trading_running'] = False
+                st.warning("Paper Trading detenido")
+
+        with col3:
+            if st.button("🔄 Reiniciar Contadores"):
+                st.session_state['paper_capital'] = st.session_state.get('paper_initial_capital', 10000)
+                st.session_state['paper_trades'] = []
+                # Also clear the state file
+                if os.path.exists(paper_state_file):
+                    os.remove(paper_state_file)
+                st.success("Contadores reiniciados")
+                st.rerun()
+
+        st.divider()
+
+        # Equity curve
+        if paper_trades:
+            st.markdown("### 📈 Equity Curve")
+
+            equity_data = []
+            equity = paper_initial
+            equity_data.append({'Trade': 0, 'Equity': equity})
+
+            for i, trade in enumerate(paper_trades):
+                equity += trade.get('pnl', 0)
+                equity_data.append({'Trade': i + 1, 'Equity': equity})
+
+            if len(equity_data) > 1:
+                df_equity = pd.DataFrame(equity_data)
+                st.line_chart(df_equity.set_index('Trade'))
+
+        # Recent trades
+        if paper_trades:
+            st.markdown("### 📋 Últimos Trades")
+            df_trades = pd.DataFrame(paper_trades[-20:])
+            if not df_trades.empty:
+                # Format columns
+                display_cols = ['entry_time', 'exit_time', 'entry_price', 'exit_price', 'pnl', 'pnl_pct', 'exit_reason']
+                available_cols = [c for c in display_cols if c in df_trades.columns]
+                st.dataframe(
+                    df_trades[available_cols].style.format({
+                        'entry_price': '${:.2f}',
+                        'exit_price': '${:.2f}',
+                        'pnl': '${:+.2f}',
+                        'pnl_pct': '{:+.2f}%'
+                    }),
+                    use_container_width=True
+                )
+
+        # How to run paper trader
+        with st.expander("🔧 Cómo Ejecutar Paper Trading", expanded=False):
+            st.code(f"""
+# En una terminal separada, ejecuta:
+source ~/coinbase_trader_venv/bin/activate
+cd "{BASE_DIR}"
+python live_paper_trader.py --product {product_id} --capital {initial_capital} --size {position_size_pct/100}
+
+# El paper trader se conectará a Coinbase WebSocket y
+# ejecutará la mejor estrategia encontrada en tiempo real.
+            """, language="bash")
+
