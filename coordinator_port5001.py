@@ -1733,9 +1733,9 @@ async function fetchAll() {
       setColor(srEl, best.sharpe_ratio||0, 2, 1);
 
       const ddEl = document.getElementById('g-dd');
-      const dd = (best.max_drawdown||0)*100;
-      ddEl.textContent = fmt(dd,1) + '%';
-      ddEl.style.color = dd<=10 ? 'var(--green)' : dd<=25 ? 'var(--yellow)' : 'var(--red)';
+      const ddGoal = (best.max_drawdown||0)*100;
+      ddEl.textContent = fmt(ddGoal,1) + '%';
+      ddEl.style.color = ddGoal<=10 ? 'var(--green)' : ddGoal<=25 ? 'var(--yellow)' : 'var(--red)';
     }
 
     // ── Workers list ──
