@@ -45,6 +45,18 @@ AUTO_CREATE_BATCH_SIZE = 100      # Crear 100 WUs cada vez
 AUTO_CREATE_CHECK_INTERVAL = 30   # Verificar cada 30 segundos
 
 # ============================================================================
+# PROFESSIONAL VALIDATION CRITERIA
+# ============================================================================
+MIN_TRADES_REQUIRED = 50          # Mínimo 50 trades (significancia estadística)
+MIN_WIN_RATE = 0.40               # Win rate mínimo 40%
+MAX_WIN_RATE = 0.65               # Win rate máximo 65% (evitar overfitting)
+MIN_SHARPE_RATIO = 1.0            # Sharpe ratio mínimo
+MAX_DRAWDOWN = 0.20               # Max drawdown máximo 20%
+MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
+
+
+
+# ============================================================================
 # SISTEMA DE ÉLITE GLOBAL (Evolución Continua)
 # ============================================================================
 ELITE_MAX_SIZE = 100              # Máximo 100 genomas élite
@@ -674,8 +686,18 @@ def api_status():
         'best_strategy': {
             'pnl': best['pnl'] if best else 0,
             'trades': best['trades'] if best else 0,
-            'win_rate': best['win_rate'] if best else 0
+            'win_rate': best['win_rate'] if best else 0,
+            'sharpe_ratio': best['sharpe_ratio'] if best else 0,
+            'max_drawdown': best['max_drawdown'] if best else 0
         } if best else None,
+        'validation_criteria': {
+            'min_trades': MIN_TRADES_REQUIRED,
+            'min_win_rate': MIN_WIN_RATE,
+            'max_win_rate': MAX_WIN_RATE,
+            'min_sharpe': MIN_SHARPE_RATIO,
+            'max_drawdown': MAX_DRAWDOWN,
+            'max_overfit_score': MAX_OVERFIT_SCORE
+        },
         'timestamp': time.time()
     })
 
