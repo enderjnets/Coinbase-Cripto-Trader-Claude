@@ -661,15 +661,34 @@ def api_status():
     c.execute("SELECT COUNT(*) as active FROM workers WHERE (strftime('%s', 'now') - last_seen) < 300")
     active_workers = c.fetchone()['active']
 
-    # Mejor estrategia
+    # Mejor estrategia (que pase criterios de validación)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE r.is_canonical = 1
-        ORDER BY r.pnl DESC
-        LIMIT 1""")
+        AND r.trades >= ?
+        AND r.win_rate >= ?
+        AND r.win_rate <= ?
+        AND r.sharpe_ratio >= ?
+        AND r.max_drawdown <= ?
+        ORDER BY r.sharpe_ratio DESC, r.pnl DESC
+        LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE, MIN_SHARPE_RATIO, MAX_DRAWDOWN))
 
     best = c.fetchone()
+    is_validated = best is not None  # True si pasó validación
+
+    # Fallback: si no hay estrategia que pase validación, buscar la mejor disponible
+    # pero marcarla como "no validada"
+    if not best:
+        c.execute("""SELECT r.*, w.strategy_params
+            FROM results r
+            JOIN work_units w ON r.work_unit_id = w.id
+            WHERE r.is_canonical = 1
+            AND r.trades >= 10
+            ORDER BY r.pnl DESC
+            LIMIT 1""")
+        best = c.fetchone()
+        is_validated = False  # No pasó validación profesional
 
     conn.close()
 
@@ -688,7 +707,8 @@ def api_status():
             'trades': best['trades'] if best else 0,
             'win_rate': best['win_rate'] if best else 0,
             'sharpe_ratio': best['sharpe_ratio'] if best else 0,
-            'max_drawdown': best['max_drawdown'] if best else 0
+            'max_drawdown': best['max_drawdown'] if best else 0,
+            'is_validated': is_validated
         } if best else None,
         'validation_criteria': {
             'min_trades': MIN_TRADES_REQUIRED,
@@ -1012,13 +1032,29 @@ def api_dashboard_stats():
                  ORDER BY bucket_start ASC""")
     completion_timeline = [{'hour_unix': (row[1] - 2440587.5) * 86400, 'count': row[0]} for row in c.fetchall()]
     
-    # Best strategy
+    # Best strategy (que pase criterios de validación)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE r.is_canonical = 1
-        ORDER BY r.pnl DESC LIMIT 1""")
+        AND r.trades >= ?
+        AND r.win_rate >= ?
+        AND r.win_rate <= ?
+        AND r.sharpe_ratio >= ?
+        AND r.max_drawdown <= ?
+        ORDER BY r.sharpe_ratio DESC, r.pnl DESC
+        LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE, MIN_SHARPE_RATIO, MAX_DRAWDOWN))
     best_row = c.fetchone()
+
+    # Fallback si no hay estrategia validada
+    if not best_row:
+        c.execute("""SELECT r.*, w.strategy_params
+            FROM results r
+            JOIN work_units w ON r.work_unit_id = w.id
+            WHERE r.is_canonical = 1
+            AND r.trades >= 10
+            ORDER BY r.pnl DESC LIMIT 1""")
+        best_row = c.fetchone()
     
     best_strategy = None
     if best_row:
