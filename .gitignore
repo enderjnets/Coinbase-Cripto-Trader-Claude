@@ -86,3 +86,8 @@ Thumbs.db
 # =============================================================================
 # data/*.csv
 # *.csv
+
+# Data files (too large for git)
+data_futures/*.csv
+worker_checkpoint_*.json
+
