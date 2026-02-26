@@ -30,6 +30,19 @@ except ImportError:
     HAS_RAY = False
 from strategy_miner import StrategyMiner
 
+# Detect market type from data file path
+def detect_market_type(data_file):
+    """Detect if this is futures data based on file path."""
+    if not data_file:
+        return "SPOT", False
+    data_lower = data_file.lower()
+    if "futures" in data_lower or "data_futures" in data_lower:
+        # Check if it's a perpetual contract
+        is_perpetual = "perp" in data_lower or "p-" in data_lower or data_lower.endswith("-p_") or \
+                       any(x in data_lower for x in ["bip-", "etp-", "slp-", "xpp-", "adp-", "dop-", "lnp-", "avp-", "xlp-", "hep-", "lcp-"])
+        return "FUTURES", is_perpetual
+    return "SPOT", False
+
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
@@ -223,6 +236,11 @@ def execute_backtest(strategy_params, work_id=None):
     total_available = len(df)
     print(f"   📊 Usando {total_available:,} velas" + (f" (cap: {max_candles:,})" if max_candles > 0 else " (todas)"))
 
+    # Detect market type from data file
+    market_type, is_perpetual = detect_market_type(data_file_path)
+    if market_type == "FUTURES":
+        print(f"   📈 FUTURES mode detected (perpetual: {is_perpetual})")
+
     # Crear miner con soporte para seed_genomes (élite global)
     # IMPORTANTE: force_local=False permite que Ray paralelice usando los 9 cores
     seed_genomes = strategy_params.get('seed_genomes', [])
@@ -238,7 +256,10 @@ def execute_backtest(strategy_params, work_id=None):
         risk_level=strategy_params.get('risk_level', 'MEDIUM'),
         force_local=True,  # Procesamiento secuencial estable (Ray inestable en este sistema)
         seed_genomes=seed_genomes,
-        seed_ratio=seed_ratio
+        seed_ratio=seed_ratio,
+        market_type=market_type,
+        max_leverage=strategy_params.get('max_leverage', 10),
+        is_perpetual=is_perpetual
     )
 
     # Ejecutar búsqueda
@@ -276,6 +297,7 @@ def execute_backtest(strategy_params, work_id=None):
     win_rate = win_rate_pct / 100.0 if win_rate_pct > 1 else win_rate_pct
     sharpe_ratio = best_metrics.get('Sharpe Ratio', 0.0)
     max_drawdown = best_metrics.get('Max Drawdown', 0.0)
+    liquidations = best_metrics.get('Liquidations', 0)  # Futures only
 
     result = {
         'pnl': best_pnl,
@@ -284,12 +306,20 @@ def execute_backtest(strategy_params, work_id=None):
         'sharpe_ratio': round(sharpe_ratio, 4),
         'max_drawdown': round(max_drawdown, 4),
         'execution_time': execution_time,
-        'genome': best_genome  # Incluir el mejor genoma encontrado
+        'genome': best_genome,  # Incluir el mejor genoma encontrado
+        'market_type': market_type  # SPOT or FUTURES
     }
+
+    # Add liquidations for futures
+    if market_type == "FUTURES":
+        result['liquidations'] = liquidations
 
     print(f"✅ Backtest completado en {execution_time:.0f}s")
     print(f"   PnL: ${best_pnl:,.2f}")
-    print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
+    if market_type == "FUTURES" and liquidations > 0:
+        print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%} | Liqs: {liquidations}")
+    else:
+        print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
 
     return result
 

@@ -23,6 +23,20 @@ try:
 except ImportError:
     HAS_NUMBA = False
 
+# Futures support
+try:
+    from numba_futures_backtester import (
+        numba_evaluate_futures_population,
+        warmup_jit_futures,
+        FEE_MAKER as FUTURES_FEE
+    )
+    HAS_FUTURES_NUMBA = HAS_NUMBA
+    if HAS_FUTURES_NUMBA:
+        warmup_jit_futures()
+except ImportError:
+    HAS_FUTURES_NUMBA = False
+    FUTURES_FEE = 0.0002
+
 class StrategyMiner:
     """
     Genetic Algorithm to discover optimal trading strategies.
@@ -32,10 +46,12 @@ class StrategyMiner:
     - Risk Management (trailing stop, breakeven)
     - Multi-timeframe support
     - ML-enhanced fitness function
+    - FUTURES SUPPORT: Long/Short, Leverage 1-10x, Funding rates
     """
     def __init__(self, df, population_size=100, generations=20, risk_level="LOW",
                  force_local=False, ray_address="auto", ml_enhanced=False,
-                 seed_genomes=None, seed_ratio=0.5):
+                 seed_genomes=None, seed_ratio=0.5, market_type="SPOT",
+                 max_leverage=10, is_perpetual=True):
         self.df = df
         self.pop_size = population_size
         self.generations = generations
@@ -44,6 +60,13 @@ class StrategyMiner:
         self.ml_enhanced = ml_enhanced
         self.seed_genomes = seed_genomes or []
         self.seed_ratio = seed_ratio
+
+        # Futures support
+        self.market_type = market_type.upper() if market_type else "SPOT"
+        self.is_futures = self.market_type == "FUTURES"
+        self.max_leverage = min(max_leverage, 10)  # Coinbase max 10x
+        self.is_perpetual = is_perpetual
+
         ray_init = HAS_RAY and ray.is_initialized()
         
         # === TODOS LOS INDICADORES DISPONIBLES ===
@@ -95,6 +118,13 @@ class StrategyMiner:
                 "timeframe": random.choice(["1m", "5m", "15m", "30m", "1h"]),
             }
         }
+
+        # Futures-specific parameters
+        if self.is_futures:
+            genome["params"]["leverage"] = random.randint(1, self.max_leverage)
+            genome["params"]["direction"] = random.choice(["LONG", "SHORT", "BOTH"])
+            genome["params"]["funding_threshold"] = random.choice([0.0005, 0.001, 0.002, 0.005])
+            genome["params"]["market_type"] = "FUTURES"
 
         # 1 to 5 rules
         num_rules = random.randint(1, 5)
@@ -153,17 +183,17 @@ class StrategyMiner:
     def mutate(self, genome, generation=0, diversity_score=0.5):
         """Adaptive mutation based on generation and diversity."""
         mutated = copy.deepcopy(genome)
-        
+
         # Adaptive mutation rate: decreases with generations
         base_mutation_rate = 0.25
         adaptive_rate = base_mutation_rate * (1 - (generation / max(self.generations, 1)) * 0.5)
-        
+
         # Boost mutation if diversity is low
         if diversity_score < 0.3:
             adaptive_rate = min(0.5, adaptive_rate * 1.5)
-        
+
         roll = random.random()
-        
+
         if roll < adaptive_rate * 0.3:
             # Mutate core param
             key = random.choice(["sl_pct", "tp_pct"])
@@ -181,6 +211,11 @@ class StrategyMiner:
             # Mutate risk management
             mutated["params"]["trailing_stop_pct"] = random.choice([0, 0.01, 0.015, 0.02, 0.025, 0.03])
             mutated["params"]["breakeven_after"] = random.choice([0, 0.01, 0.015, 0.02])
+            # Futures-specific: mutate leverage and direction
+            if self.is_futures:
+                mutated["params"]["leverage"] = random.randint(1, self.max_leverage)
+                if random.random() < 0.3:
+                    mutated["params"]["direction"] = random.choice(["LONG", "SHORT", "BOTH"])
         elif roll < adaptive_rate * 0.9:
             # Mutate existing rule
             if mutated["entry_rules"]:
@@ -199,12 +234,32 @@ class StrategyMiner:
         child = {"entry_rules": [], "params": {}}
 
         # Mix Params
-        for key in ["sl_pct", "tp_pct", "size_pct", "max_positions", 
+        for key in ["sl_pct", "tp_pct", "size_pct", "max_positions",
                      "trailing_stop_pct", "breakeven_after"]:
             if key in p1["params"] and key in p2["params"]:
                 child["params"][key] = (p1["params"][key] + p2["params"][key]) / 2
             else:
                 child["params"][key] = p1["params"].get(key, p2["params"].get(key, 0))
+
+        # Futures-specific params crossover
+        if self.is_futures:
+            # Leverage: average of parents
+            lev1 = p1["params"].get("leverage", 3)
+            lev2 = p2["params"].get("leverage", 3)
+            child["params"]["leverage"] = int((lev1 + lev2) / 2)
+            child["params"]["leverage"] = max(1, min(self.max_leverage, child["params"]["leverage"]))
+
+            # Direction: inherit from better parent or random
+            child["params"]["direction"] = random.choice([
+                p1["params"].get("direction", "BOTH"),
+                p2["params"].get("direction", "BOTH")
+            ])
+
+            # Funding threshold: average
+            ft1 = p1["params"].get("funding_threshold", 0.001)
+            ft2 = p2["params"].get("funding_threshold", 0.001)
+            child["params"]["funding_threshold"] = (ft1 + ft2) / 2
+            child["params"]["market_type"] = "FUTURES"
 
         rules1 = p1["entry_rules"]
         rules2 = p2["entry_rules"]
@@ -218,7 +273,7 @@ class StrategyMiner:
             split1 = len(rules1) // 2
             split2 = len(rules2) // 2
             child["entry_rules"] = rules1[:split1] + rules2[split2:]
-            
+
         if not child["entry_rules"]:
             child["entry_rules"] = rules1 if rules1 else [self._random_rule()]
 
@@ -246,36 +301,49 @@ class StrategyMiner:
         win_rate = metrics.get('Win Rate %', 0)
         sharpe = metrics.get('Sharpe Ratio', 0)
         max_dd = metrics.get('Max Drawdown', 0)
-        
+
         # Base PnL
         fitness = pnl
-        
+
         # Trade count bonus (needs minimum trades)
         trade_bonus = min(num_trades * 10, 150) if num_trades >= 5 else 0
         fitness += trade_bonus
-        
+
         # Win rate bonus (>50%)
         winrate_bonus = (win_rate - 50) * 3 if win_rate > 50 else 0
         fitness += winrate_bonus
-        
+
         # Sharpe bonus
         sharpe_bonus = sharpe * 25 if sharpe > 0 else 0
         fitness += sharpe_bonus
-        
+
         # Drawdown penalty (low drawdown is good)
         dd_penalty = max_dd * 200 if max_dd > 0.02 else 0
         fitness -= dd_penalty
-        
+
         # Penalty for too many trades (overfitting risk)
         if num_trades > 100:
             fitness -= (num_trades - 100) * 2
-        
+
         # Reward for risk management settings
         if genome.get("params", {}).get("trailing_stop_pct", 0) > 0:
             fitness += 10
         if genome.get("params", {}).get("breakeven_after", 0) > 0:
             fitness += 10
-            
+
+        # Futures-specific penalties/bonuses
+        if self.is_futures:
+            # Penalty for liquidations
+            liquidations = metrics.get('Liquidations', 0)
+            fitness -= liquidations * 100
+
+            # Bonus for moderate leverage (avoid overleveraged strategies)
+            leverage = genome.get("params", {}).get("leverage", 1)
+            if 2 <= leverage <= 5:
+                fitness += 15
+            elif leverage > 7:
+                fitness -= 20  # High leverage penalty
+
         return fitness
 
     def evaluate_population(self, population, progress_cb=None, cancel_event=None):
@@ -560,7 +628,19 @@ class StrategyMiner:
     def _evaluate_local(self, population, progress_cb, cancel_event=None):
         """Run backtests locally."""
 
-        if HAS_NUMBA:
+        # Use futures backtester if market_type is FUTURES
+        if self.is_futures and HAS_FUTURES_NUMBA:
+            try:
+                return numba_evaluate_futures_population(
+                    self.df, population, risk_level=self.risk_level,
+                    progress_cb=progress_cb, cancel_event=cancel_event,
+                    is_perpetual=self.is_perpetual
+                )
+            except Exception as e:
+                print(f"Numba futures evaluation failed ({e}), falling back to Python...")
+
+        # Use spot backtester for SPOT market
+        if HAS_NUMBA and not self.is_futures:
             try:
                 return numba_evaluate_population(
                     self.df, population, risk_level=self.risk_level,

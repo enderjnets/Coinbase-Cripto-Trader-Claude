@@ -70,28 +70,87 @@ SPOT_DATA_FILES = [
     {"file": "BTC-USD_FIFTEEN_MINUTE.csv", "asset": "BTC", "dir": "data"},
 ]
 
+# FUTURES DATA FILES - Comprehensive list (Updated Feb 2026)
+# Categories: Perpetuals (P suffix), Dated (expiry date), Commodities
+# Timeframes: FIVE_MINUTE (faster backtests), ONE_MINUTE (granular)
 FUTURES_DATA_FILES = [
-    {"file": "BIP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "BIT-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIT-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "ETP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ETP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "ET-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ET-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "SLP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "SOL", "contract": "SLP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "SOL-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SOL", "contract": "SOL-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "XPP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "XRP", "contract": "XPP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "XRP-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "XRP", "contract": "XRP-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "ADP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "ADA", "contract": "ADP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "DOP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "DOT", "contract": "DOP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "LNP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "LINK", "contract": "LNP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "AVP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "AVAX", "contract": "AVP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "DOG-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "DOGE", "contract": "DOG-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "SUI-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SUI", "contract": "SUI-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "XLP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "XLM", "contract": "XLP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "HEP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "HED", "contract": "HEP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "SHB-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SHIB", "contract": "SHB-27FEB26-CDE", "dir": "data_futures"},
-    {"file": "LCP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "LTC", "contract": "LCP-20DEC30-CDE", "dir": "data_futures"},
-    {"file": "GOL-27MAR26-CDE_FIVE_MINUTE.csv", "asset": "GOLD", "contract": "GOL-27MAR26-CDE", "dir": "data_futures"},
-    {"file": "NOL-19MAR26-CDE_FIVE_MINUTE.csv", "asset": "OIL", "contract": "NOL-19MAR26-CDE", "dir": "data_futures"},
-    {"file": "MC-19MAR26-CDE_FIVE_MINUTE.csv", "asset": "SP500", "contract": "MC-19MAR26-CDE", "dir": "data_futures"},
+    # ===== BTC (3 contracts) =====
+    {"file": "BIP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "BIP-20DEC30-CDE_ONE_MINUTE.csv", "asset": "BTC", "contract": "BIP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "BIT-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIT-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "BIT-27FEB26-CDE_ONE_MINUTE.csv", "asset": "BTC", "contract": "BIT-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "BIT-27MAR26-CDE_FIVE_MINUTE.csv", "asset": "BTC", "contract": "BIT-27MAR26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "BIT-27MAR26-CDE_ONE_MINUTE.csv", "asset": "BTC", "contract": "BIT-27MAR26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== ETH (3 contracts) =====
+    {"file": "ETP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ETP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "ETP-20DEC30-CDE_ONE_MINUTE.csv", "asset": "ETH", "contract": "ETP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "ET-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ET-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "ET-27FEB26-CDE_ONE_MINUTE.csv", "asset": "ETH", "contract": "ET-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "ET-27MAR26-CDE_FIVE_MINUTE.csv", "asset": "ETH", "contract": "ET-27MAR26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "ET-27MAR26-CDE_ONE_MINUTE.csv", "asset": "ETH", "contract": "ET-27MAR26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== SOL (3 contracts) =====
+    {"file": "SLP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "SOL", "contract": "SLP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "SLP-20DEC30-CDE_ONE_MINUTE.csv", "asset": "SOL", "contract": "SLP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "SOL-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SOL", "contract": "SOL-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "SOL-27FEB26-CDE_ONE_MINUTE.csv", "asset": "SOL", "contract": "SOL-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+    {"file": "SOL-27MAR26-CDE_ONE_MINUTE.csv", "asset": "SOL", "contract": "SOL-27MAR26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== XRP (2 contracts) =====
+    {"file": "XPP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "XRP", "contract": "XPP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "XRP-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "XRP", "contract": "XRP-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== ADA (2 contracts) =====
+    {"file": "ADP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "ADA", "contract": "ADP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "ADA-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "ADA", "contract": "ADA-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== DOT (2 contracts) =====
+    {"file": "DOP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "DOT", "contract": "DOP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "DOT-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "DOT", "contract": "DOT-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== LINK (2 contracts) =====
+    {"file": "LNP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "LINK", "contract": "LNP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "LNK-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "LINK", "contract": "LNK-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== AVAX (2 contracts) =====
+    {"file": "AVP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "AVAX", "contract": "AVP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "AVA-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "AVAX", "contract": "AVA-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== DOGE (1 contract) =====
+    {"file": "DOG-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "DOGE", "contract": "DOG-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== SUI (1 contract) =====
+    {"file": "SUI-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SUI", "contract": "SUI-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== XLM (2 contracts) =====
+    {"file": "XLP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "XLM", "contract": "XLP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "XLM-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "XLM", "contract": "XLM-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== HEDERA (2 contracts) =====
+    {"file": "HEP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "HED", "contract": "HEP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "HED-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "HED", "contract": "HED-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== SHIB (1 contract) =====
+    {"file": "SHB-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "SHIB", "contract": "SHB-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== LTC (2 contracts) =====
+    {"file": "LCP-20DEC30-CDE_FIVE_MINUTE.csv", "asset": "LTC", "contract": "LCP-20DEC30-CDE", "type": "perpetual", "dir": "data_futures"},
+    {"file": "LC-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "LTC", "contract": "LC-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== BCH (1 contract) =====
+    {"file": "BCH-27FEB26-CDE_FIVE_MINUTE.csv", "asset": "BCH", "contract": "BCH-27FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== SLR (1 contract) =====
+    {"file": "SLR-25FEB26-CDE_ONE_MINUTE.csv", "asset": "SLR", "contract": "SLR-25FEB26-CDE", "type": "dated", "dir": "data_futures"},
+
+    # ===== COMMODITIES =====
+    {"file": "GOL-27MAR26-CDE_FIVE_MINUTE.csv", "asset": "GOLD", "contract": "GOL-27MAR26-CDE", "type": "commodity", "dir": "data_futures"},
+    {"file": "NOL-19MAR26-CDE_FIVE_MINUTE.csv", "asset": "OIL", "contract": "NOL-19MAR26-CDE", "type": "commodity", "dir": "data_futures"},
+    {"file": "NGS-24FEB26-CDE_FIVE_MINUTE.csv", "asset": "NATGAS", "contract": "NGS-24FEB26-CDE", "type": "commodity", "dir": "data_futures"},
+    {"file": "CU-25FEB26-CDE_FIVE_MINUTE.csv", "asset": "COPPER", "contract": "CU-25FEB26-CDE", "type": "commodity", "dir": "data_futures"},
+    {"file": "PT-27MAR26-CDE_FIVE_MINUTE.csv", "asset": "PLAT", "contract": "PT-27MAR26-CDE", "type": "commodity", "dir": "data_futures"},
+    {"file": "MC-19MAR26-CDE_FIVE_MINUTE.csv", "asset": "SP500", "contract": "MC-19MAR26-CDE", "type": "index", "dir": "data_futures"},
 ]
 
 GENETIC_CONFIGS = [
@@ -117,16 +176,24 @@ def generate_random_work_unit():
         data_file = data_info["file"]
         asset = data_info["asset"]
         contract = data_info.get("contract", "")
+        contract_type = data_info.get("type", "dated")  # perpetual, dated, commodity, index
         category = "Futures"
-        max_candles = random.choice([3000, 5000, 7500, 10000])
+        is_perpetual = contract_type == "perpetual"
+        max_candles = random.choice([3000, 5000, 7500, 10000, 15000])
+
+        # Futures-specific parameters
+        max_leverage = random.choice([3, 5, 7, 10])  # Coinbase max 10x
     else:
         data_info = random.choice(SPOT_DATA_FILES)
         data_dir = data_info["dir"]
         data_file = data_info["file"]
         asset = data_info["asset"]
         contract = ""
+        contract_type = "spot"
         category = "Spot"
+        is_perpetual = False
         max_candles = random.choice(CANDLE_CONFIGS)
+        max_leverage = 1  # Spot has no leverage
 
     config = random.choice(GENETIC_CONFIGS)
     risk = random.choice(RISK_LEVELS)
@@ -140,6 +207,12 @@ def generate_random_work_unit():
         "data_file": data_file,
         "max_candles": max_candles,
         "data_dir": f"/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude/{data_dir}",
+        # Futures-specific
+        "contract": contract,
+        "contract_type": contract_type,
+        "is_perpetual": is_perpetual,
+        "max_leverage": max_leverage,
+        "market_type": "FUTURES" if use_futures else "SPOT",
     }
 
     # Obtener genomas élite para usar como semilla (evolución continua)

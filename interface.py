@@ -2980,6 +2980,74 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                 st.divider()
 
+                # ===== PRODUCT DISTRIBUTION BY CATEGORY =====
+                st.markdown("#### 📊 Distribución por Categoría de Activos")
+
+                # Query database directly for accurate category breakdown
+                try:
+                    conn = sqlite3.connect(COORDINATOR_DB)
+                    c = conn.cursor()
+
+                    # Count by data file pattern
+                    c.execute("SELECT json_extract(strategy_params, '$.data_file'), COUNT(*) FROM work_units GROUP BY json_extract(strategy_params, '$.data_file')")
+                    file_counts = c.fetchall()
+
+                    categories = {
+                        'SPOT (BTC-USD)': 0,
+                        'FUTURES Perpetuos': 0,
+                        'FUTURES Dated': 0,
+                        'Commodities': 0,
+                        'Indices': 0,
+                    }
+                    unique_assets = set()
+
+                    for file_name, count in file_counts:
+                        if not file_name:
+                            continue
+                        unique_assets.add(file_name)
+                        if file_name.startswith('BTC-USD'):
+                            categories['SPOT (BTC-USD)'] += count
+                        elif 'P-20DEC30-CDE' in file_name:
+                            categories['FUTURES Perpetuos'] += count
+                        elif file_name.startswith('GOL-') or file_name.startswith('NOL-') or file_name.startswith('NGS-') or file_name.startswith('CU-') or file_name.startswith('PT-'):
+                            categories['Commodities'] += count
+                        elif file_name.startswith('MC-'):
+                            categories['Indices'] += count
+                        elif '-CDE_' in file_name:
+                            categories['FUTURES Dated'] += count
+
+                    conn.close()
+
+                    # Display in columns
+                    cat_cols = st.columns(5)
+                    cat_colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                    cat_icons = ['💰', '♾️', '📅', '🏅', '📈']
+
+                    for i, (cat_name, cat_count) in enumerate(categories.items()):
+                        with cat_cols[i]:
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, {cat_colors[i]}22, {cat_colors[i]}11);
+                                        border-left: 3px solid {cat_colors[i]}; border-radius: 8px; padding: 10px;">
+                                <div style="font-size: 12px; color: #9ca3af;">{cat_icons[i]} {cat_name}</div>
+                                <div style="font-size: 24px; font-weight: bold; color: {cat_colors[i]};">{cat_count:,}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                    st.caption(f"📁 **{len(unique_assets)}** archivos de datos únicos | Total WUs: **{total_wu:,}**")
+
+                    # Progress bars for each category
+                    st.markdown("##### Progreso por Categoría")
+                    for cat_name, cat_count in categories.items():
+                        if cat_count > 0:
+                            pct = cat_count / total_wu * 100 if total_wu > 0 else 0
+                            st.write(f"**{cat_name}**: {cat_count:,} ({pct:.1f}%)")
+                            st.progress(pct / 100)
+
+                except Exception as e:
+                    st.warning(f"No se pudo cargar distribución: {e}")
+
+                st.divider()
+
                 # ===== WORLD MAP: Worker Network Globe =====
                 st.markdown("#### Red Global de Workers")
 
