@@ -1045,6 +1045,7 @@ def api_dashboard_stats():
         ORDER BY r.sharpe_ratio DESC, r.pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE, MIN_SHARPE_RATIO, MAX_DRAWDOWN))
     best_row = c.fetchone()
+    is_validated = best_row is not None  # True si pasó validación
 
     # Fallback si no hay estrategia validada
     if not best_row:
@@ -1055,7 +1056,8 @@ def api_dashboard_stats():
             AND r.trades >= 10
             ORDER BY r.pnl DESC LIMIT 1""")
         best_row = c.fetchone()
-    
+        is_validated = False  # No pasó validación profesional
+
     best_strategy = None
     if best_row:
         best_strategy = {
@@ -1067,7 +1069,8 @@ def api_dashboard_stats():
             'execution_time': best_row['execution_time'],
             'work_unit_id': best_row['work_unit_id'],
             'worker_id': best_row['worker_id'],
-            'is_canonical': best_row['is_canonical']
+            'is_canonical': best_row['is_canonical'],
+            'is_validated': is_validated
         }
     
     # Worker performance stats — pre-fetch max_pnl for ALL workers in one query
