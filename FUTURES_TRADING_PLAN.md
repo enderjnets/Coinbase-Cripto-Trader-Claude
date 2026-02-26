@@ -171,22 +171,28 @@ python futures_orchestrator.py --status
 
 ## Pendiente (Próximos Pasos)
 
-### Integración con Dashboard
-- [ ] Nuevo tab "Futures" en interface.py
-- [ ] Visualización de posiciones en tiempo real
-- [ ] Controles para paper/live trading
+### Integración con Dashboard ✅ HECHO (Feb 2026)
+- [x] Nuevo tab "Futures" en interface.py
+- [x] Visualización de posiciones en tiempo real
+- [x] Controles para paper/live trading
+- [x] Selector de productos perpetual vs dated
 
-### Extensión del Sistema Distribuido
+### API Endpoints ✅ HECHO (Feb 2026)
+- [x] GET /api/futures/products - Lista productos futures
+- [x] POST /api/futures/create_work_unit - Crear work unit de futures
+- [x] GET /api/futures/status - Status del sistema de futures
+
+### Extensión del Sistema Distribuido (PENDIENTE)
 - [ ] Workers con soporte de futures
 - [ ] Work units específicas para futuros
 - [ ] Cola de productos futures
 
-### Datos
-- [ ] Descargar OHLCV de contratos futures
-- [ ] Data manager para futures
-- [ ] Feed en tiempo real
+### Datos ✅ EXISTE (44 archivos)
+- [x] Datos OHLCV de contratos futures (data_futures/)
+- [ ] Data manager para futures (actualizar data_manager.py)
+- [ ] Feed en tiempo real (WebSocket)
 
-### Tests
+### Tests (PENDIENTE)
 - [ ] Unit tests para futures backtester
 - [ ] Integration tests para orchestrator
 - [ ] Validación end-to-end
