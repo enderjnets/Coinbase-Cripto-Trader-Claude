@@ -1504,13 +1504,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
   <!-- MEJOR ESTRATEGIA -->
   <div class="card">
-    <div class="card-title">🏆 Mejor Estrategia</div>
+    <div class="card-title">🏆 Mejor Estrategia <span id="b-validated" style="font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;display:none">✓ Validada</span></div>
     <div class="best-grid">
       <div class="best-item"><div class="best-val" id="b-pnl">$-</div><div class="best-lbl">PnL</div></div>
       <div class="best-item"><div class="best-val" id="b-wr">-%</div><div class="best-lbl">Win Rate</div></div>
       <div class="best-item"><div class="best-val" id="b-trades">-</div><div class="best-lbl">Trades</div></div>
       <div class="best-item"><div class="best-val" id="b-sharpe">-</div><div class="best-lbl">Sharpe</div></div>
+      <div class="best-item"><div class="best-val" id="b-dd">-%</div><div class="best-lbl">Max DD</div></div>
     </div>
+    <div id="b-warning" style="font-size:11px;color:var(--yellow);margin-top:8px;display:none">⚠️ Estrategia no validada - menos de 50 trades o win rate sospechoso</div>
   </div>
 </div>
 
@@ -1665,6 +1667,30 @@ async function fetchAll() {
       document.getElementById('b-wr').textContent     = (best.win_rate*100).toFixed(1) + '%';
       document.getElementById('b-trades').textContent = best.trades || '-';
       document.getElementById('b-sharpe').textContent = fmt(best.sharpe_ratio, 2);
+
+      // Max Drawdown
+      const dd = (best.max_drawdown||0)*100;
+      document.getElementById('b-dd').textContent = fmt(dd,1) + '%';
+      document.getElementById('b-dd').style.color = dd<=10 ? 'var(--green)' : dd<=20 ? 'var(--yellow)' : 'var(--red)';
+
+      // Validation status
+      const validatedEl = document.getElementById('b-validated');
+      const warningEl = document.getElementById('b-warning');
+      if (best.is_validated === true) {
+        validatedEl.style.display = 'inline';
+        validatedEl.style.background = 'var(--green)';
+        validatedEl.style.color = '#fff';
+        warningEl.style.display = 'none';
+      } else if (best.is_validated === false) {
+        validatedEl.style.display = 'inline';
+        validatedEl.style.background = 'var(--yellow)';
+        validatedEl.style.color = '#000';
+        validatedEl.textContent = '⚠ Sin validar';
+        warningEl.style.display = 'block';
+      } else {
+        validatedEl.style.display = 'none';
+        warningEl.style.display = 'none';
+      }
 
       // Objetivo 5%
       const CAP = 500, TARGET = 5.0, DAYS = 80000/1440;
