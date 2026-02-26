@@ -992,7 +992,8 @@ def api_workers():
 
 @app.route('/api/results', methods=['GET'])
 def api_results():
-    """Lista todos los resultados canónicos (validados)"""
+    """Lista resultados canónicos (validados). Soporta ?limit=N (default 50)."""
+    limit = request.args.get('limit', 50, type=int)
     conn = get_db_connection()
     c = conn.cursor()
 
@@ -1000,7 +1001,8 @@ def api_results():
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE r.is_canonical = 1
-        ORDER BY r.pnl DESC""")
+        ORDER BY r.pnl DESC
+        LIMIT ?""", (limit,))
 
     results = []
     for row in c.fetchall():
@@ -1077,10 +1079,10 @@ def api_dashboard_stats():
     c.execute("SELECT COUNT(*) FROM work_units WHERE status='in_progress' OR status='assigned'")
     in_progress_wu = c.fetchone()[0]
     
-    # Workers stats
-    c.execute("SELECT COUNT(*) FROM workers")
+    # Workers stats — "registrados" = vistos en últimos 7 días (excluye IDs obsoletos)
+    c.execute("SELECT COUNT(*) FROM workers WHERE (strftime('%s', 'now') - last_seen) < 604800")
     total_workers = c.fetchone()[0]
-    
+
     # Calculate "active" workers (seen in last 5 minutes, last_seen is Unix timestamp)
     c.execute("SELECT COUNT(*) FROM workers WHERE (strftime('%s', 'now') - last_seen) < 300")
     active_workers = c.fetchone()[0]
@@ -1147,6 +1149,16 @@ def api_dashboard_stats():
 
     best_strategy = None
     if best_row:
+        # Extraer max_candles y timeframe del strategy_params para cálculo correcto de dailyReturn
+        try:
+            _sp = json.loads(best_row['strategy_params'])
+            _max_candles = _sp.get('max_candles', 10000)
+            _data_file = _sp.get('data_file', '')
+            _candles_per_day = 288 if 'FIVE_MINUTE' in _data_file else 1440  # 5min=288/día, 1min=1440/día
+        except Exception:
+            _max_candles = 10000
+            _candles_per_day = 1440
+
         best_strategy = {
             'pnl': best_row['pnl'],
             'trades': best_row['trades'],
@@ -1158,6 +1170,9 @@ def api_dashboard_stats():
             'worker_id': best_row['worker_id'],
             'is_canonical': best_row['is_canonical'],
             'is_validated': is_validated,
+            # Timeframe info para Goal Panel
+            'max_candles': _max_candles,
+            'candles_per_day': _candles_per_day,
             # OOS Metrics (Phase 3A)
             'oos_pnl': best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0,
             'oos_trades': best_row['oos_trades'] if 'oos_trades' in best_row.keys() else 0,
@@ -1169,7 +1184,7 @@ def api_dashboard_stats():
     # Worker performance stats — pre-fetch max_pnl for ALL workers in one query
     c.execute("""SELECT worker_id, MAX(pnl) as max_pnl
                  FROM results
-                 WHERE pnl < 1000 AND trades >= 5
+                 WHERE pnl < 10000 AND trades >= 5
                  GROUP BY worker_id""")
     worker_max_pnl = {row[0]: row[1] for row in c.fetchall()}
 
@@ -1229,10 +1244,6 @@ def api_dashboard_stats():
             'max_pnl': max_pnl
         })
     
-    # PnL distribution (only valid results)
-    c.execute("SELECT pnl FROM results WHERE pnl > -10000 AND pnl < 10000 AND pnl IS NOT NULL")
-    pnl_distribution = [row[0] for row in c.fetchall()]
-    
     # Performance metrics
     c.execute("SELECT AVG(execution_time) FROM results WHERE execution_time > 0")
     avg_exec_time = c.fetchone()[0] or 0
@@ -1240,16 +1251,10 @@ def api_dashboard_stats():
     c.execute("SELECT SUM(execution_time) FROM results")
     total_compute_time = c.fetchone()[0] or 0
 
-    # results_per_hour: use wall-clock time from first result submission to now
-    c.execute("SELECT MIN(submitted_at) FROM results")
-    first_submitted_jd = c.fetchone()[0]
-    if first_submitted_jd and first_submitted_jd > 2000000:
-        # Julian Day → Unix timestamp
-        first_unix = (first_submitted_jd - 2440587.5) * 86400
-        wall_clock_hours = max((time.time() - first_unix) / 3600, 1/60)
-    else:
-        wall_clock_hours = 1
-    results_per_hour = total_results / wall_clock_hours
+    # results_per_hour: conteo de las últimas 24h (tasa actual, no promedio histórico)
+    c.execute("SELECT COUNT(*) FROM results WHERE submitted_at > (julianday('now') - 1)")
+    results_last_24h = c.fetchone()[0] or 0
+    results_per_hour = results_last_24h / 24.0
 
     # =====================================================
     # ESTADÍSTICAS POR ACTIVO (NUEVO)
@@ -1348,7 +1353,6 @@ def api_dashboard_stats():
             'simulated_capital': simulated_capital
         },
         'best_strategy': best_strategy,
-        'pnl_distribution': pnl_distribution,
         'pnl_timeline': pnl_timeline,
         'completion_timeline': completion_timeline,
         'worker_stats': worker_stats,
@@ -2251,7 +2255,7 @@ DASHBOARD_HTML = """
                 <span style="left:40%">2%</span>
                 <span style="left:60%">3%</span>
                 <span style="left:80%">4%</span>
-                <span style="left:100%">5%</span>
+                <span style="right:0;transform:translateX(0)">5%</span>
             </div>
         </div>
 
@@ -2527,7 +2531,7 @@ async function updateDashboard() {
         const [statusRes, dashRes, resultsRes] = await Promise.all([
             fetch('/api/status'),
             fetch('/api/dashboard_stats'),
-            fetch('/api/results')
+            fetch('/api/results?limit=10')
         ]);
         const status  = await statusRes.json();
         const dash    = await dashRes.json();
@@ -2568,11 +2572,11 @@ async function updateDashboard() {
         // ── Objetivo 5% Diario ──
         if (best && best.pnl) {
             // El backtester corre con $500 capital (numba_backtester.py, balance = 500).
-            // Todos los cálculos de % y PnL son directamente sobre esa base.
+            // max_candles y candles_per_day vienen del backend (strategy_params real de la mejor estrategia).
             const BACKTEST_CAPITAL = 500;    // capital del backtester
             const TARGET_DAILY_PCT = 5.0;
-            const MAX_CANDLES      = 80000;
-            const CANDLES_PER_DAY  = 1440;
+            const MAX_CANDLES      = best.max_candles || 10000;
+            const CANDLES_PER_DAY  = best.candles_per_day || 1440;  // 288 si FIVE_MINUTE, 1440 si ONE_MINUTE
             const BACKTEST_DAYS    = MAX_CANDLES / CANDLES_PER_DAY;
 
             // % de retorno basado en $500 capital
@@ -2617,7 +2621,8 @@ async function updateDashboard() {
             document.getElementById('gm-total-return').textContent  = fmt(totalReturn, 2) + '%';
             document.getElementById('gm-total-return-target').textContent = 'objetivo ' + fmt(targetTotalReturn, 0) + '%';
             document.getElementById('gm-days').textContent          = fmt(BACKTEST_DAYS, 1) + ' días';
-            document.getElementById('gm-candles').textContent       = MAX_CANDLES.toLocaleString() + ' candles 1min';
+            const tfLabel = CANDLES_PER_DAY === 288 ? '5min' : '1min';
+            document.getElementById('gm-candles').textContent       = MAX_CANDLES.toLocaleString() + ' candles ' + tfLabel;
             document.getElementById('gm-multiplier').textContent    = fmt(multiplier, 1) + 'x';
 
             const wr = best.win_rate || 0;
