@@ -81,6 +81,15 @@ OP_LT = 1  # <
 
 MAX_RULES = 3
 
+# ============================================================================
+# SAFETY LIMITS - Prevent absurd values from futures/extreme data
+# ============================================================================
+MAX_BALANCE = 1_000_000.0       # Cap balance at $1M
+MAX_POSITION_VALUE = 100_000.0  # Cap position value at $100K
+MAX_PNL = 1_000_000.0           # Cap total PnL at $1M
+MIN_PRICE = 0.00001             # Minimum valid price (prevent division by zero)
+MAX_PRICE = 1_000_000.0         # Maximum valid price (sanity check)
+
 # Genome encoding: 20 floats per genome
 # [0] sl_pct
 # [1] tp_pct
@@ -134,6 +143,19 @@ def precompute_indicators(df):
     high = df['high'].values.astype(np.float64)
     low = df['low'].values.astype(np.float64)
     volume = df['volume'].values.astype(np.float64)
+
+    # === DATA VALIDATION: Cap extreme values and replace NaN/Inf ===
+    # Clip prices to valid range
+    close = np.clip(close, MIN_PRICE, MAX_PRICE)
+    high = np.clip(high, MIN_PRICE, MAX_PRICE)
+    low = np.clip(low, MIN_PRICE, MAX_PRICE)
+    volume = np.clip(volume, 0.0, 1e15)  # Cap extreme volume
+
+    # Replace NaN/Inf with safe defaults
+    close = np.nan_to_num(close, nan=1.0, posinf=MAX_PRICE, neginf=MIN_PRICE)
+    high = np.nan_to_num(high, nan=1.0, posinf=MAX_PRICE, neginf=MIN_PRICE)
+    low = np.nan_to_num(low, nan=1.0, posinf=MAX_PRICE, neginf=MIN_PRICE)
+    volume = np.nan_to_num(volume, nan=0.0, posinf=1e12, neginf=0.0)
 
     indicators[IND_CLOSE] = close
     indicators[IND_HIGH] = high
@@ -375,7 +397,16 @@ if HAS_NUMBA:
 
                     balance += exit_val_net
 
+                    # === SAFETY CAP: Prevent absurd balance growth ===
+                    if balance > MAX_BALANCE:
+                        balance = MAX_BALANCE
+
                     trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+                    # === SAFETY CAP: Limit individual trade PnL ===
+                    if trade_pnl > MAX_POSITION_VALUE:
+                        trade_pnl = MAX_POSITION_VALUE
+                    elif trade_pnl < -MAX_POSITION_VALUE:
+                        trade_pnl = -MAX_POSITION_VALUE
                     total_pnl += trade_pnl
                     num_trades += 1
                     if trade_pnl > 0.0:
@@ -450,6 +481,9 @@ if HAS_NUMBA:
                 # Open position
                 if all_rules_pass:
                     size_usd = balance * size_pct
+                    # === SAFETY CAP: Limit position size ===
+                    if size_usd > MAX_POSITION_VALUE:
+                        size_usd = MAX_POSITION_VALUE
                     if size_usd < 10.0:
                         size_usd = 0.0  # Skip dust trades
 
@@ -484,7 +518,15 @@ if HAS_NUMBA:
                 exit_fee = exit_val_gross * fee_rate
                 exit_val_net = exit_val_gross - exit_fee
                 balance += exit_val_net
+                # === SAFETY CAP: Prevent absurd balance ===
+                if balance > MAX_BALANCE:
+                    balance = MAX_BALANCE
                 trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+                # === SAFETY CAP: Limit individual trade PnL ===
+                if trade_pnl > MAX_POSITION_VALUE:
+                    trade_pnl = MAX_POSITION_VALUE
+                elif trade_pnl < -MAX_POSITION_VALUE:
+                    trade_pnl = -MAX_POSITION_VALUE
                 total_pnl += trade_pnl
                 num_trades += 1
                 if trade_pnl > 0.0:
@@ -512,6 +554,27 @@ if HAS_NUMBA:
                 var = 1e-10
             std = var ** 0.5
             sharpe_ratio = (mean_ret / std) * (252.0 ** 0.5)
+
+        # === FINAL SANITY CHECKS ===
+        # Cap total PnL
+        if total_pnl > MAX_PNL:
+            total_pnl = MAX_PNL
+        elif total_pnl < -MAX_PNL:
+            total_pnl = -MAX_PNL
+
+        # Ensure no NaN/Inf in any return value
+        if np.isnan(total_pnl) or np.isinf(total_pnl):
+            total_pnl = -10000.0  # Penalize invalid results
+        if np.isnan(max_drawdown) or np.isinf(max_drawdown):
+            max_drawdown = 1.0  # Assume 100% drawdown if invalid
+        if np.isnan(sharpe_ratio) or np.isinf(sharpe_ratio):
+            sharpe_ratio = 0.0
+
+        # Clamp drawdown to valid range
+        if max_drawdown > 1.0:
+            max_drawdown = 1.0
+        if max_drawdown < 0.0:
+            max_drawdown = 0.0
 
         return total_pnl, num_trades, wins, max_drawdown, sharpe_ratio
 
