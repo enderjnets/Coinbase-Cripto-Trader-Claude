@@ -34,6 +34,8 @@ LOG_FILE = "/tmp/monitor.log"
 
 # Workers por máquina
 MACBOOK_PRO_WORKERS = 3
+MACBOOK_AIR_IP = "10.0.0.97"
+MACBOOK_AIR_WORKERS = 4
 LINUX_ROG_IP = "10.0.0.240"
 LINUX_ROG_WORKERS = 5
 ASUS_DORADA_IP = "10.0.0.56"
@@ -269,6 +271,52 @@ class SystemMonitor:
             self.log(f"Error reiniciando workers Linux: {e}", "ERROR")
             return False
 
+    def restart_macbook_air_workers(self) -> bool:
+        """Reinicia workers de MacBook Air vía SSH."""
+        self.log("Reiniciando workers MacBook Air vía SSH...")
+
+        try:
+            # Comando SSH para reiniciar workers
+            ssh_cmd = f"""ssh enderj@{MACBOOK_AIR_IP} '
+                pkill -f crypto_worker 2>/dev/null
+                sleep 2
+                cd ~/crypto_worker
+                source venv/bin/activate
+                for i in 1 2 3 4; do
+                    COORDINATOR_URL="http://10.0.0.232:5001" \\
+                    NUM_WORKERS="4" \\
+                    WORKER_INSTANCE="$i" \\
+                    USE_RAY="false" \\
+                    PYTHONUNBUFFERED=1 \\
+                    nohup python -u crypto_worker.py > /tmp/worker_$i.log 2>&1 &
+                    sleep 2
+                done
+                echo "Workers started"
+            '"""
+
+            result = subprocess.run(
+                ssh_cmd,
+                shell=True,
+                executable="/bin/bash",
+                capture_output=True,
+                text=True,
+                timeout=90
+            )
+
+            if "Workers started" in result.stdout:
+                self.log(f"{MACBOOK_AIR_WORKERS} workers MacBook Air reiniciados", "SUCCESS")
+                return True
+            else:
+                self.log(f"Error en SSH: {result.stderr}", "ERROR")
+                return False
+
+        except subprocess.TimeoutExpired:
+            self.log("Timeout conectando a MacBook Air", "ERROR")
+            return False
+        except Exception as e:
+            self.log(f"Error reiniciando workers MacBook Air: {e}", "ERROR")
+            return False
+
     def restart_telegram_bot(self) -> bool:
         """Reinicia el Telegram bot."""
         self.log("Reiniciando Telegram bot...")
@@ -360,11 +408,12 @@ class SystemMonitor:
         dead_count = len(workers_status.get('dead', []))
         alive_count = len(workers_status.get('alive', []))
 
-        # Si hay menos de 5 workers vivos, reiniciar
-        if alive_count < 5:
+        # Si hay menos de 8 workers vivos, reiniciar
+        if alive_count < 8:
             self.log(f"Solo {alive_count} workers vivos - reiniciando todos", "WARNING")
             self.restart_macbook_workers()
             self.restart_linux_workers()
+            self.restart_macbook_air_workers()
             actions.append('workers_restarted')
 
         # Check telegram bot
