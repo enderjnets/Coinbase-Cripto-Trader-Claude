@@ -1,6 +1,7 @@
 import random
 import copy
 import json
+import numpy as np
 try:
     import ray
     HAS_RAY = True
@@ -47,11 +48,24 @@ class StrategyMiner:
     - Multi-timeframe support
     - ML-enhanced fitness function
     - FUTURES SUPPORT: Long/Short, Leverage 1-10x, Funding rates
+    - WALK-FORWARD VALIDATION (Phase 3A): Train/Test split to avoid overfitting
     """
+    # Walk-Forward Validation Constants
+    TRAIN_RATIO = 0.70        # 70% for training, 30% for out-of-sample testing
+    MAX_OVERFIT_DEGRADATION = 0.30  # Max 30% degradation from train to test
+    MIN_OOS_TRADES = 10       # Minimum trades in out-of-sample to be valid
+
+    # === ROBUSTNESS IMPROVEMENTS (FASE 3D) ===
+    MAX_RULES = 3             # Reduced from 5 to avoid curve-fitting
+    CROSS_VALIDATION_FOLDS = 3  # K-fold cross-validation
+    MIN_DIVERSITY_THRESHOLD = 0.3  # Force diversity if below this
+    OVERFIT_PENALTY_WEIGHT = 50.0  # Penalty for high train/test variance
+    COMPLEXITY_PENALTY = 10.0  # Penalty per rule (simpler is better)
+
     def __init__(self, df, population_size=100, generations=20, risk_level="LOW",
                  force_local=False, ray_address="auto", ml_enhanced=False,
                  seed_genomes=None, seed_ratio=0.5, market_type="SPOT",
-                 max_leverage=10, is_perpetual=True):
+                 max_leverage=10, is_perpetual=True, walk_forward=True):
         self.df = df
         self.pop_size = population_size
         self.generations = generations
@@ -66,6 +80,16 @@ class StrategyMiner:
         self.is_futures = self.market_type == "FUTURES"
         self.max_leverage = min(max_leverage, 10)  # Coinbase max 10x
         self.is_perpetual = is_perpetual
+
+        # Walk-Forward Validation (Phase 3A)
+        self.walk_forward = walk_forward
+        self.df_train = None
+        self.df_test = None
+        self.oos_metrics = {}  # Out-of-sample results
+
+        # Split data if walk-forward is enabled
+        if self.walk_forward and df is not None and len(df) > 500:
+            self._split_train_test()
 
         ray_init = HAS_RAY and ray.is_initialized()
         
@@ -126,8 +150,8 @@ class StrategyMiner:
             genome["params"]["funding_threshold"] = random.choice([0.0005, 0.001, 0.002, 0.005])
             genome["params"]["market_type"] = "FUTURES"
 
-        # 1 to 5 rules
-        num_rules = random.randint(1, 5)
+        # 1 to MAX_RULES rules (reduced to avoid overfitting)
+        num_rules = random.randint(1, self.MAX_RULES)
         for _ in range(num_rules):
             genome["entry_rules"].append(self._random_rule())
 
@@ -185,29 +209,29 @@ class StrategyMiner:
         mutated = copy.deepcopy(genome)
 
         # Adaptive mutation rate: decreases with generations
-        base_mutation_rate = 0.25
+        base_mutation_rate = 0.30  # Increased from 0.25 for more exploration
         adaptive_rate = base_mutation_rate * (1 - (generation / max(self.generations, 1)) * 0.5)
 
-        # Boost mutation if diversity is low
-        if diversity_score < 0.3:
-            adaptive_rate = min(0.5, adaptive_rate * 1.5)
+        # Boost mutation if diversity is low (FASE 3D improvement)
+        if diversity_score < self.MIN_DIVERSITY_THRESHOLD:
+            adaptive_rate = min(0.6, adaptive_rate * 2.0)  # More aggressive boost
 
         roll = random.random()
 
-        if roll < adaptive_rate * 0.3:
+        if roll < adaptive_rate * 0.25:
             # Mutate core param
             key = random.choice(["sl_pct", "tp_pct"])
-            change = random.uniform(0.8, 1.2)
+            change = random.uniform(0.7, 1.3)  # Wider range for more diversity
             mutated["params"][key] *= change
-        elif roll < adaptive_rate * 0.5:
+        elif roll < adaptive_rate * 0.45:
             # Mutate size_pct
-            change = random.uniform(0.8, 1.2)
+            change = random.uniform(0.7, 1.3)
             mutated["params"]["size_pct"] = max(0.05, min(0.95,
                 mutated["params"].get("size_pct", 0.10) * change))
-        elif roll < adaptive_rate * 0.65:
+        elif roll < adaptive_rate * 0.60:
             # Mutate max_positions
             mutated["params"]["max_positions"] = random.randint(1, 3)
-        elif roll < adaptive_rate * 0.75:
+        elif roll < adaptive_rate * 0.70:
             # Mutate risk management
             mutated["params"]["trailing_stop_pct"] = random.choice([0, 0.01, 0.015, 0.02, 0.025, 0.03])
             mutated["params"]["breakeven_after"] = random.choice([0, 0.01, 0.015, 0.02])
@@ -216,16 +240,20 @@ class StrategyMiner:
                 mutated["params"]["leverage"] = random.randint(1, self.max_leverage)
                 if random.random() < 0.3:
                     mutated["params"]["direction"] = random.choice(["LONG", "SHORT", "BOTH"])
-        elif roll < adaptive_rate * 0.9:
+        elif roll < adaptive_rate * 0.85:
             # Mutate existing rule
             if mutated["entry_rules"]:
                 idx = random.randint(0, len(mutated["entry_rules"]) - 1)
                 mutated["entry_rules"][idx] = self._random_rule()
+        elif roll < adaptive_rate * 0.95:
+            # Remove a rule (simplification - FASE 3D)
+            if len(mutated["entry_rules"]) > 1:
+                idx = random.randint(0, len(mutated["entry_rules"]) - 1)
+                mutated["entry_rules"].pop(idx)
         else:
-            # Add new rule
-            mutated["entry_rules"].append(self._random_rule())
-            if len(mutated["entry_rules"]) > 5:
-                mutated["entry_rules"] = mutated["entry_rules"][:5]
+            # Add new rule (respect MAX_RULES)
+            if len(mutated["entry_rules"]) < self.MAX_RULES:
+                mutated["entry_rules"].append(self._random_rule())
 
         return mutated
         
@@ -294,28 +322,54 @@ class StrategyMiner:
         unique = len(set(patterns))
         return unique / len(population)
 
-    def calculate_fitness(self, item):
-        """ML-enhanced fitness function."""
+    def calculate_fitness(self, item, oos_metrics=None):
+        """
+        ML-enhanced fitness function with overfitting penalties (FASE 3D).
+
+        New penalties:
+        - Complexity penalty: fewer rules = better
+        - Win rate cap: suspicious if too high (>70%)
+        - OOS degradation penalty: penalize train/test variance
+        - Unrealistic PnL penalty: cap extreme returns
+        """
         genome, pnl, metrics = item
         num_trades = metrics.get('Total Trades', 0)
         win_rate = metrics.get('Win Rate %', 0)
         sharpe = metrics.get('Sharpe Ratio', 0)
         max_dd = metrics.get('Max Drawdown', 0)
 
-        # Base PnL
-        fitness = pnl
+        # Cap unrealistic PnL (anti-overfitting)
+        MAX_REALISTIC_PNL = 50000  # $50k max per backtest
+        capped_pnl = min(pnl, MAX_REALISTIC_PNL)
+
+        # Base PnL (with cap)
+        fitness = capped_pnl
 
         # Trade count bonus (needs minimum trades)
         trade_bonus = min(num_trades * 10, 150) if num_trades >= 5 else 0
         fitness += trade_bonus
 
-        # Win rate bonus (>50%)
-        winrate_bonus = (win_rate - 50) * 3 if win_rate > 50 else 0
+        # Win rate bonus with CAP (suspicious if > 70%)
+        if 45 <= win_rate <= 55:
+            # Ideal range - small bonus
+            winrate_bonus = 20
+        elif 40 <= win_rate <= 65:
+            # Acceptable range
+            winrate_bonus = (win_rate - 50) * 2
+        elif win_rate > 70:
+            # Suspicious - likely overfitted
+            winrate_bonus = -50 - (win_rate - 70) * 5
+        else:
+            winrate_bonus = (win_rate - 50) * 3
+
         fitness += winrate_bonus
 
-        # Sharpe bonus
-        sharpe_bonus = sharpe * 25 if sharpe > 0 else 0
-        fitness += sharpe_bonus
+        # Sharpe bonus with cap (extreme sharpe = suspicious)
+        if sharpe > 5:
+            sharpe_bonus = 100 - (sharpe - 5) * 20  # Diminishing returns
+        else:
+            sharpe_bonus = sharpe * 20 if sharpe > 0 else 0
+        fitness += max(0, sharpe_bonus)
 
         # Drawdown penalty (low drawdown is good)
         dd_penalty = max_dd * 200 if max_dd > 0.02 else 0
@@ -324,6 +378,32 @@ class StrategyMiner:
         # Penalty for too many trades (overfitting risk)
         if num_trades > 100:
             fitness -= (num_trades - 100) * 2
+
+        # === FASE 3D: COMPLEXITY PENALTY ===
+        # Simpler strategies generalize better
+        num_rules = len(genome.get("entry_rules", []))
+        complexity_penalty = num_rules * self.COMPLEXITY_PENALTY
+        fitness -= complexity_penalty
+
+        # === FASE 3D: OOS DEGRADATION PENALTY ===
+        if oos_metrics:
+            oos_pnl = oos_metrics.get('oos_pnl', 0)
+            oos_trades = oos_metrics.get('oos_trades', 0)
+            degradation = oos_metrics.get('degradation_pct', 0)
+
+            # Heavy penalty for negative OOS
+            if oos_pnl < 0:
+                fitness -= self.OVERFIT_PENALTY_WEIGHT * 2
+            elif degradation > 30:
+                # Penalty proportional to degradation
+                fitness -= self.OVERFIT_PENALTY_WEIGHT * (degradation / 100)
+            elif degradation < 20:
+                # Bonus for low degradation
+                fitness += 20
+
+            # Bonus for sufficient OOS trades
+            if oos_trades >= self.MIN_OOS_TRADES:
+                fitness += 15
 
         # Reward for risk management settings
         if genome.get("params", {}).get("trailing_stop_pct", 0) > 0:
@@ -612,11 +692,184 @@ class StrategyMiner:
                 next_pop.append(child)
                 
             population = next_pop
-            
+
         debug_log("Mining Complete.")
+
+        # === WALK-FORWARD VALIDATION (Phase 3A) ===
+        if self.walk_forward and best_genome and self.df_test is not None:
+            debug_log("Running Out-of-Sample validation...")
+            oos_metrics = self._validate_out_of_sample(best_genome)
+
+            if 'error' not in oos_metrics:
+                degradation = self._calculate_degradation(best_metrics, oos_metrics)
+
+                # Add OOS metrics to best_metrics
+                best_metrics['OOS_PnL'] = oos_metrics.get('oos_pnl', 0)
+                best_metrics['OOS_Trades'] = oos_metrics.get('oos_trades', 0)
+                best_metrics['OOS_WinRate'] = oos_metrics.get('oos_winrate', 0)
+                best_metrics['OOS_Sharpe'] = oos_metrics.get('oos_sharpe', 0)
+                best_metrics['Degradation_Pct'] = degradation['pnl_degradation'] * 100
+                best_metrics['Is_Overfitted'] = degradation['is_overfitted']
+                best_metrics['Robustness_Score'] = degradation['robustness_score']
+
+                debug_log(f"OOS Validation: PnL=${oos_metrics.get('oos_pnl', 0):.2f}, "
+                         f"Degradation={degradation['pnl_degradation']*100:.1f}%, "
+                         f"Overfitted={degradation['is_overfitted']}")
+
+                # Warn if overfitted
+                if degradation['is_overfitted']:
+                    debug_log("WARNING: Strategy appears overfitted! OOS performance is degraded.")
+
+        # === K-FOLD CROSS-VALIDATION (FASE 3D) ===
+        if best_genome and self.walk_forward:
+            debug_log("Running K-Fold Cross-Validation...")
+            cv_metrics = self._cross_validate_genome(best_genome)
+
+            if 'error' not in cv_metrics:
+                best_metrics['CV_Folds'] = cv_metrics.get('n_folds', 0)
+                best_metrics['CV_AvgPnL'] = cv_metrics.get('avg_pnl', 0)
+                best_metrics['CV_StdPnL'] = cv_metrics.get('std_pnl', 0)
+                best_metrics['CV_Consistency'] = cv_metrics.get('consistency_score', 0)
+                best_metrics['CV_IsConsistent'] = cv_metrics.get('is_consistent', False)
+
+                debug_log(f"Cross-Validation: {cv_metrics.get('n_folds', 0)} folds, "
+                         f"Avg PnL=${cv_metrics.get('avg_pnl', 0):.2f}, "
+                         f"Consistency={cv_metrics.get('consistency_score', 0)*100:.0f}%")
+
+                # Update Robustness Score with CV consistency
+                if cv_metrics.get('is_consistent', False):
+                    best_metrics['Robustness_Score'] = min(100,
+                        best_metrics.get('Robustness_Score', 0) + 10)
+
         if return_metrics:
             return best_genome, best_pnl, best_metrics
         return best_genome, best_pnl
+
+    # ========================================================================
+    # WALK-FORWARD VALIDATION (Phase 3A)
+    # ========================================================================
+
+    def _split_train_test(self):
+        """
+        Split data into training and out-of-sample test sets.
+        Uses temporal split (not random) to simulate real trading conditions.
+        """
+        n = len(self.df)
+        train_size = int(n * self.TRAIN_RATIO)
+
+        self.df_train = self.df.iloc[:train_size].reset_index(drop=True)
+        self.df_test = self.df.iloc[train_size:].reset_index(drop=True)
+
+        print(f"[Walk-Forward] Data split: Train={len(self.df_train)} ({self.TRAIN_RATIO*100:.0f}%), Test={len(self.df_test)} ({(1-self.TRAIN_RATIO)*100:.0f}%)")
+
+    def _validate_out_of_sample(self, genome):
+        """
+        Validate the best genome on out-of-sample test data.
+        Returns dict with OOS metrics and degradation analysis.
+        """
+        if self.df_test is None or len(self.df_test) < 200:
+            return {'error': 'Insufficient test data'}
+
+        # Evaluate single genome on test data
+        population = [genome]
+
+        try:
+            if self.is_futures and HAS_FUTURES_NUMBA:
+                results = numba_evaluate_futures_population(
+                    self.df_test, population, risk_level=self.risk_level,
+                    is_perpetual=self.is_perpetual
+                )
+            elif HAS_NUMBA and not self.is_futures:
+                from numba_backtester import numba_evaluate_population
+                results = numba_evaluate_population(
+                    self.df_test, population, risk_level=self.risk_level
+                )
+            else:
+                # Fallback to Python backtester
+                from backtester import Backtester
+                from dynamic_strategy import DynamicStrategy
+                bt = Backtester()
+                _, trades = bt.run_backtest(self.df_test, risk_level=self.risk_level,
+                                           strategy_params=genome, strategy_cls=DynamicStrategy)
+                results = [{'metrics': {
+                    'Total PnL': sum(t.get('pnl', 0) for t in trades),
+                    'Total Trades': len(trades),
+                    'Win Rate %': sum(1 for t in trades if t.get('pnl', 0) > 0) / len(trades) * 100 if trades else 0
+                }}]
+
+            if results and len(results) > 0:
+                metrics = results[0].get('metrics', {})
+                oos_pnl = metrics.get('Total PnL', 0)
+                oos_trades = metrics.get('Total Trades', 0)
+                oos_winrate = metrics.get('Win Rate %', 0)
+                oos_sharpe = metrics.get('Sharpe Ratio', 0)
+                oos_dd = metrics.get('Max Drawdown', 0)
+
+                # Store OOS metrics
+                self.oos_metrics = {
+                    'oos_pnl': oos_pnl,
+                    'oos_trades': oos_trades,
+                    'oos_winrate': oos_winrate,
+                    'oos_sharpe': oos_sharpe,
+                    'oos_max_dd': oos_dd,
+                    'is_valid': oos_trades >= self.MIN_OOS_TRADES
+                }
+
+                return self.oos_metrics
+            else:
+                return {'error': 'No results from OOS evaluation'}
+
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _calculate_degradation(self, train_metrics, oos_metrics):
+        """
+        Calculate performance degradation from training to out-of-sample.
+        High degradation indicates overfitting.
+        """
+        train_pnl = train_metrics.get('Total PnL', 0)
+        oos_pnl = oos_metrics.get('oos_pnl', 0)
+
+        train_wr = train_metrics.get('Win Rate %', 0)
+        oos_wr = oos_metrics.get('oos_winrate', 0)
+
+        train_sharpe = train_metrics.get('Sharpe Ratio', 0)
+        oos_sharpe = oos_metrics.get('oos_sharpe', 0)
+
+        degradation = {
+            'pnl_degradation': 0.0,
+            'winrate_degradation': 0.0,
+            'sharpe_degradation': 0.0,
+            'is_overfitted': False,
+            'robustness_score': 0.0
+        }
+
+        # Calculate PnL degradation
+        if train_pnl > 0:
+            degradation['pnl_degradation'] = max(0, (train_pnl - oos_pnl) / train_pnl)
+            if oos_pnl < 0:
+                degradation['pnl_degradation'] = 1.5  # Heavy penalty for negative OOS
+
+        # Calculate Win Rate degradation
+        if train_wr > 0:
+            degradation['winrate_degradation'] = max(0, (train_wr - oos_wr) / train_wr)
+
+        # Calculate Sharpe degradation
+        if train_sharpe > 0:
+            degradation['sharpe_degradation'] = max(0, (train_sharpe - oos_sharpe) / train_sharpe)
+
+        # Determine if overfitted
+        degradation['is_overfitted'] = (
+            degradation['pnl_degradation'] > self.MAX_OVERFIT_DEGRADATION or
+            oos_pnl < 0 or
+            oos_metrics.get('oos_trades', 0) < self.MIN_OOS_TRADES
+        )
+
+        # Calculate robustness score (0-100, higher is better)
+        if not degradation['is_overfitted']:
+            degradation['robustness_score'] = max(0, 100 - degradation['pnl_degradation'] * 100)
+
+        return degradation
 
     def _get_fitness_estimate(self, genome, scored_pop):
         """Get fitness estimate for a genome from scored population."""
@@ -625,14 +878,152 @@ class StrategyMiner:
                 return fitness
         return -9999
 
+    # ========================================================================
+    # K-FOLD CROSS-VALIDATION (FASE 3D)
+    # ========================================================================
+
+    def _cross_validate_genome(self, genome, n_folds=None):
+        """
+        Perform k-fold cross-validation on a genome.
+
+        This tests the strategy on multiple different train/test splits
+        to ensure it generalizes across different market periods.
+
+        Args:
+            genome: Strategy genome to validate
+            n_folds: Number of folds (default: CROSS_VALIDATION_FOLDS)
+
+        Returns:
+            Dict with cross-validation metrics
+        """
+        if n_folds is None:
+            n_folds = self.CROSS_VALIDATION_FOLDS
+
+        if self.df is None or len(self.df) < n_folds * 500:
+            return {'error': 'Insufficient data for cross-validation'}
+
+        fold_size = len(self.df) // n_folds
+        fold_results = []
+
+        for fold in range(n_folds):
+            # Create fold-specific train/test split
+            test_start = fold * fold_size
+            test_end = test_start + fold_size
+
+            # Test set is this fold, train is everything else
+            df_test_fold = self.df.iloc[test_start:test_end].reset_index(drop=True)
+            df_train_fold = pd.concat([
+                self.df.iloc[:test_start],
+                self.df.iloc[test_end:]
+            ], ignore_index=True)
+
+            # Skip if insufficient data
+            if len(df_test_fold) < 200 or len(df_train_fold) < 500:
+                continue
+
+            # Evaluate on this fold
+            try:
+                population = [genome]
+
+                if self.is_futures and HAS_FUTURES_NUMBA:
+                    results = numba_evaluate_futures_population(
+                        df_test_fold, population, risk_level=self.risk_level,
+                        is_perpetual=self.is_perpetual
+                    )
+                elif HAS_NUMBA and not self.is_futures:
+                    results = numba_evaluate_population(
+                        df_test_fold, population, risk_level=self.risk_level
+                    )
+                else:
+                    from backtester import Backtester
+                    from dynamic_strategy import DynamicStrategy
+                    bt = Backtester()
+                    _, trades = bt.run_backtest(df_test_fold, risk_level=self.risk_level,
+                                               strategy_params=genome, strategy_cls=DynamicStrategy)
+                    results = [{'metrics': {
+                        'Total PnL': trades['pnl'].sum() if len(trades) > 0 else 0,
+                        'Total Trades': len(trades),
+                        'Win Rate %': len(trades[trades['pnl'] > 0]) / len(trades) * 100 if len(trades) > 0 else 0
+                    }}]
+
+                if results and len(results) > 0:
+                    metrics = results[0].get('metrics', {})
+                    fold_results.append({
+                        'fold': fold,
+                        'pnl': metrics.get('Total PnL', 0),
+                        'trades': metrics.get('Total Trades', 0),
+                        'win_rate': metrics.get('Win Rate %', 0)
+                    })
+
+            except Exception as e:
+                continue
+
+        if not fold_results:
+            return {'error': 'No valid fold results'}
+
+        # Calculate cross-validation metrics
+        pnls = [f['pnl'] for f in fold_results]
+        trades_list = [f['trades'] for f in fold_results]
+
+        cv_metrics = {
+            'n_folds': len(fold_results),
+            'avg_pnl': np.mean(pnls) if pnls else 0,
+            'std_pnl': np.std(pnls) if len(pnls) > 1 else 0,
+            'min_pnl': min(pnls) if pnls else 0,
+            'max_pnl': max(pnls) if pnls else 0,
+            'avg_trades': np.mean(trades_list) if trades_list else 0,
+            'profitable_folds': sum(1 for p in pnls if p > 0),
+            'consistency_score': sum(1 for p in pnls if p > 0) / len(pnls) if pnls else 0,
+            'is_consistent': sum(1 for p in pnls if p > 0) >= len(pnls) * 0.6  # 60%+ profitable
+        }
+
+        return cv_metrics
+
+    def _calculate_cv_fitness_bonus(self, cv_metrics):
+        """
+        Calculate fitness bonus based on cross-validation consistency.
+
+        Strategies that perform well across all folds get a bonus.
+        Strategies that fail most folds get a penalty.
+        """
+        if 'error' in cv_metrics:
+            return 0
+
+        consistency = cv_metrics.get('consistency_score', 0)
+        avg_pnl = cv_metrics.get('avg_pnl', 0)
+        std_pnl = cv_metrics.get('std_pnl', 0)
+
+        bonus = 0
+
+        # Consistency bonus
+        if consistency >= 0.8:  # 80%+ folds profitable
+            bonus += 50
+        elif consistency >= 0.6:  # 60%+ folds profitable
+            bonus += 25
+        elif consistency < 0.4:  # Less than 40% profitable
+            bonus -= 30
+
+        # Low variance bonus (stable performance)
+        if avg_pnl > 0 and std_pnl < avg_pnl * 0.5:
+            bonus += 20
+
+        # Positive average PnL bonus
+        if avg_pnl > 100:
+            bonus += 15
+
+        return bonus
+
     def _evaluate_local(self, population, progress_cb, cancel_event=None):
         """Run backtests locally."""
+
+        # Use training data if walk_forward is enabled
+        df_eval = self.df_train if (self.walk_forward and self.df_train is not None) else self.df
 
         # Use futures backtester if market_type is FUTURES
         if self.is_futures and HAS_FUTURES_NUMBA:
             try:
                 return numba_evaluate_futures_population(
-                    self.df, population, risk_level=self.risk_level,
+                    df_eval, population, risk_level=self.risk_level,
                     progress_cb=progress_cb, cancel_event=cancel_event,
                     is_perpetual=self.is_perpetual
                 )
@@ -643,7 +1034,7 @@ class StrategyMiner:
         if HAS_NUMBA and not self.is_futures:
             try:
                 return numba_evaluate_population(
-                    self.df, population, risk_level=self.risk_level,
+                    df_eval, population, risk_level=self.risk_level,
                     progress_cb=progress_cb, cancel_event=cancel_event
                 )
             except Exception as e:
@@ -660,7 +1051,7 @@ class StrategyMiner:
 
             bt = Backtester()
             try:
-                _, trades = bt.run_backtest(self.df, risk_level=self.risk_level, 
+                _, trades = bt.run_backtest(df_eval, risk_level=self.risk_level,
                                            strategy_params=genome, strategy_cls=DynamicStrategy)
 
                 total_trades = len(trades)

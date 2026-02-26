@@ -143,9 +143,9 @@ def get_work():
         print(f"❌ Error contactando coordinator: {e}")
         return None
 
-def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time, strategy_genome=None):
+def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time, strategy_genome=None, oos_metrics=None, cv_metrics=None):
     """
-    Envía resultado al coordinator (incluye el genoma de la estrategia)
+    Envía resultado al coordinator (incluye el genoma, OOS metrics y CV metrics)
 
     Returns:
         True si se envió exitosamente, False en caso contrario
@@ -165,6 +165,21 @@ def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, ex
         # Incluir genoma si está disponible
         if strategy_genome:
             payload['strategy_genome'] = json.dumps(strategy_genome)
+
+        # Incluir OOS metrics (Phase 3A)
+        if oos_metrics:
+            payload['oos_pnl'] = oos_metrics.get('oos_pnl', 0)
+            payload['oos_trades'] = oos_metrics.get('oos_trades', 0)
+            payload['oos_degradation'] = oos_metrics.get('oos_degradation', 0)
+            payload['robustness_score'] = oos_metrics.get('robustness_score', 0)
+            payload['is_overfitted'] = oos_metrics.get('is_overfitted', False)
+
+        # Incluir CV metrics (FASE 3D)
+        if cv_metrics:
+            payload['cv_folds'] = cv_metrics.get('cv_folds', 0)
+            payload['cv_avg_pnl'] = cv_metrics.get('cv_avg_pnl', 0)
+            payload['cv_consistency'] = cv_metrics.get('cv_consistency', 0)
+            payload['cv_is_consistent'] = cv_metrics.get('cv_is_consistent', False)
 
         response = requests.post(
             f"{COORDINATOR_URL}/api/submit_result",
@@ -259,7 +274,8 @@ def execute_backtest(strategy_params, work_id=None):
         seed_ratio=seed_ratio,
         market_type=market_type,
         max_leverage=strategy_params.get('max_leverage', 10),
-        is_perpetual=is_perpetual
+        is_perpetual=is_perpetual,
+        walk_forward=True  # Phase 3A: Walk-Forward Validation always enabled
     )
 
     # Ejecutar búsqueda
@@ -314,12 +330,38 @@ def execute_backtest(strategy_params, work_id=None):
     if market_type == "FUTURES":
         result['liquidations'] = liquidations
 
+    # Add Out-of-Sample metrics (Phase 3A)
+    if 'OOS_PnL' in best_metrics:
+        result['oos_pnl'] = best_metrics['OOS_PnL']
+        result['oos_trades'] = best_metrics.get('OOS_Trades', 0)
+        result['oos_winrate'] = best_metrics.get('OOS_WinRate', 0)
+        result['oos_degradation'] = best_metrics.get('Degradation_Pct', 0)
+        result['is_overfitted'] = best_metrics.get('Is_Overfitted', True)
+        result['robustness_score'] = best_metrics.get('Robustness_Score', 0)
+
+    # Add Cross-Validation metrics (FASE 3D)
+    if 'CV_Folds' in best_metrics:
+        result['cv_folds'] = best_metrics.get('CV_Folds', 0)
+        result['cv_avg_pnl'] = best_metrics.get('CV_AvgPnL', 0)
+        result['cv_consistency'] = best_metrics.get('CV_Consistency', 0)
+        result['cv_is_consistent'] = best_metrics.get('CV_IsConsistent', False)
+
     print(f"✅ Backtest completado en {execution_time:.0f}s")
     print(f"   PnL: ${best_pnl:,.2f}")
     if market_type == "FUTURES" and liquidations > 0:
         print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%} | Liqs: {liquidations}")
     else:
         print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
+
+    # Show OOS metrics if available (Phase 3A)
+    if 'oos_pnl' in result:
+        oos_status = "🟢" if not result['is_overfitted'] else "🔴"
+        print(f"   {oos_status} OOS: ${result['oos_pnl']:.2f} | Degradation: {result['oos_degradation']:.1f}% | Robustness: {result['robustness_score']:.0f}/100")
+
+    # Show CV metrics if available (FASE 3D)
+    if 'cv_folds' in result and result['cv_folds'] > 0:
+        cv_status = "🟢" if result.get('cv_is_consistent', False) else "🟡"
+        print(f"   {cv_status} CV: {result['cv_folds']} folds | Avg PnL: ${result['cv_avg_pnl']:.2f} | Consistency: {result['cv_consistency']*100:.0f}%")
 
     return result
 
@@ -391,6 +433,27 @@ def main():
                     # Enviar resultado
                     print(f"\n📤 Enviando resultado al coordinator...")
 
+                    # Prepare OOS metrics (Phase 3A)
+                    oos_metrics = None
+                    if 'oos_pnl' in result:
+                        oos_metrics = {
+                            'oos_pnl': result.get('oos_pnl', 0),
+                            'oos_trades': result.get('oos_trades', 0),
+                            'oos_degradation': result.get('oos_degradation', 0),
+                            'robustness_score': result.get('robustness_score', 0),
+                            'is_overfitted': result.get('is_overfitted', False)
+                        }
+
+                    # Prepare CV metrics (FASE 3D)
+                    cv_metrics = None
+                    if 'cv_folds' in result and result['cv_folds'] > 0:
+                        cv_metrics = {
+                            'cv_folds': result.get('cv_folds', 0),
+                            'cv_avg_pnl': result.get('cv_avg_pnl', 0),
+                            'cv_consistency': result.get('cv_consistency', 0),
+                            'cv_is_consistent': result.get('cv_is_consistent', False)
+                        }
+
                     success = submit_result(
                         work_id=work_id,
                         pnl=result['pnl'],
@@ -399,7 +462,9 @@ def main():
                         sharpe_ratio=result['sharpe_ratio'],
                         max_drawdown=result['max_drawdown'],
                         execution_time=result['execution_time'],
-                        strategy_genome=result.get('genome')  # Enviar genoma para élite global
+                        strategy_genome=result.get('genome'),  # Enviar genoma para élite global
+                        oos_metrics=oos_metrics,  # Phase 3A: OOS metrics
+                        cv_metrics=cv_metrics  # FASE 3D: CV metrics
                     )
 
                     if success:

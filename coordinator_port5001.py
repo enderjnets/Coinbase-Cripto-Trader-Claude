@@ -54,6 +54,12 @@ MIN_SHARPE_RATIO = 1.0            # Sharpe ratio mínimo
 MAX_DRAWDOWN = 0.20               # Max drawdown máximo 20%
 MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
 
+# Out-of-Sample (OOS) Validation Criteria (Phase 3A)
+MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
+MIN_OOS_PNL = 0                   # OOS PnL debe ser >= 0 (positivo o break-even)
+MAX_OOS_DEGRADATION = 0.35        # Máximo 35% degradación Train→OOS
+MIN_ROBUSTNESS_SCORE = 50         # Robustness score mínimo (0-100)
+
 
 
 # ============================================================================
@@ -894,16 +900,24 @@ def api_submit_result():
             except:
                 pass
 
-        # Insertar resultado con genoma
+        # Insertar resultado con genoma + OOS metrics + CV metrics (Phase 3A + FASE 3D)
         c.execute("""INSERT INTO results
             (work_unit_id, worker_id, pnl, trades, win_rate,
-             sharpe_ratio, max_drawdown, execution_time, strategy_genome)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             sharpe_ratio, max_drawdown, execution_time, strategy_genome,
+             oos_pnl, oos_trades, oos_degradation, robustness_score, is_overfitted,
+             cv_folds, cv_avg_pnl, cv_consistency, cv_is_consistent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data['work_id'], data['worker_id'],
              data.get('pnl', 0), data.get('trades', 0),
              data.get('win_rate', 0), data.get('sharpe_ratio', 0),
              data.get('max_drawdown', 0), data.get('execution_time', 0),
-             data.get('strategy_genome', None)))
+             data.get('strategy_genome', None),
+             data.get('oos_pnl', 0), data.get('oos_trades', 0),
+             data.get('oos_degradation', 0), data.get('robustness_score', 0),
+             1 if data.get('is_overfitted', False) else 0,
+             data.get('cv_folds', 0), data.get('cv_avg_pnl', 0),
+             data.get('cv_consistency', 0),
+             1 if data.get('cv_is_consistent', False) else 0))
 
         # Incrementar contador de réplicas completadas
         c.execute("""UPDATE work_units
@@ -1143,7 +1157,13 @@ def api_dashboard_stats():
             'work_unit_id': best_row['work_unit_id'],
             'worker_id': best_row['worker_id'],
             'is_canonical': best_row['is_canonical'],
-            'is_validated': is_validated
+            'is_validated': is_validated,
+            # OOS Metrics (Phase 3A)
+            'oos_pnl': best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0,
+            'oos_trades': best_row['oos_trades'] if 'oos_trades' in best_row.keys() else 0,
+            'oos_degradation': best_row['oos_degradation'] if 'oos_degradation' in best_row.keys() else 0,
+            'robustness_score': best_row['robustness_score'] if 'robustness_score' in best_row.keys() else 0,
+            'is_overfitted': bool(best_row['is_overfitted']) if 'is_overfitted' in best_row.keys() else False
         }
     
     # Worker performance stats — pre-fetch max_pnl for ALL workers in one query

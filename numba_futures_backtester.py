@@ -46,6 +46,22 @@ MAINTENANCE_MARGIN = 0.05  # 5%
 FEE_MAKER = 0.0002  # 0.02%
 FEE_TAKER = 0.0005  # 0.05%
 
+# ============================================================================
+# SLIPPAGE MODELING (PHASE 3A - Realistic Execution)
+# ============================================================================
+# Base slippage for crypto futures (market orders)
+SLIPPAGE_BASE = 0.0003  # 0.03% base slippage
+
+# Volatility multiplier (higher ATR = more slippage)
+SLIPPAGE_VOLATILITY_MULT = 0.5  # 50% of volatility added
+
+# Position size impact (larger positions = more market impact)
+SLIPPAGE_SIZE_BASE = 50000.0  # $50k position = no size impact
+SLIPPAGE_SIZE_MULT = 0.0001  # Additional 0.01% per $50k over base
+
+# Maximum slippage cap (prevent absurd values)
+SLIPPAGE_MAX = 0.005  # 0.5% max slippage
+
 # Funding rate (average for BTC/ETH perpetuals)
 DEFAULT_FUNDING_RATE = 0.0001  # 0.01% per 8 hours
 FUNDING_INTERVAL_CANDLES = 60  # Every 60 candles (1 hour for 1-min data)
@@ -335,6 +351,48 @@ def decode_genome_futures(encoded):
 
 if HAS_NUMBA:
     @njit(cache=True)
+    def _calculate_slippage(price, position_value, atr_pct, is_entry):
+        """
+        Calculate realistic slippage for market orders.
+
+        Components:
+        1. Base slippage (0.03%)
+        2. Volatility-adjusted slippage (higher ATR = more slippage)
+        3. Position size impact (larger = more market impact)
+        4. Entry vs Exit (entries often have more slippage due to urgency)
+
+        Args:
+            price: Current price
+            position_value: Dollar value of position
+            atr_pct: ATR as percentage of price (volatility measure)
+            is_entry: True for entry, False for exit
+
+        Returns:
+            Slippage as price adjustment (in price units)
+        """
+        # Base slippage
+        slippage_pct = SLIPPAGE_BASE
+
+        # Add volatility component (higher volatility = more slippage)
+        if atr_pct > 0:
+            slippage_pct += atr_pct * SLIPPAGE_VOLATILITY_MULT
+
+        # Add position size impact
+        if position_value > SLIPPAGE_SIZE_BASE:
+            size_ratio = (position_value - SLIPPAGE_SIZE_BASE) / SLIPPAGE_SIZE_BASE
+            slippage_pct += size_ratio * SLIPPAGE_SIZE_MULT
+
+        # Entry has slightly more slippage (market urgency)
+        if is_entry:
+            slippage_pct *= 1.1
+
+        # Cap slippage
+        if slippage_pct > SLIPPAGE_MAX:
+            slippage_pct = SLIPPAGE_MAX
+
+        return price * slippage_pct
+
+    @njit(cache=True)
     def _fast_futures_backtest(close, high, low, indicators, genome_encoded,
                                 fee_rate, is_perpetual=True):
         """
@@ -498,6 +556,19 @@ if HAS_NUMBA:
                         exit_price = pos_sl[s]
                     else:
                         exit_price = pos_tp[s]
+
+                    # === APPLY SLIPPAGE TO EXIT ===
+                    # Calculate local volatility (ATR proxy using high-low)
+                    atr_pct = (candle_high - candle_low) / price if price > 0 else 0.01
+
+                    # Apply slippage against the exit direction
+                    slippage = _calculate_slippage(price, pos_cost_basis[s], atr_pct, is_entry=False)
+                    if pos_direction[s] == DIR_LONG:
+                        # Long exit (sell): get slightly worse price
+                        exit_price = exit_price * (1.0 - slippage/price)
+                    else:
+                        # Short exit (buy): pay slightly higher price
+                        exit_price = exit_price * (1.0 + slippage/price)
 
                     # Calculate PnL with leverage
                     if pos_direction[s] == DIR_LONG:
@@ -745,8 +816,21 @@ if HAS_NUMBA:
 
                             pos_active[slot] = 1
                             pos_direction[slot] = entry_direction
-                            pos_entry_price[slot] = price
-                            pos_size[slot] = position_value / price  # Contracts
+
+                            # === APPLY SLIPPAGE TO ENTRY ===
+                            # Calculate local volatility (ATR proxy using high-low)
+                            atr_pct = (candle_high - candle_low) / price if price > 0 else 0.01
+                            entry_slippage = _calculate_slippage(price, position_value, atr_pct, is_entry=True)
+
+                            if entry_direction == DIR_LONG:
+                                # Long entry (buy): pay slightly higher price
+                                actual_entry_price = price * (1.0 + entry_slippage/price)
+                            else:
+                                # Short entry (sell): get slightly lower price
+                                actual_entry_price = price * (1.0 - entry_slippage/price)
+
+                            pos_entry_price[slot] = actual_entry_price
+                            pos_size[slot] = position_value / actual_entry_price  # Contracts
                             pos_margin[slot] = margin_required
                             pos_cost_basis[slot] = position_value
                             pos_entry_fee[slot] = entry_fee
@@ -766,14 +850,25 @@ if HAS_NUMBA:
 
         # === CLOSE ALL OPEN POSITIONS AT END ===
         final_price = close[n - 1]
+        final_high = high[n - 1]
+        final_low = low[n - 1]
+
         for s in range(3):
             if pos_active[s] == 1:
-                if pos_direction[s] == DIR_LONG:
-                    pnl_pct = (final_price - pos_entry_price[s]) / pos_entry_price[s]
-                else:
-                    pnl_pct = (pos_entry_price[s] - final_price) / pos_entry_price[s]
+                # Apply slippage to final exit
+                final_atr_pct = (final_high - final_low) / final_price if final_price > 0 else 0.01
+                final_slippage = _calculate_slippage(final_price, pos_cost_basis[s], final_atr_pct, is_entry=False)
 
-                exit_value = pos_size[s] * final_price
+                if pos_direction[s] == DIR_LONG:
+                    # Long exit (sell): get slightly worse price
+                    actual_final_price = final_price * (1.0 - final_slippage/final_price)
+                    pnl_pct = (actual_final_price - pos_entry_price[s]) / pos_entry_price[s]
+                else:
+                    # Short exit (buy): pay slightly higher price
+                    actual_final_price = final_price * (1.0 + final_slippage/final_price)
+                    pnl_pct = (pos_entry_price[s] - actual_final_price) / pos_entry_price[s]
+
+                exit_value = pos_size[s] * actual_final_price
                 exit_fee = exit_value * fee_rate
                 trade_pnl = (pnl_pct * leverage * pos_cost_basis[s]) - pos_entry_fee[s] - exit_fee
 

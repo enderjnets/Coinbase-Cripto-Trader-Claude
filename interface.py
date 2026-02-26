@@ -2937,6 +2937,38 @@ elif nav_mode == "🌐 Sistema Distribuido":
                     except ImportError:
                         st.metric("Motor", "Python", delta="Sin aceleracion")
 
+                # ===== OOS VALIDATION METRICS (Phase 3A) =====
+                if best and best.get('oos_pnl', 0) != 0:
+                    st.divider()
+                    st.markdown("#### 🔬 Out-of-Sample Validation")
+
+                    oos_col1, oos_col2, oos_col3, oos_col4 = st.columns(4)
+
+                    with oos_col1:
+                        oos_pnl = best.get('oos_pnl', 0)
+                        train_pnl = best.get('pnl', 0)
+                        is_overfitted = best.get('is_overfitted', False)
+                        icon = "🔴" if is_overfitted else "🟢"
+                        st.metric(f"{icon} OOS PnL", f"${oos_pnl:.2f}",
+                                  delta=f"Train: ${train_pnl:.2f}")
+
+                    with oos_col2:
+                        oos_degradation = best.get('oos_degradation', 0)
+                        deg_color = "normal" if oos_degradation < 35 else "inverse"
+                        st.metric("Degradación", f"{oos_degradation:.1f}%",
+                                  delta="<35% aceptable" if oos_degradation < 35 else ">35% overfitted",
+                                  delta_color=deg_color)
+
+                    with oos_col3:
+                        robustness = best.get('robustness_score', 0)
+                        st.metric("Robustness", f"{robustness:.0f}/100",
+                                  delta="✅ Robusto" if robustness >= 50 else "⚠️ Frágil")
+
+                    with oos_col4:
+                        oos_trades = best.get('oos_trades', 0)
+                        st.metric("OOS Trades", f"{oos_trades}",
+                                  delta="Min 10 requerido" if oos_trades < 10 else "✅ Suficiente")
+
                 # ===== OBJETIVO 5% DIARIO =====
                 # El backtester corre con $10,000 fijo (numba_backtester.py balance=10000)
                 # El % de retorno se calcula sobre esa base. REAL_CAPITAL ($500) es
