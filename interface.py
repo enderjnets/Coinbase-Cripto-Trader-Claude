@@ -3099,67 +3099,47 @@ elif nav_mode == "🌐 Sistema Distribuido":
                         <div class="section-hdr">📊 Work Units en Progreso</div>
                         <div class="wu-flex">{wu_html}</div>""" if wu_html else ""
 
-                        st.markdown(f"""
-                        <style>
-                        @keyframes wkpulse {{
-                            0%,100% {{ opacity:1; box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }}
-                            50%      {{ opacity:.85; box-shadow: 0 0 0 5px rgba(16,185,129,0); }}
-                        }}
-                        .parallel-grid {{ font-family: sans-serif; }}
-                        .section-hdr {{ font-size:13px; font-weight:600; color:#94a3b8;
-                                        margin: 18px 0 10px 0; text-transform:uppercase;
-                                        letter-spacing:.05em; }}
-                        .machine-block {{ margin-bottom:16px; }}
-                        .machine-hdr {{ display:flex; align-items:center; gap:8px;
-                                        margin-bottom:8px; }}
-                        .machine-dot {{ width:11px; height:11px; border-radius:3px;
-                                        flex-shrink:0; }}
-                        .machine-name {{ font-weight:700; font-size:14px; color:#e2e8f0; }}
-                        .machine-meta {{ font-size:11px; color:#64748b; margin-left:4px; }}
-                        .workers-flex {{ display:flex; flex-wrap:wrap; gap:8px; }}
-                        .worker-card {{
-                            background: #1e293b;
-                            border: 1px solid #334155;
-                            border-radius:10px;
-                            padding:10px 12px;
-                            min-width:110px;
-                            text-align:center;
-                        }}
-                        .worker-card.active {{
-                            background: rgba(16,185,129,0.08);
-                            border-color: #10b981;
-                            animation: wkpulse 2s ease-in-out infinite;
-                        }}
-                        .worker-card.idle {{
-                            opacity: 0.65;
-                        }}
-                        .wdot {{ font-size:14px; margin-bottom:4px; }}
-                        .worker-card.active .wdot {{ color:#10b981; }}
-                        .worker-card.idle  .wdot {{ color:#475569; }}
-                        .wname {{ font-size:10px; font-weight:600; color:#cbd5e1;
-                                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-                        .wstat {{ font-size:9px; color:#3b82f6; margin-top:3px; }}
-                        .wtime {{ font-size:8px; color:#64748b; margin-top:2px; }}
-                        .wu-flex {{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }}
-                        .wu-card {{
-                            background:#1e293b; border-radius:10px;
-                            padding:12px 16px; min-width:130px; text-align:center;
-                            border:1px solid #334155;
-                        }}
-                        .wu-id  {{ font-size:10px; color:#64748b; margin-bottom:4px; }}
-                        .wu-pct {{ font-size:22px; font-weight:800; color:#3b82f6; }}
-                        .wu-rep {{ font-size:9px; color:#94a3b8; margin-top:3px; }}
-                        .wu-bar-bg {{ background:#334155; border-radius:4px; height:4px;
-                                      margin-top:8px; overflow:hidden; }}
-                        .wu-bar-fill {{ background:linear-gradient(90deg,#3b82f6,#10b981);
-                                        height:100%; border-radius:4px; }}
-                        .wu-assigned {{ font-size:8px; color:#64748b; margin-top:4px; }}
-                        </style>
-                        <div class="parallel-grid">
-                            {machines_html}
-                            {wu_section}
-                        </div>
-                        """, unsafe_allow_html=True)
+                        html_block = (
+                            "<style>"
+                            "@keyframes wkpulse{"
+                            "0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,0.4)}"
+                            "50%{opacity:.85;box-shadow:0 0 0 5px rgba(16,185,129,0)}}"
+                            ".parallel-grid{font-family:sans-serif;padding:4px 0}"
+                            ".section-hdr{font-size:13px;font-weight:600;color:#94a3b8;"
+                            "margin:18px 0 10px 0;text-transform:uppercase;letter-spacing:.05em}"
+                            ".machine-block{margin-bottom:16px}"
+                            ".machine-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}"
+                            ".machine-dot{width:11px;height:11px;border-radius:3px;flex-shrink:0}"
+                            ".machine-name{font-weight:700;font-size:14px;color:#e2e8f0}"
+                            ".machine-meta{font-size:11px;color:#64748b;margin-left:4px}"
+                            ".workers-flex{display:flex;flex-wrap:wrap;gap:8px}"
+                            ".worker-card{background:#1e293b;border:1px solid #334155;"
+                            "border-radius:10px;padding:10px 12px;min-width:110px;text-align:center}"
+                            ".worker-card.active{background:rgba(16,185,129,0.08);"
+                            "border-color:#10b981;animation:wkpulse 2s ease-in-out infinite}"
+                            ".worker-card.idle{opacity:.65}"
+                            ".wdot{font-size:14px;margin-bottom:4px}"
+                            ".worker-card.active .wdot{color:#10b981}"
+                            ".worker-card.idle .wdot{color:#475569}"
+                            ".wname{font-size:10px;font-weight:600;color:#cbd5e1;"
+                            "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+                            ".wstat{font-size:9px;color:#3b82f6;margin-top:3px}"
+                            ".wtime{font-size:8px;color:#64748b;margin-top:2px}"
+                            ".wu-flex{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}"
+                            ".wu-card{background:#1e293b;border-radius:10px;padding:12px 16px;"
+                            "min-width:130px;text-align:center;border:1px solid #334155}"
+                            ".wu-id{font-size:10px;color:#64748b;margin-bottom:4px}"
+                            ".wu-pct{font-size:22px;font-weight:800;color:#3b82f6}"
+                            ".wu-rep{font-size:9px;color:#94a3b8;margin-top:3px}"
+                            ".wu-bar-bg{background:#334155;border-radius:4px;height:4px;"
+                            "margin-top:8px;overflow:hidden}"
+                            ".wu-bar-fill{background:linear-gradient(90deg,#3b82f6,#10b981);"
+                            "height:100%;border-radius:4px}"
+                            ".wu-assigned{font-size:8px;color:#64748b;margin-top:4px}"
+                            "</style>"
+                            f'<div class="parallel-grid">{machines_html}{wu_section}</div>'
+                        )
+                        st.html(html_block)
 
                 except Exception as e:
                     st.warning(f"No se pudo obtener datos de actividad paralela: {e}")
