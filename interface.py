@@ -3012,6 +3012,110 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                 st.divider()
 
+                # ===== PARALLEL WORKERS VISUALIZATION =====
+                st.markdown("#### ⚡ Workers en Paralelo")
+
+                # Fetch parallel activity data
+                try:
+                    parallel_resp = requests.get(f"{COORDINATOR_URL}/api/parallel_activity", timeout=5)
+                    if parallel_resp.status_code == 200:
+                        parallel_data = parallel_resp.json()
+
+                        # Summary metrics
+                        pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+                        with pcol1:
+                            st.metric("🔥 Workers Activos", parallel_data.get('total_active', 0), delta="último minuto")
+                        with pcol2:
+                            st.metric("📊 WUs en Paralelo", parallel_data.get('parallelism_level', 0), delta="procesándose")
+                        with pcol3:
+                            machines = parallel_data.get('workers_by_machine', [])
+                            st.metric("🖥️ Máquinas", len(machines), delta="distribuidas")
+                        with pcol4:
+                            timeline = parallel_data.get('activity_timeline', [])
+                            total_recent = sum(timeline) if timeline else 0
+                            st.metric("🚀 Resultados/min", total_recent, delta="últimos 2 min")
+
+                        # Workers Grid Visualization
+                        st.markdown("##### 🖥️ Grid de Workers en Tiempo Real")
+
+                        # Create visual grid of workers by machine
+                        for machine_data in machines:
+                            machine_name = machine_data.get('name', 'Unknown')
+                            machine_color = machine_data.get('color', '#6b7280')
+                            workers = machine_data.get('workers', [])
+
+                            # Machine header with colored badge
+                            st.markdown(f"""
+                            <div style="display:flex;align-items:center;gap:8px;margin:12px 0 8px 0">
+                                <div style="width:12px;height:12px;border-radius:3px;background:{machine_color}"></div>
+                                <span style="font-weight:600;font-size:14px">{machine_name}</span>
+                                <span style="color:#888;font-size:12px">({len(workers)} workers)</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            # Worker cards in a grid
+                            worker_cols = st.columns(min(len(workers), 8))
+                            for i, worker in enumerate(workers):
+                                with worker_cols[i % len(worker_cols)]:
+                                    is_active = worker.get('is_active', False)
+                                    wu_completed = worker.get('work_units_completed', 0)
+                                    worker_name = worker.get('name', '?')
+
+                                    # Pulsing animation for active workers
+                                    status_color = "#10b981" if is_active else "#374151"
+                                    pulse_anim = "animation: pulse 1.5s infinite;" if is_active else ""
+                                    bg_alpha = "0.2" if is_active else "0.1"
+
+                                    st.markdown(f"""
+                                    <div style="
+                                        background: rgba(59, 130, 246, {bg_alpha});
+                                        border: 1px solid {status_color};
+                                        border-radius: 8px;
+                                        padding: 8px;
+                                        text-align: center;
+                                        {pulse_anim}
+                                    ">
+                                        <div style="font-weight:600;font-size:11px;color:{status_color}">{'●' if is_active else '○'}</div>
+                                        <div style="font-size:10px;font-weight:500;margin-top:2px">{worker_name}</div>
+                                        <div style="font-size:9px;color:#888">{wu_completed:,} WUs</div>
+                                    </div>
+                                    <style>
+                                    @keyframes pulse {{
+                                        0%, 100% {{ opacity: 1; transform: scale(1); }}
+                                        50% {{ opacity: 0.7; transform: scale(0.98); }}
+                                    }}
+                                    </style>
+                                    """, unsafe_allow_html=True)
+
+                        # In-progress WUs visualization
+                        in_progress = parallel_data.get('in_progress_wus', [])
+                        if in_progress:
+                            st.markdown("##### 📊 Work Units en Progreso")
+                            prog_cols = st.columns(min(len(in_progress), 5))
+                            for i, wu in enumerate(in_progress[:5]):
+                                with prog_cols[i]:
+                                    wu_id = wu.get('work_unit_id', '?')
+                                    progress = wu.get('progress_pct', 0)
+                                    assigned = wu.get('replicas_assigned', 0)
+                                    needed = wu.get('replicas_needed', 1)
+                                    completed = wu.get('replicas_completed', 0)
+
+                                    st.markdown(f"""
+                                    <div style="background:#1e293b;border-radius:8px;padding:10px;text-align:center">
+                                        <div style="font-size:10px;color:#888;margin-bottom:4px">WU #{wu_id}</div>
+                                        <div style="font-size:18px;font-weight:700;color:#3b82f6">{progress:.0f}%</div>
+                                        <div style="font-size:9px;color:#888;margin-top:4px">{completed}/{needed} réplicas</div>
+                                        <div style="background:#374151;border-radius:4px;height:4px;margin-top:6px;overflow:hidden">
+                                            <div style="background:linear-gradient(90deg,#3b82f6,#10b981);height:100%;width:{progress}%"></div>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                except Exception as e:
+                    st.warning(f"No se pudo obtener datos de actividad paralela: {e}")
+
+                st.divider()
+
                 # ===== PRODUCT DISTRIBUTION BY CATEGORY =====
                 st.markdown("#### 📊 Distribución por Categoría de Activos")
 

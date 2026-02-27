@@ -516,50 +516,59 @@ def create_work_units(strategy_configs):
 
     return work_unit_ids
 
-def get_pending_work():
+def get_and_assign_work():
     """
-    Obtiene un work unit pendiente o que necesita más réplicas
+    Obtiene y asigna un work unit de forma ATÓMICA.
+
+    CRÍTICO: Esta operación debe ser atómica para evitar race conditions
+    cuando múltiples workers solicitan trabajo simultáneamente.
 
     Returns:
-        Dict con work_unit_id y strategy_params, o None si no hay trabajo
+        Dict con work_id y strategy_params, o None si no hay trabajo
     """
     with db_lock:
         conn = get_db_connection()
         c = conn.cursor()
 
-        # Buscar work units que necesitan más réplicas
-        c.execute("""SELECT id, strategy_params, replicas_needed, replicas_completed
+        # Buscar work units que necesitan más réplicas ASIGNADAS (no completadas)
+        # La clave es usar replicas_assigned < replicas_needed para evitar
+        # que múltiples workers obtengan el mismo WU
+        c.execute("""SELECT id, strategy_params, replicas_needed, replicas_assigned, replicas_completed
             FROM work_units
-            WHERE replicas_completed < replicas_needed
+            WHERE replicas_assigned < replicas_needed
             ORDER BY created_at ASC
             LIMIT 1""")
 
         row = c.fetchone()
-        conn.close()
 
         if row:
+            # ATÓMICO: Incrementar replicas_assigned en la MISMA transacción
+            c.execute("""UPDATE work_units
+                SET status = 'assigned',
+                    replicas_assigned = replicas_assigned + 1
+                WHERE id = ?""", (row['id'],))
+
+            conn.commit()
+            conn.close()
+
             return {
                 'work_id': row['id'],
                 'strategy_params': json.loads(row['strategy_params']),
-                'replica_number': row['replicas_completed'] + 1,
+                'replica_number': row['replicas_assigned'] + 1,  # Ya fue incrementado
                 'replicas_needed': row['replicas_needed']
             }
 
+        conn.close()
         return None
 
+# Keep old functions for backward compatibility (deprecated)
+def get_pending_work():
+    """DEPRECATED: Use get_and_assign_work() instead"""
+    return get_and_assign_work()
+
 def mark_work_assigned(work_id):
-    """Marca un work unit como asignado e incrementa replicas_assigned"""
-    with db_lock:
-        conn = get_db_connection()
-        c = conn.cursor()
-
-        c.execute("""UPDATE work_units
-            SET status = 'assigned',
-                replicas_assigned = replicas_assigned + 1
-            WHERE id = ?""", (work_id,))
-
-        conn.commit()
-        conn.close()
+    """DEPRECATED: Assignment is now done atomically in get_and_assign_work()"""
+    pass  # No-op, assignment is done in get_and_assign_work()
 
 # ============================================================================
 # RESULT VALIDATION
@@ -861,12 +870,11 @@ def api_get_work():
         conn.commit()
         conn.close()
 
-    # Obtener trabajo pendiente
-    work = get_pending_work()
+    # Obtener y asignar trabajo de forma ATÓMICA
+    work = get_and_assign_work()
 
     if work:
-        mark_work_assigned(work['work_id'])
-        print(f"📤 Trabajo {work['work_id']} asignado a worker {worker_id}")
+        print(f"📤 Trabajo {work['work_id']} asignado a worker {worker_id} (réplica {work['replica_number']}/{work['replicas_needed']})")
 
         return jsonify(work)
     else:
@@ -1528,11 +1536,58 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 }
 .worker-item:last-child{border-bottom:none}
 .worker-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.worker-dot.alive{background:var(--green);box-shadow:0 0 5px var(--green)}
+.worker-dot.alive{background:var(--green);box-shadow:0 0 5px var(--green);animation: pulse-dot 1.5s infinite}
 .worker-dot.dead{background:var(--red)}
 .worker-name{font-size:13px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .worker-wus{font-size:12px;color:var(--blue);font-weight:600;white-space:nowrap}
 .worker-ago{font-size:11px;color:var(--muted);white-space:nowrap}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+
+/* ── PARALLEL GRID ── */
+.parallel-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 14px;background:rgba(59,130,246,0.1);border-radius:8px;margin:12px 14px;
+}
+.parallel-title{font-size:12px;font-weight:600;color:var(--blue)}
+.parallel-count{font-size:20px;font-weight:800;color:var(--blue)}
+
+.machine-section{padding:8px 14px 0}
+.machine-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.machine-dot{width:10px;height:10px;border-radius:3px}
+.machine-name{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+
+.workers-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.worker-card{
+  background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);
+  border-radius:6px;padding:6px 8px;min-width:60px;text-align:center;
+}
+.worker-card.active{
+  background:rgba(16,185,129,0.2);border-color:rgba(16,185,129,0.5);
+  animation: card-pulse 1.5s infinite;
+}
+.worker-card .name{font-size:9px;font-weight:600;color:var(--text)}
+.worker-card .status{font-size:7px;margin-top:2px}
+.worker-card .status.active{color:var(--green)}
+.worker-card .status.idle{color:var(--muted)}
+.worker-card .wu-count{font-size:8px;color:var(--blue);margin-top:2px}
+
+@keyframes card-pulse {
+  0%, 100% { transform: scale(1); border-color: rgba(16,185,129,0.5); }
+  50% { transform: scale(0.98); border-color: rgba(16,185,129,0.8); }
+}
+
+/* ── IN PROGRESS WUS ── */
+.wu-progress-section{padding:0 14px 12px}
+.wu-grid{display:flex;flex-wrap:wrap;gap:8px}
+.wu-card{background:#21262d;border-radius:8px;padding:10px;min-width:70px;text-align:center}
+.wu-id{font-size:9px;color:var(--muted);margin-bottom:4px}
+.wu-pct{font-size:16px;font-weight:700;color:var(--blue)}
+.wu-bar{background:#374151;border-radius:3px;height:3px;margin-top:6px;overflow:hidden}
+.wu-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .5s}
 
 /* ── TOP RESULTS ── */
 .result-item{padding:12px 14px;border-bottom:1px solid var(--border)}
@@ -1641,8 +1696,27 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 
 <!-- TAB: WORKERS -->
 <div class="scroll-area tab" id="tab-workers">
+  <!-- Parallel Activity Header -->
+  <div class="parallel-header">
+    <div>
+      <div class="parallel-title">⚡ Workers en Paralelo</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">Procesando simultáneamente</div>
+    </div>
+    <div class="parallel-count" id="parallel-count">-</div>
+  </div>
+
+  <!-- Parallel Workers Grid -->
+  <div id="parallel-grid"></div>
+
+  <!-- In Progress WUs -->
+  <div class="wu-progress-section" id="wu-progress-section" style="display:none">
+    <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">📊 WUs en Progreso</div>
+    <div class="wu-grid" id="wu-grid"></div>
+  </div>
+
+  <!-- Workers List -->
   <div class="card">
-    <div class="card-title">🖥️ Workers activos</div>
+    <div class="card-title">🖥️ Todos los Workers</div>
     <div id="workers-list"><div class="empty">Cargando...</div></div>
   </div>
 </div>
@@ -1757,10 +1831,11 @@ function setColor(el, val, good, warn) {
 // ── Main fetch ───────────────────────────────────────────────────
 async function fetchAll() {
   try {
-    const [s, d, r] = await Promise.all([
+    const [s, d, r, p] = await Promise.all([
       fetch('/api/status').then(x => x.json()),
       fetch('/api/dashboard_stats').then(x => x.json()),
-      fetch('/api/results').then(x => x.json())
+      fetch('/api/results').then(x => x.json()),
+      fetch('/api/parallel_activity').then(x => x.json())
     ]);
 
     document.getElementById('dot').className = 'dot';
@@ -1856,6 +1931,60 @@ async function fetchAll() {
       const ddGoal = (best.max_drawdown||0)*100;
       ddEl.textContent = fmt(ddGoal,1) + '%';
       ddEl.style.color = ddGoal<=10 ? 'var(--green)' : ddGoal<=25 ? 'var(--yellow)' : 'var(--red)';
+    }
+
+    // ── Parallel Activity Grid ──
+    const parallelCount = document.getElementById('parallel-count');
+    const parallelGrid = document.getElementById('parallel-grid');
+    const wuProgressSection = document.getElementById('wu-progress-section');
+    const wuGrid = document.getElementById('wu-grid');
+
+    if (p) {
+      // Update parallel count
+      parallelCount.textContent = p.total_active || 0;
+
+      // Render workers by machine
+      const machines = p.workers_by_machine || [];
+      if (machines.length > 0) {
+        parallelGrid.innerHTML = machines.map(m => {
+          const workersHtml = (m.workers || []).map(w => {
+            const activeClass = w.is_active ? 'active' : '';
+            const statusText = w.is_active ? '🟢 Activo' : '○ Idle';
+            const statusClass = w.is_active ? 'active' : 'idle';
+            return `<div class="worker-card ${activeClass}">
+              <div class="name">${w.name}</div>
+              <div class="status ${statusClass}">${statusText}</div>
+              <div class="wu-count">${(w.work_units_completed||0).toLocaleString()} WUs</div>
+            </div>`;
+          }).join('');
+          return `<div class="machine-section">
+            <div class="machine-header">
+              <div class="machine-dot" style="background:${m.color}"></div>
+              <div class="machine-name">${m.name}</div>
+              <div style="font-size:10px;color:var(--muted)">(${(m.workers||[]).length} workers)</div>
+            </div>
+            <div class="workers-grid">${workersHtml}</div>
+          </div>`;
+        }).join('');
+      } else {
+        parallelGrid.innerHTML = '<div class="empty" style="padding:20px">Sin workers activos</div>';
+      }
+
+      // Render in-progress WUs
+      const inProgress = p.in_progress_wus || [];
+      if (inProgress.length > 0) {
+        wuProgressSection.style.display = 'block';
+        wuGrid.innerHTML = inProgress.slice(0, 6).map(wu => {
+          return `<div class="wu-card">
+            <div class="wu-id">WU #${wu.work_unit_id}</div>
+            <div class="wu-pct">${wu.progress_pct.toFixed(0)}%</div>
+            <div style="font-size:8px;color:var(--muted)">${wu.replicas_completed}/${wu.replicas_needed} réplicas</div>
+            <div class="wu-bar"><div class="wu-bar-fill" style="width:${wu.progress_pct}%"></div></div>
+          </div>`;
+        }).join('');
+      } else {
+        wuProgressSection.style.display = 'none';
+      }
     }
 
     // ── Workers list ──
@@ -2181,6 +2310,119 @@ DASHBOARD_HTML = """
         .best-stat-val { font-size: 22px; font-weight: 700; color: var(--green); }
         .best-stat-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing:.6px; margin-top: 4px; }
 
+        /* ── PARALLEL WORKERS GRID ── */
+        .parallel-section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--card-r);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .parallel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .parallel-title {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .parallel-stats {
+            display: flex;
+            gap: 20px;
+        }
+        .parallel-stat {
+            text-align: center;
+        }
+        .parallel-stat-val {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--blue);
+        }
+        .parallel-stat-lbl {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+        .machines-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .machine-card {
+            background: #21262d;
+            border-radius: 8px;
+            padding: 14px;
+            border-left: 4px solid var(--machine-color, var(--blue));
+        }
+        .machine-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .machine-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            background: var(--machine-color, var(--blue));
+        }
+        .machine-name {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+        }
+        .machine-count {
+            font-size: 11px;
+            color: var(--muted);
+        }
+        .workers-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .worker-chip {
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 6px;
+            padding: 8px 12px;
+            min-width: 80px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .worker-chip.active {
+            background: rgba(16, 185,129, 0.15);
+            border-color: rgba(16, 185, 129, 0.5);
+            animation: chip-pulse 1.5s infinite;
+        }
+        .worker-chip-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .worker-chip-status {
+            font-size: 9px;
+            margin-top: 2px;
+            color: var(--muted);
+        }
+        .worker-chip.active .worker-chip-status {
+            color: var(--green);
+        }
+        .worker-chip-wus {
+            font-size: 9px;
+            color: var(--blue);
+            margin-top: 2px;
+        }
+        @keyframes chip-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+            50% { transform: scale(1.02); box-shadow: 0 0 8px 2px rgba(16, 185, 129, 0.3); }
+        }
+
         /* ── FOOTER ── */
         .footer { text-align: center; margin-top: 32px; font-size: 12px; color: var(--muted); padding-bottom: 20px; }
         #last-update { color: var(--muted); }
@@ -2355,6 +2597,35 @@ DASHBOARD_HTML = """
             <div class="card-header">📈 PnL Timeline (últimas 24h)</div>
             <div class="chart-wrap">
                 <canvas id="chart-pnl"></canvas>
+            </div>
+        </div>
+
+        <!-- PARALLEL WORKERS GRID -->
+        <div class="section-title">⚡ Workers en Paralelo</div>
+        <div class="parallel-section">
+            <div class="parallel-header">
+                <div class="parallel-title">
+                    <span style="font-size:18px">🖥️</span>
+                    Procesamiento Distribuido en Tiempo Real
+                </div>
+                <div class="parallel-stats">
+                    <div class="parallel-stat">
+                        <div class="parallel-stat-val" id="parallel-active">-</div>
+                        <div class="parallel-stat-lbl">Activos</div>
+                    </div>
+                    <div class="parallel-stat">
+                        <div class="parallel-stat-val" id="parallel-machines">-</div>
+                        <div class="parallel-stat-lbl">Máquinas</div>
+                    </div>
+                    <div class="parallel-stat">
+                        <div class="parallel-stat-val" id="parallel-wus">-</div>
+                        <div class="parallel-stat-lbl">WUs Paralelo</div>
+                    </div>
+                </div>
+            </div>
+            <div class="machines-grid" id="machines-grid">
+                <!-- Filled by JavaScript -->
+                <div style="color:var(--muted);text-align:center;padding:20px;grid-column:1/-1">Cargando workers...</div>
             </div>
         </div>
 
@@ -2551,14 +2822,16 @@ function fmtMin(m) {
 // ── Main update ─────────────────────────────────────────────────
 async function updateDashboard() {
     try {
-        const [statusRes, dashRes, resultsRes] = await Promise.all([
+        const [statusRes, dashRes, resultsRes, parallelRes] = await Promise.all([
             fetch('/api/status'),
             fetch('/api/dashboard_stats'),
-            fetch('/api/results?limit=10')
+            fetch('/api/results?limit=10'),
+            fetch('/api/parallel_activity')
         ]);
         const status  = await statusRes.json();
         const dash    = await dashRes.json();
         const resData = await resultsRes.json();
+        const parallel = await parallelRes.json();
 
         document.getElementById('status-dot').className = 'status-dot';
 
@@ -2764,6 +3037,44 @@ async function updateDashboard() {
         document.getElementById('cap-total-tests').textContent = totalResults.toLocaleString();
         document.getElementById('cap-simulated').textContent = '$' + fmt(simulatedCapital, 0);
         document.getElementById('cap-compute-time').textContent = fmt(totalComputeTime, 0) + 's';
+
+        // ── Parallel Workers Grid ──
+        if (parallel) {
+            // Update stats
+            document.getElementById('parallel-active').textContent = parallel.total_active || 0;
+            document.getElementById('parallel-machines').textContent = (parallel.workers_by_machine || []).length;
+            document.getElementById('parallel-wus').textContent = parallel.parallelism_level || 0;
+
+            // Render machines grid
+            const machinesGrid = document.getElementById('machines-grid');
+            const machines = parallel.workers_by_machine || [];
+
+            if (machines.length > 0) {
+                machinesGrid.innerHTML = machines.map(m => {
+                    const workersHtml = (m.workers || []).map(w => {
+                        const activeClass = w.is_active ? 'active' : '';
+                        const statusIcon = w.is_active ? '🟢' : '○';
+                        const statusText = w.is_active ? 'Activo' : 'Idle';
+                        return `<div class="worker-chip ${activeClass}">
+                            <div class="worker-chip-name">${w.name}</div>
+                            <div class="worker-chip-status">${statusIcon} ${statusText}</div>
+                            <div class="worker-chip-wus">${(w.work_units_completed || 0).toLocaleString()} WUs</div>
+                        </div>`;
+                    }).join('');
+
+                    return `<div class="machine-card" style="--machine-color:${m.color}">
+                        <div class="machine-header">
+                            <div class="machine-dot"></div>
+                            <div class="machine-name">${m.name}</div>
+                            <div class="machine-count">(${(m.workers || []).length} workers)</div>
+                        </div>
+                        <div class="workers-grid">${workersHtml}</div>
+                    </div>`;
+                }).join('');
+            } else {
+                machinesGrid.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;grid-column:1/-1">Sin workers activos</div>';
+            }
+        }
         document.getElementById('cap-compute-hours').textContent = fmt(computeHours, 1) + ' horas';
 
         document.getElementById('last-update').textContent =
@@ -3023,6 +3334,115 @@ def api_futures_status():
         'futures_work_units': futures_wu,
         'futures_results': futures_results,
         'available_data_files': len(FUTURES_DATA_FILES)
+    })
+
+@app.route('/api/parallel_activity', methods=['GET'])
+def api_parallel_activity():
+    """
+    Retorna información en tiempo real sobre procesamiento paralelo.
+    Usado para visualización de workers trabajando simultáneamente.
+    """
+    import time
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    now_unix = time.time()
+
+    # Get active workers (last 60 seconds)
+    c.execute("""SELECT id, hostname, last_seen, work_units_completed, total_execution_time
+                 FROM workers
+                 WHERE (strftime('%s', 'now') - last_seen) < 60
+                 ORDER BY hostname, id""")
+    active_workers = []
+    for row in c.fetchall():
+        wid = row['id']
+        _base = wid.rsplit('_W', 1)[0] if '_W' in wid else wid
+        for _sfx in ('_Darwin', '_Linux', '_Windows'):
+            if _base.endswith(_sfx):
+                _base = _base[:-len(_sfx)]
+                break
+        _base = _base.replace('.local', '')
+        _inst = wid.rsplit('_W', 1)[1] if '_W' in wid else ''
+        worker_num = int(_inst) if _inst.isdigit() else 1
+
+        # Determine machine type for visualization
+        _wid_l = wid.lower()
+        if 'macbook-pro' in _wid_l:
+            machine = 'MacBook Pro'
+            machine_color = '#3b82f6'  # blue
+        elif 'macbook-air' in _wid_l:
+            machine = 'MacBook Air'
+            machine_color = '#8b5cf6'  # purple
+        elif 'rog' in _wid_l:
+            machine = 'Linux ROG'
+            machine_color = '#ef4444'  # red
+        elif 'enderj' in _wid_l and 'linux' in _wid_l:
+            machine = 'Asus Dorada'
+            machine_color = '#f59e0b'  # amber
+        else:
+            machine = 'Other'
+            machine_color = '#6b7280'  # gray
+
+        last_seen_ago = now_unix - (row['last_seen'] or 0)
+
+        active_workers.append({
+            'id': wid,
+            'name': f"{_base} W{worker_num}",
+            'machine': machine,
+            'machine_color': machine_color,
+            'worker_num': worker_num,
+            'last_seen_ago': round(last_seen_ago, 1),
+            'is_active': last_seen_ago < 30,
+            'work_units_completed': row['work_units_completed'],
+            'total_time_hours': round((row['total_execution_time'] or 0) / 3600, 1)
+        })
+
+    # Get currently in-progress WUs
+    c.execute("""SELECT id, replicas_needed, replicas_assigned, replicas_completed
+                 FROM work_units
+                 WHERE status IN ('assigned', 'in_progress')
+                 AND replicas_assigned > replicas_completed
+                 ORDER BY id DESC
+                 LIMIT 20""")
+    in_progress = []
+    for row in c.fetchall():
+        in_progress.append({
+            'work_unit_id': row['id'],
+            'replicas_needed': row['replicas_needed'],
+            'replicas_assigned': row['replicas_assigned'],
+            'replicas_completed': row['replicas_completed'],
+            'progress_pct': round((row['replicas_completed'] / row['replicas_needed']) * 100, 1) if row['replicas_needed'] > 0 else 0
+        })
+
+    # Recent results (last 2 minutes) for activity sparkline
+    c.execute("""SELECT COUNT(*),
+                        CAST((submitted_at - 0.5) * 288 AS INT) as minute_bucket
+                 FROM results
+                 WHERE submitted_at > (julianday('now') - 0.0014)  -- ~2 minutes
+                 GROUP BY minute_bucket
+                 ORDER BY minute_bucket DESC
+                 LIMIT 10""")
+    activity_timeline = [row[0] for row in c.fetchall()]
+
+    # Group workers by machine for visualization
+    machines = {}
+    for w in active_workers:
+        m = w['machine']
+        if m not in machines:
+            machines[m] = {'name': m, 'color': w['machine_color'], 'workers': []}
+        machines[m]['workers'].append(w)
+
+    conn.close()
+
+    return jsonify({
+        'active_workers': active_workers,
+        'workers_by_machine': list(machines.values()),
+        'total_active': len(active_workers),
+        'in_progress_wus': in_progress,
+        'parallelism_level': len(in_progress),  # How many WUs being processed simultaneously
+        'activity_timeline': activity_timeline,
+        'timestamp': now_unix
     })
 
 # ============================================================================
