@@ -532,10 +532,13 @@ def get_and_assign_work():
 
         # Buscar work units que necesitan más réplicas ASIGNADAS (no completadas)
         # La clave es usar replicas_assigned < replicas_needed para evitar
-        # que múltiples workers obtengan el mismo WU
+        # que múltiples workers obtengan el mismo WU.
+        # CRÍTICO: filtrar status != 'completed' para evitar re-asignar WUs
+        # que tienen corrupción de datos (replicas_assigned=0 pero ya completadas).
         c.execute("""SELECT id, strategy_params, replicas_needed, replicas_assigned, replicas_completed
             FROM work_units
             WHERE replicas_assigned < replicas_needed
+              AND status != 'completed'
             ORDER BY created_at ASC
             LIMIT 1""")
 
