@@ -1102,17 +1102,20 @@ def api_dashboard_stats():
     c.execute("SELECT AVG(pnl) FROM results WHERE pnl > 0 AND pnl < 5000 AND trades >= 10")
     avg_pnl = c.fetchone()[0] or 0
 
-    # PnL timeline - last 24 hours (only valid results)
-    c.execute("SELECT pnl, submitted_at, work_unit_id, worker_id, is_canonical FROM results WHERE submitted_at > (julianday('now') - 1) AND pnl > -10000 AND pnl < 10000 ORDER BY submitted_at DESC")
+    # PnL timeline - últimos 500 resultados (chart usa solo 200, más que suficiente)
+    c.execute("""SELECT pnl, submitted_at, work_unit_id, worker_id, is_canonical
+                 FROM results
+                 WHERE submitted_at > (julianday('now') - 1)
+                   AND pnl > -10000 AND pnl < 10000
+                 ORDER BY submitted_at DESC
+                 LIMIT 500""")
     pnl_timeline = []
     for row in c.fetchall():
         # Convert Julian day to Unix timestamp
-        # Unix epoch = JD 2440587.5 (Jan 1, 1970 00:00 UTC)
         unix_ts = (row[1] - 2440587.5) * 86400
         pnl_timeline.append({
-            'pnl': row[0], 
+            'pnl': row[0],
             'timestamp': unix_ts,
-            'submitted_at_unix': unix_ts,
             'work_unit_id': row[2],
             'worker_id': row[3],
             'is_canonical': bool(row[4])
