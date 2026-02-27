@@ -3020,96 +3020,146 @@ elif nav_mode == "🌐 Sistema Distribuido":
                     parallel_resp = requests.get(f"{COORDINATOR_URL}/api/parallel_activity", timeout=5)
                     if parallel_resp.status_code == 200:
                         parallel_data = parallel_resp.json()
+                        machines      = parallel_data.get('workers_by_machine', [])
+                        timeline      = parallel_data.get('activity_timeline', [])
+                        in_progress   = parallel_data.get('in_progress_wus', [])
+                        total_active  = parallel_data.get('total_active', 0)
+                        parallelism   = parallel_data.get('parallelism_level', 0)
+                        total_recent  = sum(timeline) if timeline else 0
 
-                        # Summary metrics
+                        # --- Summary metrics ---
                         pcol1, pcol2, pcol3, pcol4 = st.columns(4)
                         with pcol1:
-                            st.metric("🔥 Workers Activos", parallel_data.get('total_active', 0), delta="último minuto")
+                            st.metric("🔥 Workers Activos", total_active, delta="último minuto")
                         with pcol2:
-                            st.metric("📊 WUs en Paralelo", parallel_data.get('parallelism_level', 0), delta="procesándose")
+                            st.metric("📊 WUs en Paralelo", parallelism, delta="procesándose")
                         with pcol3:
-                            machines = parallel_data.get('workers_by_machine', [])
                             st.metric("🖥️ Máquinas", len(machines), delta="distribuidas")
                         with pcol4:
-                            timeline = parallel_data.get('activity_timeline', [])
-                            total_recent = sum(timeline) if timeline else 0
                             st.metric("🚀 Resultados/min", total_recent, delta="últimos 2 min")
 
-                        # Workers Grid Visualization
+                        # --- Workers Grid (pure HTML/CSS — un solo bloque) ---
                         st.markdown("##### 🖥️ Grid de Workers en Tiempo Real")
 
-                        # Create visual grid of workers by machine
+                        # Build machine blocks
+                        machines_html = ""
                         for machine_data in machines:
-                            machine_name = machine_data.get('name', 'Unknown')
+                            machine_name  = machine_data.get('name', 'Unknown')
                             machine_color = machine_data.get('color', '#6b7280')
-                            workers = machine_data.get('workers', [])
+                            workers       = machine_data.get('workers', [])
+                            active_count  = sum(1 for w in workers if w.get('is_active'))
 
-                            # Machine header with colored badge
-                            st.markdown(f"""
-                            <div style="display:flex;align-items:center;gap:8px;margin:12px 0 8px 0">
-                                <div style="width:12px;height:12px;border-radius:3px;background:{machine_color}"></div>
-                                <span style="font-weight:600;font-size:14px">{machine_name}</span>
-                                <span style="color:#888;font-size:12px">({len(workers)} workers)</span>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            worker_cards = ""
+                            for w in workers:
+                                is_active  = w.get('is_active', False)
+                                wu_done    = w.get('work_units_completed', 0)
+                                wname      = w.get('name', '?')
+                                last_seen  = w.get('last_seen_ago', 0)
+                                dot        = "●" if is_active else "○"
+                                card_class = "worker-card active" if is_active else "worker-card idle"
+                                last_txt   = f"{last_seen:.0f}s ago"
+                                worker_cards += f"""
+                                <div class="{card_class}">
+                                    <div class="wdot">{dot}</div>
+                                    <div class="wname">{wname}</div>
+                                    <div class="wstat">{wu_done:,} WUs</div>
+                                    <div class="wtime">{last_txt}</div>
+                                </div>"""
 
-                            # Worker cards in a grid
-                            worker_cols = st.columns(min(len(workers), 8))
-                            for i, worker in enumerate(workers):
-                                with worker_cols[i % len(worker_cols)]:
-                                    is_active = worker.get('is_active', False)
-                                    wu_completed = worker.get('work_units_completed', 0)
-                                    worker_name = worker.get('name', '?')
+                            machines_html += f"""
+                            <div class="machine-block">
+                                <div class="machine-hdr">
+                                    <span class="machine-dot" style="background:{machine_color}"></span>
+                                    <span class="machine-name">{machine_name}</span>
+                                    <span class="machine-meta">{active_count}/{len(workers)} activos</span>
+                                </div>
+                                <div class="workers-flex">{worker_cards}</div>
+                            </div>"""
 
-                                    # Pulsing animation for active workers
-                                    status_color = "#10b981" if is_active else "#374151"
-                                    pulse_anim = "animation: pulse 1.5s infinite;" if is_active else ""
-                                    bg_alpha = "0.2" if is_active else "0.1"
+                        # Build WU progress cards
+                        wu_html = ""
+                        for wu in in_progress[:6]:
+                            wu_id     = wu.get('work_unit_id', '?')
+                            progress  = wu.get('progress_pct', 0)
+                            needed    = wu.get('replicas_needed', 1)
+                            completed = wu.get('replicas_completed', 0)
+                            assigned  = wu.get('replicas_assigned', 0)
+                            wu_html += f"""
+                            <div class="wu-card">
+                                <div class="wu-id">WU #{wu_id}</div>
+                                <div class="wu-pct">{progress:.0f}%</div>
+                                <div class="wu-rep">{completed}/{needed} réplicas</div>
+                                <div class="wu-bar-bg">
+                                    <div class="wu-bar-fill" style="width:{progress}%"></div>
+                                </div>
+                                <div class="wu-assigned">{assigned} asignados</div>
+                            </div>"""
 
-                                    st.markdown(f"""
-                                    <div style="
-                                        background: rgba(59, 130, 246, {bg_alpha});
-                                        border: 1px solid {status_color};
-                                        border-radius: 8px;
-                                        padding: 8px;
-                                        text-align: center;
-                                        {pulse_anim}
-                                    ">
-                                        <div style="font-weight:600;font-size:11px;color:{status_color}">{'●' if is_active else '○'}</div>
-                                        <div style="font-size:10px;font-weight:500;margin-top:2px">{worker_name}</div>
-                                        <div style="font-size:9px;color:#888">{wu_completed:,} WUs</div>
-                                    </div>
-                                    <style>
-                                    @keyframes pulse {{
-                                        0%, 100% {{ opacity: 1; transform: scale(1); }}
-                                        50% {{ opacity: 0.7; transform: scale(0.98); }}
-                                    }}
-                                    </style>
-                                    """, unsafe_allow_html=True)
+                        wu_section = f"""
+                        <div class="section-hdr">📊 Work Units en Progreso</div>
+                        <div class="wu-flex">{wu_html}</div>""" if wu_html else ""
 
-                        # In-progress WUs visualization
-                        in_progress = parallel_data.get('in_progress_wus', [])
-                        if in_progress:
-                            st.markdown("##### 📊 Work Units en Progreso")
-                            prog_cols = st.columns(min(len(in_progress), 5))
-                            for i, wu in enumerate(in_progress[:5]):
-                                with prog_cols[i]:
-                                    wu_id = wu.get('work_unit_id', '?')
-                                    progress = wu.get('progress_pct', 0)
-                                    assigned = wu.get('replicas_assigned', 0)
-                                    needed = wu.get('replicas_needed', 1)
-                                    completed = wu.get('replicas_completed', 0)
-
-                                    st.markdown(f"""
-                                    <div style="background:#1e293b;border-radius:8px;padding:10px;text-align:center">
-                                        <div style="font-size:10px;color:#888;margin-bottom:4px">WU #{wu_id}</div>
-                                        <div style="font-size:18px;font-weight:700;color:#3b82f6">{progress:.0f}%</div>
-                                        <div style="font-size:9px;color:#888;margin-top:4px">{completed}/{needed} réplicas</div>
-                                        <div style="background:#374151;border-radius:4px;height:4px;margin-top:6px;overflow:hidden">
-                                            <div style="background:linear-gradient(90deg,#3b82f6,#10b981);height:100%;width:{progress}%"></div>
-                                        </div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <style>
+                        @keyframes wkpulse {{
+                            0%,100% {{ opacity:1; box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }}
+                            50%      {{ opacity:.85; box-shadow: 0 0 0 5px rgba(16,185,129,0); }}
+                        }}
+                        .parallel-grid {{ font-family: sans-serif; }}
+                        .section-hdr {{ font-size:13px; font-weight:600; color:#94a3b8;
+                                        margin: 18px 0 10px 0; text-transform:uppercase;
+                                        letter-spacing:.05em; }}
+                        .machine-block {{ margin-bottom:16px; }}
+                        .machine-hdr {{ display:flex; align-items:center; gap:8px;
+                                        margin-bottom:8px; }}
+                        .machine-dot {{ width:11px; height:11px; border-radius:3px;
+                                        flex-shrink:0; }}
+                        .machine-name {{ font-weight:700; font-size:14px; color:#e2e8f0; }}
+                        .machine-meta {{ font-size:11px; color:#64748b; margin-left:4px; }}
+                        .workers-flex {{ display:flex; flex-wrap:wrap; gap:8px; }}
+                        .worker-card {{
+                            background: #1e293b;
+                            border: 1px solid #334155;
+                            border-radius:10px;
+                            padding:10px 12px;
+                            min-width:110px;
+                            text-align:center;
+                        }}
+                        .worker-card.active {{
+                            background: rgba(16,185,129,0.08);
+                            border-color: #10b981;
+                            animation: wkpulse 2s ease-in-out infinite;
+                        }}
+                        .worker-card.idle {{
+                            opacity: 0.65;
+                        }}
+                        .wdot {{ font-size:14px; margin-bottom:4px; }}
+                        .worker-card.active .wdot {{ color:#10b981; }}
+                        .worker-card.idle  .wdot {{ color:#475569; }}
+                        .wname {{ font-size:10px; font-weight:600; color:#cbd5e1;
+                                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+                        .wstat {{ font-size:9px; color:#3b82f6; margin-top:3px; }}
+                        .wtime {{ font-size:8px; color:#64748b; margin-top:2px; }}
+                        .wu-flex {{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }}
+                        .wu-card {{
+                            background:#1e293b; border-radius:10px;
+                            padding:12px 16px; min-width:130px; text-align:center;
+                            border:1px solid #334155;
+                        }}
+                        .wu-id  {{ font-size:10px; color:#64748b; margin-bottom:4px; }}
+                        .wu-pct {{ font-size:22px; font-weight:800; color:#3b82f6; }}
+                        .wu-rep {{ font-size:9px; color:#94a3b8; margin-top:3px; }}
+                        .wu-bar-bg {{ background:#334155; border-radius:4px; height:4px;
+                                      margin-top:8px; overflow:hidden; }}
+                        .wu-bar-fill {{ background:linear-gradient(90deg,#3b82f6,#10b981);
+                                        height:100%; border-radius:4px; }}
+                        .wu-assigned {{ font-size:8px; color:#64748b; margin-top:4px; }}
+                        </style>
+                        <div class="parallel-grid">
+                            {machines_html}
+                            {wu_section}
+                        </div>
+                        """, unsafe_allow_html=True)
 
                 except Exception as e:
                     st.warning(f"No se pudo obtener datos de actividad paralela: {e}")
