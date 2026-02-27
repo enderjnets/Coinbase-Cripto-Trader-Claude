@@ -30,9 +30,27 @@ echo -e "${BLUE}[1/7] Detectando red...${NC}"
 if curl -s --max-time 2 "$LAN_URL/api/status" > /dev/null 2>&1; then
     COORDINATOR_URL="$LAN_URL"
     echo -e "  ${GREEN}✓ Red local detectada → $COORDINATOR_URL${NC}"
-else
+elif curl -s --max-time 5 "$WAN_URL/api/status" > /dev/null 2>&1; then
     COORDINATOR_URL="$WAN_URL"
-    echo -e "  ${YELLOW}→ Red externa (Tailscale) → $COORDINATOR_URL${NC}"
+    echo -e "  ${GREEN}✓ Tailscale detectado → $COORDINATOR_URL${NC}"
+else
+    echo -e ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║              ❌ ERROR: SIN CONEXIÓN                      ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo -e ""
+    echo -e "${YELLOW}No se pudo conectar al coordinator desde esta red.${NC}"
+    echo -e "${YELLOW}Los workers necesitan Tailscale para conectarse remotamente.${NC}"
+    echo -e ""
+    echo -e "${BOLD}SOLUCIÓN:${NC}"
+    echo -e "  1. Instala Tailscale:"
+    echo -e "     ${BLUE}curl -fsSL https://tailscale.com/install.sh | sh${NC}"
+    echo -e "  2. Inicia sesión con la cuenta que Ender te invite"
+    echo -e "  3. Una vez conectado, vuelve a ejecutar: bash instalar.sh"
+    echo -e ""
+    echo -e "  (Si estás en la red de Ender, verifica que estés en su WiFi)"
+    echo -e ""
+    exit 1
 fi
 
 # ── 2. Auto-detectar CPUs óptimos ──────────────────────────────────────────

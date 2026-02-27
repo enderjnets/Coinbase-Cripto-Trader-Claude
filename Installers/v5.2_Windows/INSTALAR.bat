@@ -30,8 +30,29 @@ if %ERRORLEVEL% GEQ 200 (
     set COORDINATOR_URL=%LAN_URL%
     echo   [OK] Red local detectada: %LAN_URL%
 ) else (
-    set COORDINATOR_URL=%WAN_URL%
-    echo   [->] Red externa (Tailscale): %WAN_URL%
+    powershell -Command "$r = try { (Invoke-WebRequest -Uri '%WAN_URL%/api/status' -TimeoutSec 5 -UseBasicParsing).StatusCode } catch { 0 }; exit $r" >nul 2>&1
+    if %ERRORLEVEL% GEQ 200 (
+        set COORDINATOR_URL=%WAN_URL%
+        echo   [OK] Tailscale detectado: %WAN_URL%
+    ) else (
+        echo.
+        echo  ==============================================================
+        echo    ERROR: SIN CONEXION AL COORDINATOR
+        echo  ==============================================================
+        echo.
+        echo  No se pudo conectar al coordinator desde esta red.
+        echo  Los workers necesitan Tailscale para conectarse remotamente.
+        echo.
+        echo  SOLUCION:
+        echo    1. Instala Tailscale desde: https://tailscale.com/download
+        echo    2. Inicia sesion con la cuenta que Ender te invite
+        echo    3. Una vez conectado, vuelve a ejecutar INSTALAR.bat
+        echo.
+        echo  (Si estas en casa de Ender, verifica que estes en su WiFi^)
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 REM ── 2. Auto-detectar CPUs ────────────────────────────────────────────────

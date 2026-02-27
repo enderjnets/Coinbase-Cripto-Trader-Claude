@@ -26,12 +26,23 @@ INSTALACIÓN EN 3 PASOS
 
   La instalación tarda ~5 minutos y NO requiere conocimientos técnicos.
 
+REQUISITO IMPORTANTE: TAILSCALE
+─────────────────────────────────
+  Si NO estás en la red WiFi de Ender, necesitas Tailscale:
+  → Descarga: https://tailscale.com/download
+  → Pídele a Ender que te invite a su red Tailscale
+  → Una vez instalado y conectado, ejecuta el instalador
+
+  Si estás en casa de Ender (mismo WiFi), no necesitas Tailscale.
+  El instalador te avisará si no puede conectarse.
+
 NOVEDADES v5.2 (respecto a v5.1)
 ──────────────────────────────────
   ✓ Fix crítico: funciona desde cualquier red automáticamente
     (casa, oficina, cafetería, VPN — sin cambios manuales)
   ✓ Re-detecta la ruta óptima al coordinator en cada inicio
   ✓ Más estable: no pierde conexión si cambia de red
+  ✓ Error claro si no hay conexión al coordinator (pide Tailscale)
 
 ¿QUÉ HACE TU COMPUTADORA?
 ───────────────────────────
