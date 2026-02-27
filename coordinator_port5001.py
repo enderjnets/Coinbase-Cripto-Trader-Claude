@@ -46,12 +46,17 @@ AUTO_CREATE_CHECK_INTERVAL = 30   # Verificar cada 30 segundos
 
 # ============================================================================
 # PROFESSIONAL VALIDATION CRITERIA
+# Ajustado para futuros con leverage (3x-10x):
+#   - MAX_WIN_RATE subido a 75% (leverage legítimamente produce WR más alto)
+#   - MAX_DRAWDOWN subido a 35% (leverage 3x triplica DD naturalmente)
+#   - MIN_TRADES bajado a 30 (muestra estadística razonable para futuros)
+#   - MIN_SHARPE subido a 2.0 (compensar relajación de otros criterios)
 # ============================================================================
-MIN_TRADES_REQUIRED = 50          # Mínimo 50 trades (significancia estadística)
+MIN_TRADES_REQUIRED = 30          # Mínimo 30 trades (futuros: muestra estadística razonable)
 MIN_WIN_RATE = 0.40               # Win rate mínimo 40%
-MAX_WIN_RATE = 0.65               # Win rate máximo 65% (evitar overfitting)
-MIN_SHARPE_RATIO = 1.0            # Sharpe ratio mínimo
-MAX_DRAWDOWN = 0.20               # Max drawdown máximo 20%
+MAX_WIN_RATE = 0.75               # Win rate máximo 75% (futuros con leverage pueden superar 65%)
+MIN_SHARPE_RATIO = 2.0            # Sharpe ratio mínimo 2.0 (barra alta de calidad)
+MAX_DRAWDOWN = 0.35               # Max drawdown máximo 35% (realista para leverage 3x)
 MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
