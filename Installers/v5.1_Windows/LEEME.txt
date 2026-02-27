@@ -1,0 +1,80 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v5.1 - Windows
+       Instalador Automático (Un Clic)
+════════════════════════════════════════════════════════════
+
+¿QUÉ HACE ESTE INSTALADOR?
+───────────────────────────
+✓ Detecta automáticamente si estás en casa (LAN) o fuera (Tailscale/WAN)
+✓ Descarga e instala Python 3.11 automáticamente si no está instalado
+✓ Descarga los últimos archivos desde GitHub
+✓ Detecta cuántos CPUs tiene el equipo y lanza el número óptimo de workers
+✓ Configura inicio automático con Task Scheduler (arranca al iniciar sesión)
+✓ Inicia los workers inmediatamente
+
+CÓMO INSTALAR
+──────────────
+1. Haz DOBLE CLIC en "INSTALAR.bat"
+2. Si Windows pregunta "¿Deseas que esta aplicación haga cambios?", haz clic en Sí
+3. La instalación es completamente automática
+4. ¡Listo! Los workers estarán corriendo en menos de 5 minutos
+
+NOTA: Si Windows SmartScreen bloquea el archivo, haz clic en "Más información"
+y luego en "Ejecutar de todas formas".
+
+COMANDOS ÚTILES (después de instalar)
+───────────────────────────────────────
+Abrir carpeta de trabajo:
+  Abre el Explorador de archivos → %USERPROFILE%\crypto_worker
+
+Ver estado de los workers:
+  Haz doble clic en status.bat
+
+Detener todos los workers:
+  Haz doble clic en stop_workers.bat
+
+Reiniciar los workers:
+  Ejecuta stop_workers.bat y luego start_workers.bat
+
+Actualizar a la última versión:
+  Haz doble clic en update.bat
+
+Ver logs:
+  Abre la carpeta %USERPROFILE%\crypto_worker\logs\
+
+REQUISITOS MÍNIMOS
+───────────────────
+• Windows 10 o Windows 11 (64-bit)
+• 4 GB de RAM (8+ recomendado)
+• Conexión a internet
+• Python 3.9+ (se instala automáticamente si no está)
+
+COORDINADOR (donde se envían los resultados)
+─────────────────────────────────────────────
+• Red local  : http://10.0.0.232:5001
+• Tailscale  : http://100.77.179.14:5001  (funciona desde cualquier lugar)
+• Dashboard  : http://10.0.0.232:8501 o http://100.77.179.14:8501
+
+UBICACIÓN DE ARCHIVOS
+──────────────────────
+Instalación  : %USERPROFILE%\crypto_worker\
+Logs         : %USERPROFILE%\crypto_worker\logs\
+Config       : %USERPROFILE%\crypto_worker\config.env
+Auto-inicio  : Task Scheduler → "BittraderWorkers"
+
+VERIFICAR TAREA AUTOMÁTICA
+───────────────────────────
+1. Abre el Programador de tareas (busca "programador" en el menú Inicio)
+2. Busca la tarea "BittraderWorkers"
+3. Debe aparecer como "Habilitada" y "Al iniciar sesión"
+
+SOLUCIÓN DE PROBLEMAS
+──────────────────────
+• Python no encontrado después de instalar → Reinicia el CMD o la sesión
+• Error de red → Verifica que Windows Firewall no bloquee Python
+• Workers no conectan → Verifica que el coordinador esté activo
+• Desinstalar todo:
+  1. schtasks /delete /tn "BittraderWorkers" /f
+  2. Elimina la carpeta %USERPROFILE%\crypto_worker
+
+════════════════════════════════════════════════════════════

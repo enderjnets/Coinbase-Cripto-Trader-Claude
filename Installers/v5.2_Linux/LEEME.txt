@@ -1,0 +1,51 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v5.2 - Linux
+       Instalador Automático
+════════════════════════════════════════════════════════════
+
+NOVEDADES v5.2
+───────────────
+✓ Fix crítico de conectividad: los workers ahora re-detectan
+  automáticamente la ruta al coordinator en CADA inicio.
+  Funciona desde cualquier red sin configuración manual.
+✓ config.env ya no guarda la URL hardcodeada
+✓ Servicio systemd re-detecta LAN vs Tailscale en cada arranque
+
+¿QUÉ HACE ESTE INSTALADOR?
+───────────────────────────
+✓ Detecta automáticamente si estás en casa (LAN) o fuera (Tailscale)
+✓ Compatible con Ubuntu, Debian, Fedora, Arch y derivados
+✓ Descarga los últimos archivos desde GitHub automáticamente
+✓ Instala Python y todas las dependencias
+✓ Configura inicio automático con systemd (sin login requerido)
+✓ Inicia los workers inmediatamente
+
+CÓMO INSTALAR
+──────────────
+  bash instalar.sh
+
+COMANDOS ÚTILES (después de instalar)
+───────────────────────────────────────
+  cd ~/crypto_worker
+
+  Ver estado       : ./status.sh
+  Detener workers  : ./stop_workers.sh
+  Iniciar workers  : ./start_workers.sh
+  Actualizar       : ./update.sh
+  Ver logs (W1)    : tail -f logs/worker_1.log
+  Servicio systemd : systemctl --user status bittrader-workers
+
+REQUISITOS MÍNIMOS
+───────────────────
+• Ubuntu 20.04+ / Debian 10+ / Fedora 35+ / Arch Linux
+• Python 3.8+ (se instala automáticamente)
+• 4 GB de RAM (8+ recomendado)
+• Conexión a internet
+
+COORDINADOR
+────────────
+• Red local  : http://10.0.0.232:5001   (auto)
+• Tailscale  : http://100.77.179.14:5001 (auto desde cualquier lugar)
+• Dashboard  : http://100.77.179.14:8501
+
+════════════════════════════════════════════════════════════

@@ -1,0 +1,70 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v5.1 - macOS
+       Instalador Automático (Un Clic)
+════════════════════════════════════════════════════════════
+
+¿QUÉ HACE ESTE INSTALADOR?
+───────────────────────────
+✓ Detecta automáticamente si estás en casa (LAN) o fuera (Tailscale/WAN)
+✓ Descarga los últimos archivos desde GitHub
+✓ Instala Python y todas las dependencias automáticamente
+✓ Detecta cuántos CPUs tiene tu Mac y lanza el número óptimo de workers
+✓ Configura inicio automático al encender el Mac (LaunchAgent)
+✓ Inicia los workers inmediatamente
+
+CÓMO INSTALAR
+──────────────
+1. Abre esta carpeta en Finder
+2. Haz DOBLE CLIC en "INSTALAR.command"
+3. Si macOS pregunta si abrir terminal, haz clic en "Abrir"
+4. La instalación es completamente automática
+5. ¡Listo! Los workers estarán corriendo en menos de 5 minutos
+
+NOTA: Si macOS bloquea el archivo con "no se puede abrir porque no se puede
+verificar al desarrollador", haz clic derecho → Abrir → Abrir.
+
+COMANDOS ÚTILES (después de instalar)
+───────────────────────────────────────
+Ver estado de los workers:
+  cd ~/crypto_worker && ./status.sh
+
+Detener todos los workers:
+  cd ~/crypto_worker && ./stop_workers.sh
+
+Reiniciar los workers:
+  cd ~/crypto_worker && ./stop_workers.sh && ./start_workers.sh
+
+Actualizar a la última versión:
+  cd ~/crypto_worker && ./update.sh
+
+Ver logs en tiempo real (worker 1):
+  tail -f ~/crypto_worker/logs/worker_1.log
+
+REQUISITOS MÍNIMOS
+───────────────────
+• macOS 11 Big Sur o superior
+• 4 GB de RAM (8+ recomendado)
+• Conexión a internet (solo para instalación y workers remotos)
+• Apple Silicon (M1/M2/M3) o Intel — ambos compatibles
+
+COORDINADOR (donde se envían los resultados)
+─────────────────────────────────────────────
+• Red local  : http://10.0.0.232:5001
+• Tailscale  : http://100.77.179.14:5001  (funciona desde cualquier lugar)
+• Dashboard  : http://10.0.0.232:8501 o http://100.77.179.14:8501
+
+UBICACIÓN DE ARCHIVOS
+──────────────────────
+Instalación : ~/crypto_worker/
+Logs         : ~/crypto_worker/logs/
+Config       : ~/crypto_worker/config.env
+Auto-inicio  : ~/Library/LaunchAgents/com.bittrader.workers.plist
+
+SOLUCIÓN DE PROBLEMAS
+──────────────────────
+• Workers no conectan → Verifica que el coordinador esté activo
+• Error de Python → Ejecuta: brew install python@3.11
+• Sin permisos → Ejecuta: chmod +x ~/crypto_worker/*.sh
+• Desinstalar todo → Ejecuta: launchctl unload ~/Library/LaunchAgents/com.bittrader.workers.plist && rm -rf ~/crypto_worker ~/Library/LaunchAgents/com.bittrader.workers.plist
+
+════════════════════════════════════════════════════════════

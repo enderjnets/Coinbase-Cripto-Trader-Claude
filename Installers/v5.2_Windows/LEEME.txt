@@ -1,0 +1,49 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v5.2 - Windows
+       Instalador Automático (Un Clic)
+════════════════════════════════════════════════════════════
+
+NOVEDADES v5.2
+───────────────
+✓ Fix crítico de conectividad: los workers ahora re-detectan
+  automáticamente la ruta al coordinator en CADA inicio.
+  Funciona desde casa (LAN) o desde cualquier lugar (Tailscale).
+✓ start_workers.bat re-detecta la red disponible en cada arranque
+✓ Sin configuración manual necesaria
+
+¿QUÉ HACE ESTE INSTALADOR?
+───────────────────────────
+✓ Detecta automáticamente red local o Tailscale
+✓ Descarga los últimos archivos desde GitHub
+✓ Instala Python 3.11 automáticamente si no está instalado
+✓ Detecta cuántos CPUs tiene el equipo y lanza el número óptimo
+✓ Configura inicio automático con Task Scheduler (al iniciar sesión)
+✓ Inicia los workers inmediatamente
+
+CÓMO INSTALAR
+──────────────
+1. Haz DOBLE CLIC en "INSTALAR.bat"
+2. Si Windows pregunta si permitir cambios, haz clic en "Sí"
+3. La instalación es completamente automática (~5-10 minutos)
+
+COMANDOS ÚTILES (desde %USERPROFILE%\crypto_worker)
+─────────────────────────────────────────────────────
+  Ver estado       : status.bat
+  Detener workers  : stop_workers.bat
+  Iniciar workers  : start_workers.bat
+  Actualizar       : update.bat
+
+REQUISITOS MÍNIMOS
+───────────────────
+• Windows 10/11 (64-bit)
+• 4 GB de RAM (8+ recomendado)
+• Conexión a internet
+• Python 3.11 (se instala automáticamente si no está)
+
+COORDINADOR
+────────────
+• Red local  : http://10.0.0.232:5001   (auto)
+• Tailscale  : http://100.77.179.14:5001 (auto desde cualquier lugar)
+• Dashboard  : http://100.77.179.14:8501
+
+════════════════════════════════════════════════════════════

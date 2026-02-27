@@ -1,0 +1,80 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v5.1 - Linux
+       Instalador Automático
+════════════════════════════════════════════════════════════
+
+¿QUÉ HACE ESTE INSTALADOR?
+───────────────────────────
+✓ Detecta automáticamente si estás en casa (LAN) o fuera (Tailscale/WAN)
+✓ Descarga los últimos archivos desde GitHub
+✓ Instala Python y todas las dependencias (apt/dnf/pacman/zypper)
+✓ Detecta cuántos CPUs tiene el equipo y lanza el número óptimo de workers
+✓ Configura inicio automático con systemd (arranca con el sistema)
+✓ Inicia los workers inmediatamente
+
+CÓMO INSTALAR
+──────────────
+Opción A — Una sola línea (recomendado):
+  bash instalar.sh
+
+Opción B — Si quieres forzar LAN o WAN:
+  COORDINATOR_URL=http://10.0.0.232:5001 bash instalar.sh
+
+Opción C — Especificar número de workers:
+  NUM_WORKERS=6 bash instalar.sh
+
+La instalación es completamente automática y tarda ~3 minutos.
+
+COMANDOS ÚTILES (después de instalar)
+───────────────────────────────────────
+Ver estado de los workers:
+  cd ~/crypto_worker && ./status.sh
+
+Detener todos los workers:
+  cd ~/crypto_worker && ./stop_workers.sh
+
+Reiniciar los workers:
+  cd ~/crypto_worker && ./stop_workers.sh && ./start_workers.sh
+
+Actualizar a la última versión:
+  cd ~/crypto_worker && ./update.sh
+
+Ver logs en tiempo real (worker 1):
+  tail -f ~/crypto_worker/logs/worker_1.log
+
+Control del servicio systemd:
+  systemctl --user status bittrader-workers
+  systemctl --user restart bittrader-workers
+  systemctl --user stop bittrader-workers
+
+REQUISITOS MÍNIMOS
+───────────────────
+• Linux con Ubuntu/Debian/Fedora/Arch/openSUSE (64-bit)
+• 4 GB de RAM (8+ recomendado)
+• Acceso sudo (para instalar Python si no existe)
+• Conexión a internet
+
+COORDINADOR (donde se envían los resultados)
+─────────────────────────────────────────────
+• Red local  : http://10.0.0.232:5001
+• Tailscale  : http://100.77.179.14:5001  (funciona desde cualquier lugar)
+• Dashboard  : http://10.0.0.232:8501 o http://100.77.179.14:8501
+
+UBICACIÓN DE ARCHIVOS
+──────────────────────
+Instalación  : ~/crypto_worker/
+Logs         : ~/crypto_worker/logs/
+Config       : ~/crypto_worker/config.env
+Servicio     : ~/.config/systemd/user/bittrader-workers.service
+
+SOLUCIÓN DE PROBLEMAS
+──────────────────────
+• Error de permisos sudo → Ejecuta con: sudo bash instalar.sh
+• systemd no disponible → Usa cron: crontab -e → @reboot ~/crypto_worker/start_workers.sh
+• Workers no conectan → Verifica que el coordinador esté activo
+• Desinstalar todo:
+  systemctl --user disable --now bittrader-workers
+  rm -rf ~/crypto_worker ~/.config/systemd/user/bittrader-workers.service
+  systemctl --user daemon-reload
+
+════════════════════════════════════════════════════════════

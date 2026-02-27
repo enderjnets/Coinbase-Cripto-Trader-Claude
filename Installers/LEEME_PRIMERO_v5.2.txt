@@ -1,0 +1,75 @@
+════════════════════════════════════════════════════════════════════
+         BITTRADER WORKER v5.2 — LEE ESTO PRIMERO
+════════════════════════════════════════════════════════════════════
+
+¡Gracias por unirte al proyecto Bittrader!
+Tu computadora ayudará a descubrir estrategias de trading rentables
+usando un algoritmo genético distribuido. ¡Es como BOINC pero para
+criptomonedas!
+
+ELIGE TU SISTEMA OPERATIVO
+────────────────────────────
+  📁 v5.2_macOS/    → Si tienes una Mac (M1, M2, M3 o Intel)
+                       Doble clic en INSTALAR.command
+
+  📁 v5.2_Linux/    → Si tienes Ubuntu, Debian, Fedora, Arch, etc.
+                       Ejecuta: bash instalar.sh
+
+  📁 v5.2_Windows/  → Si tienes Windows 10 o 11
+                       Doble clic en INSTALAR.bat
+
+INSTALACIÓN EN 3 PASOS
+────────────────────────
+  1. Abre la carpeta de tu sistema operativo
+  2. Ejecuta el instalador (doble clic o bash instalar.sh)
+  3. ¡Listo! Los workers se inician solos
+
+  La instalación tarda ~5 minutos y NO requiere conocimientos técnicos.
+
+NOVEDADES v5.2 (respecto a v5.1)
+──────────────────────────────────
+  ✓ Fix crítico: funciona desde cualquier red automáticamente
+    (casa, oficina, cafetería, VPN — sin cambios manuales)
+  ✓ Re-detecta la ruta óptima al coordinator en cada inicio
+  ✓ Más estable: no pierde conexión si cambia de red
+
+¿QUÉ HACE TU COMPUTADORA?
+───────────────────────────
+  • Recibe paquetes de trabajo (Work Units) del servidor central
+  • Ejecuta backtests de estrategias de trading con datos reales
+  • Envía los resultados de vuelta al coordinator
+  • Se reinicia automáticamente cuando hay nuevo trabajo
+  • NO tiene acceso a tu dinero, cuentas bancarias ni datos personales
+  • Solo usa CPU (sin GPU requerida)
+
+DASHBOARD (ver resultados en tiempo real)
+──────────────────────────────────────────
+  http://100.77.179.14:8501
+
+  Puedes ver desde cualquier parte del mundo:
+  • Cuántos workers están activos
+  • Las mejores estrategias encontradas
+  • Progreso del sistema
+
+PREGUNTAS FRECUENTES
+─────────────────────
+  ¿Consume mucha electricidad?
+  → Los workers usan prioridad baja (idle), no afectan tu trabajo diario.
+
+  ¿Se puede desinstalar fácilmente?
+  → Sí. macOS: rm -rf ~/crypto_worker + remover LaunchAgent
+       Linux:  systemctl --user disable bittrader-workers && rm -rf ~/crypto_worker
+       Windows: Eliminar tarea "BittraderWorkers" en Task Scheduler + rm %USERPROFILE%\crypto_worker
+
+  ¿Qué pasa si apago mi computadora?
+  → Los workers se reanudan automáticamente al encender.
+
+  ¿Necesito dejar la computadora encendida?
+  → Cuanto más tiempo, más WUs procesas. Mínimo útil: 2 horas/día.
+
+CONTACTO
+─────────
+  Si tienes problemas, comparte el contenido de:
+  ~/crypto_worker/logs/worker_1.log
+
+════════════════════════════════════════════════════════════════════
