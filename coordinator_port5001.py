@@ -46,18 +46,21 @@ AUTO_CREATE_CHECK_INTERVAL = 30   # Verificar cada 30 segundos
 
 # ============================================================================
 # PROFESSIONAL VALIDATION CRITERIA
-# Ajustado para futuros con leverage (3x-10x):
-#   - MAX_WIN_RATE subido a 75% (leverage legítimamente produce WR más alto)
-#   - MAX_DRAWDOWN subido a 35% (leverage 3x triplica DD naturalmente)
-#   - MIN_TRADES bajado a 30 (muestra estadística razonable para futuros)
-#   - MIN_SHARPE subido a 2.0 (compensar relajación de otros criterios)
+# Ajustado para futuros con leverage (3x-10x) con controles anti-overfitting:
+#   - MAX_WIN_RATE 75%: leverage produce WR más alto legítimamente
+#   - MAX_DRAWDOWN 35%: leverage 3x triplica DD naturalmente
+#   - MIN_TRADES 50: mínimo estadístico para confianza real
+#   - MIN_SHARPE 2.0 / MAX_SHARPE 8.0: Sharpe >8 = señal clara de overfitting
+#   - MIN_BACKTEST_DAYS 14: al menos 2 semanas de datos históricos
 # ============================================================================
-MIN_TRADES_REQUIRED = 30          # Mínimo 30 trades (futuros: muestra estadística razonable)
+MIN_TRADES_REQUIRED = 50          # Mínimo 50 trades (significancia estadística real)
 MIN_WIN_RATE = 0.40               # Win rate mínimo 40%
 MAX_WIN_RATE = 0.75               # Win rate máximo 75% (futuros con leverage pueden superar 65%)
-MIN_SHARPE_RATIO = 2.0            # Sharpe ratio mínimo 2.0 (barra alta de calidad)
+MIN_SHARPE_RATIO = 2.0            # Sharpe ratio mínimo 2.0
+MAX_SHARPE_RATIO = 8.0            # Sharpe máximo 8.0 (>8 = overfitting a ventana corta)
 MAX_DRAWDOWN = 0.35               # Max drawdown máximo 35% (realista para leverage 3x)
 MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
+MIN_BACKTEST_DAYS = 14            # Mínimo 14 días de datos (ONE_MIN≥20160, FIVE_MIN≥4032 candles)
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
 MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
@@ -745,7 +748,7 @@ def api_status():
     c.execute("SELECT COUNT(*) as active FROM workers WHERE (strftime('%s', 'now') - last_seen) < 300")
     active_workers = c.fetchone()['active']
 
-    # Mejor estrategia (que pase criterios de validación)
+    # Mejor estrategia (que pase criterios de validación anti-overfitting)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
@@ -754,9 +757,14 @@ def api_status():
         AND r.win_rate >= ?
         AND r.win_rate <= ?
         AND r.sharpe_ratio >= ?
+        AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ?
-        ORDER BY r.sharpe_ratio DESC, r.pnl DESC
-        LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE, MIN_SHARPE_RATIO, MAX_DRAWDOWN))
+        AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
+             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0 ELSE 288.0 END
+            ) >= ?
+        ORDER BY r.pnl DESC
+        LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
+                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MIN_BACKTEST_DAYS))
 
     best = c.fetchone()
     is_validated = best is not None  # True si pasó validación
@@ -799,7 +807,9 @@ def api_status():
             'min_win_rate': MIN_WIN_RATE,
             'max_win_rate': MAX_WIN_RATE,
             'min_sharpe': MIN_SHARPE_RATIO,
+            'max_sharpe': MAX_SHARPE_RATIO,
             'max_drawdown': MAX_DRAWDOWN,
+            'min_backtest_days': MIN_BACKTEST_DAYS,
             'max_overfit_score': MAX_OVERFIT_SCORE
         },
         'timestamp': time.time()
@@ -1129,7 +1139,7 @@ def api_dashboard_stats():
                  ORDER BY bucket_start ASC""")
     completion_timeline = [{'hour_unix': (row[1] - 2440587.5) * 86400, 'count': row[0]} for row in c.fetchall()]
     
-    # Best strategy (que pase criterios de validación)
+    # Best strategy (que pase criterios de validación anti-overfitting)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
@@ -1138,9 +1148,14 @@ def api_dashboard_stats():
         AND r.win_rate >= ?
         AND r.win_rate <= ?
         AND r.sharpe_ratio >= ?
+        AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ?
-        ORDER BY r.sharpe_ratio DESC, r.pnl DESC
-        LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE, MIN_SHARPE_RATIO, MAX_DRAWDOWN))
+        AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
+             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0 ELSE 288.0 END
+            ) >= ?
+        ORDER BY r.pnl DESC
+        LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
+                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MIN_BACKTEST_DAYS))
     best_row = c.fetchone()
     is_validated = best_row is not None  # True si pasó validación
 
