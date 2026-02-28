@@ -1337,9 +1337,9 @@ def api_dashboard_stats():
             json_extract(w.strategy_params, '$.data_file') as data_file,
             COUNT(DISTINCT w.id) as total_wus,
             COUNT(DISTINCT CASE WHEN w.status='completed' THEN w.id END) as completed,
-            AVG(CASE WHEN r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as avg_pnl,
-            MAX(CASE WHEN r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as max_pnl,
-            SUM(CASE WHEN r.trades >= 10 THEN r.trades END) as total_trades,
+            AVG(CASE WHEN r.is_canonical=1 AND r.is_overfitted=0 AND r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as avg_pnl,
+            MAX(CASE WHEN r.is_canonical=1 AND r.is_overfitted=0 AND r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as max_pnl,
+            SUM(CASE WHEN r.is_canonical=1 AND r.trades >= 10 THEN r.trades END) as total_trades,
             SUM(r.execution_time) as total_time
         FROM work_units w
         LEFT JOIN results r ON w.id = r.work_unit_id
@@ -2609,7 +2609,7 @@ DASHBOARD_HTML = """
             <div class="goal-metric">
                 <div class="goal-metric-val" id="gm-drawdown" style="color:var(--yellow)">-%</div>
                 <div class="goal-metric-lbl">Max Drawdown</div>
-                <div class="goal-metric-target">límite ≤ 10%</div>
+                <div class="goal-metric-target">límite ≤ 35%</div>
             </div>
         </div>
 
@@ -2707,6 +2707,7 @@ DASHBOARD_HTML = """
                         <th>Win Rate</th>
                         <th>Sharpe</th>
                         <th>Max DD</th>
+                        <th>Estado</th>
                         <th>Worker</th>
                     </tr>
                 </thead>
@@ -2763,7 +2764,7 @@ DASHBOARD_HTML = """
         <div class="kpi" style="--accent:var(--green)">
             <div class="kpi-label">Tiempo Total Cómputo</div>
             <div class="kpi-value" id="cap-compute-time">-</div>
-            <div class="kpi-sub" id="cap-compute-hours">- horas</div>
+            <div class="kpi-sub" id="cap-compute-hours">horas procesadas</div>
         </div>
     </div>
 
@@ -2866,7 +2867,7 @@ async function updateDashboard() {
         const [statusRes, dashRes, resultsRes, parallelRes] = await Promise.all([
             fetch('/api/status'),
             fetch('/api/dashboard_stats'),
-            fetch('/api/results?limit=10'),
+            fetch('/api/results?limit=10&overfitted=0'),
             fetch('/api/parallel_activity')
         ]);
         const status  = await statusRes.json();
@@ -2975,7 +2976,7 @@ async function updateDashboard() {
             const ddEl = document.getElementById('gm-drawdown');
             const dd = (best.max_drawdown || 0) * 100;
             ddEl.textContent = fmt(dd, 1) + '%';
-            ddEl.style.color = dd <= 10 ? 'var(--green)' : dd <= 25 ? 'var(--yellow)' : 'var(--red)';
+            ddEl.style.color = dd <= 20 ? 'var(--green)' : dd <= 35 ? 'var(--yellow)' : 'var(--red)';
 
             document.getElementById('goal-status-msg').textContent = statusMsg;
         }
@@ -3028,15 +3029,33 @@ async function updateDashboard() {
                 const rankColors = ['#f1c40f','#adb5bd','#cd7f32'];
                 const medal = i < 3 ? `<span style="color:${rankColors[i]}">●</span> ` : '';
                 const pnlColor = r.pnl > 0 ? 'var(--green)' : 'var(--red)';
-                const ddVal = r.max_drawdown != null ? ((r.max_drawdown) * 100).toFixed(1) + '%' : '-';
+                const dd = r.max_drawdown != null ? r.max_drawdown * 100 : null;
+                const ddVal = dd != null ? dd.toFixed(1) + '%' : '-';
+                const ddColor = dd == null ? 'var(--muted)' : dd <= 35 ? 'var(--green)' : 'var(--red)';
+                const tradesOk  = r.trades >= 50;
+                const wrOk      = r.win_rate >= 0.4 && r.win_rate <= 0.75;
+                const sharpeOk  = r.sharpe_ratio >= 2.0 && r.sharpe_ratio <= 8.0;
+                const ddOk      = dd != null && dd <= 35;
+                const isValid   = tradesOk && wrOk && sharpeOk && ddOk;
+                const validBadge = isValid
+                    ? '<span class="badge badge-green" title="Pasa todos los criterios de validación">✓ válida</span>'
+                    : (() => {
+                        const fails = [];
+                        if (!tradesOk)  fails.push('trades<50');
+                        if (!wrOk)      fails.push('WR fuera rango');
+                        if (!sharpeOk)  fails.push('Sharpe fuera rango');
+                        if (!ddOk)      fails.push('DD>35%');
+                        return `<span class="badge badge-red" title="${fails.join(', ')}">✗ no válida</span>`;
+                    })();
                 return `<tr>
                     <td style="color:var(--muted)">${medal}${i+1}</td>
                     <td style="color:var(--blue)">#${r.work_id}</td>
                     <td style="color:${pnlColor};font-weight:600">$${fmt(r.pnl, 2)}</td>
-                    <td>${r.trades}</td>
-                    <td>${(r.win_rate * 100).toFixed(1)}%</td>
-                    <td>${r.sharpe_ratio ? fmt(r.sharpe_ratio, 2) : '-'}</td>
-                    <td style="color:var(--yellow)">${ddVal}</td>
+                    <td style="color:${tradesOk?'var(--green)':'var(--red)'}">${r.trades}</td>
+                    <td style="color:${wrOk?'var(--green)':'var(--red)'}">${(r.win_rate * 100).toFixed(1)}%</td>
+                    <td style="color:${sharpeOk?'var(--green)':'var(--red)'}">${r.sharpe_ratio ? fmt(r.sharpe_ratio, 2) : '-'}</td>
+                    <td style="color:${ddColor}">${ddVal}</td>
+                    <td>${validBadge}</td>
                     <td style="font-size:11px;color:var(--muted)">${(()=>{const w=r.worker_id||'';const b=w.replace(/_W\d+$/,'').replace(/_Darwin$|_Linux$|_Windows$/,'').replace('.local','');const m=w.match(/_W(\d+)$/);return(b+(m?' W'+m[1]:''))||w;})()} </td>
                 </tr>`;
             }).join('');
@@ -3077,7 +3096,7 @@ async function updateDashboard() {
 
         document.getElementById('cap-total-tests').textContent = totalResults.toLocaleString();
         document.getElementById('cap-simulated').textContent = '$' + fmt(simulatedCapital, 0);
-        document.getElementById('cap-compute-time').textContent = fmt(totalComputeTime, 0) + 's';
+        document.getElementById('cap-compute-time').textContent = fmt(computeHours, 1) + 'h';
 
         // ── Parallel Workers Grid ──
         if (parallel) {
