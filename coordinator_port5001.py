@@ -2704,6 +2704,7 @@ DASHBOARD_HTML = """
                     <tr>
                         <th>#</th>
                         <th>WU ID</th>
+                        <th>Activo</th>
                         <th>PnL</th>
                         <th>Trades</th>
                         <th>Win Rate</th>
@@ -2714,7 +2715,7 @@ DASHBOARD_HTML = """
                     </tr>
                 </thead>
                 <tbody id="results-body">
-                    <tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">Cargando...</td></tr>
+                    <tr><td colspan="10" style="color:var(--muted);text-align:center;padding:20px">Cargando...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -3039,8 +3040,27 @@ async function updateDashboard() {
             if (results.length >= 10) break;
         }
 
+        // Extrae nombre legible del activo desde strategy_params
+        function getAssetLabel(sp) {
+            const df = sp.data_file || '';
+            const contracts = sp.contracts || [];
+            const src = df || (Array.isArray(contracts) ? contracts[0] : String(contracts));
+            const ticker = src.split(/[-_]/)[0].toUpperCase();
+            const nameMap = {
+                'ET':'ETH', 'ETP':'ETH⊥', 'BIT':'BTC', 'LC':'LTC', 'SLP':'SOL⊥',
+                'LCP':'LCP', 'MC':'SP500', 'NGS':'NGS', 'HED':'HED', 'AVP':'AVAX',
+                'AVA':'AVAX⊥', 'XLP':'XLM', 'DOP':'DOGE', 'ADP':'ADA', 'HEP':'HEP',
+                'LNP':'LNP', 'PT':'PT', 'BTC':'BTC', 'ETH':'ETH', 'SOL':'SOL',
+                'XRP':'XRP', 'ADA':'ADA', 'DOGE':'DOGE', 'AVAX':'AVAX', 'DOT':'DOT',
+                'LINK':'LINK', 'LTC':'LTC', 'ATOM':'ATOM', 'SUI':'SUI'
+            };
+            const isFutures = src.includes('-CDE') || src.includes('contracts');
+            const name = nameMap[ticker] || ticker;
+            return { name, isFutures, full: src };
+        }
+
         if (results.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Sin resultados canónicos</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" style="color:var(--muted);text-align:center;padding:20px">Sin resultados canónicos</td></tr>';
         } else {
             tbody.innerHTML = results.map((r, i) => {
                 const rankColors = ['#f1c40f','#adb5bd','#cd7f32'];
@@ -3048,7 +3068,7 @@ async function updateDashboard() {
                 const pnlColor = r.pnl > 0 ? 'var(--green)' : 'var(--red)';
                 const dd = r.max_drawdown != null ? r.max_drawdown * 100 : null;
                 const ddVal = dd != null ? dd.toFixed(1) + '%' : '-';
-                const ddColor = dd == null ? 'var(--muted)' : dd <= 35 ? 'var(--green)' : 'var(--red)';
+                const ddColor = dd == null ? 'var(--muted)' : dd <= 50 ? 'var(--green)' : 'var(--red)';
                 const tradesOk  = r.trades >= 20;
                 const wrOk      = r.win_rate >= 0.4 && r.win_rate <= 0.75;
                 const sharpeOk  = r.sharpe_ratio >= 1.5 && r.sharpe_ratio <= 20.0;
@@ -3064,9 +3084,14 @@ async function updateDashboard() {
                         if (!ddOk)      fails.push('DD>50%');
                         return `<span class="badge badge-red" title="${fails.join(', ')}">✗ no válida</span>`;
                     })();
+                const asset = getAssetLabel(r.strategy_params || {});
+                const assetBadge = asset.isFutures
+                    ? `<span title="${asset.full}" style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)">${asset.name}</span>`
+                    : `<span title="${asset.full}" style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3)">${asset.name}</span>`;
                 return `<tr>
                     <td style="color:var(--muted)">${medal}${i+1}</td>
                     <td style="color:var(--blue)">#${r.work_id}</td>
+                    <td>${assetBadge}</td>
                     <td style="color:${pnlColor};font-weight:600">$${fmt(r.pnl, 2)}</td>
                     <td style="color:${tradesOk?'var(--green)':'var(--red)'}">${r.trades}</td>
                     <td style="color:${wrOk?'var(--green)':'var(--red)'}">${(r.win_rate * 100).toFixed(1)}%</td>
