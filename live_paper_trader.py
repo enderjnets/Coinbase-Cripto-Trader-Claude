@@ -40,7 +40,7 @@ except ImportError:
 
 # Fees de Coinbase Advanced (maker/taker)
 DEFAULT_FEE_RATE = 0.004  # 0.4% (maker fee)
-DEFAULT_SLIPPAGE = 0.0005  # 0.05%
+DEFAULT_SLIPPAGE = 0.002   # 0.2% base (realistic for crypto)
 DEFAULT_LATENCY_MS = 100  # 100ms latencia simulada
 
 # WebSocket endpoints
@@ -145,6 +145,13 @@ class LivePaperTrader:
 
         # Load previous state if exists
         self._load_state()
+
+    def _calculate_realistic_slippage(self, price: float, position_value: float) -> float:
+        """Calculate realistic slippage based on position size."""
+        slippage_pct = self.slippage  # 0.2% base
+        if position_value > 10000:
+            slippage_pct += ((position_value - 10000) / 10000) * 0.0005
+        return price * min(slippage_pct, 0.02)  # Cap at 2%
 
     def _load_state(self):
         """Load previous state from file."""
@@ -279,8 +286,9 @@ class LivePaperTrader:
         # Simulate latency
         await asyncio.sleep(DEFAULT_LATENCY_MS / 1000.0)
 
-        # Apply slippage (buy at slightly higher price)
-        fill_price = price * (1 + self.slippage)
+        # Apply realistic slippage (buy at slightly higher price)
+        slippage_amount = self._calculate_realistic_slippage(price, size_usd)
+        fill_price = price + slippage_amount
 
         # Calculate fee
         fee = size_usd * self.fee_rate
@@ -321,8 +329,10 @@ class LivePaperTrader:
         # Simulate latency
         await asyncio.sleep(DEFAULT_LATENCY_MS / 1000.0)
 
-        # Apply slippage (sell at slightly lower price)
-        fill_price = price * (1 - self.slippage)
+        # Apply realistic slippage (sell at slightly lower price)
+        sell_value = self.position['size_crypto'] * price
+        slippage_amount = self._calculate_realistic_slippage(price, sell_value)
+        fill_price = price - slippage_amount
 
         # Calculate proceeds
         gross_proceeds = self.position['size_crypto'] * fill_price

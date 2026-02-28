@@ -46,7 +46,7 @@ except ImportError:
 # Fees de Coinbase Futures (maker/taker)
 DEFAULT_FEE_MAKER = 0.0002  # 0.02%
 DEFAULT_FEE_TAKER = 0.0005  # 0.05%
-DEFAULT_SLIPPAGE = 0.0003   # 0.03%
+DEFAULT_SLIPPAGE = 0.002    # 0.2% (realistic for crypto)
 
 # Margin requirements
 INTRADAY_MARGIN = 0.10     # 10%

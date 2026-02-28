@@ -8,6 +8,7 @@ import os
 import requests
 import time
 import json
+import sqlite3
 import subprocess
 import threading
 
@@ -19,6 +20,7 @@ if not BOT_TOKEN or not CHAT_ID:
     raise ValueError("ERROR: TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID deben estar configurados en .env")
 COORDINATOR_URL = "http://localhost:5001"
 LINUX_HOST = "enderj@10.0.0.240"
+PAPER_DB = "/tmp/paper_trading_pipeline.db"
 
 # Estado
 last_update_id = 0
@@ -105,6 +107,38 @@ def get_macpro_progress():
     except:
         return "No disponible"
 
+def get_paper_status():
+    """Get paper trading status from pipeline DB."""
+    if not os.path.exists(PAPER_DB):
+        return None
+    try:
+        conn = sqlite3.connect(PAPER_DB)
+        c = conn.cursor()
+        c.execute("""SELECT strategy_id, contract, paper_pnl, paper_trades,
+                     paper_winrate, train_pnl, degradation_vs_paper, status
+                     FROM paper_strategies ORDER BY paper_pnl DESC""")
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return None
+
+def get_paper_trades_recent(limit=10):
+    """Get recent paper trades."""
+    if not os.path.exists(PAPER_DB):
+        return None
+    try:
+        conn = sqlite3.connect(PAPER_DB)
+        c = conn.cursor()
+        c.execute("""SELECT strategy_id, contract, direction, entry_price,
+                     exit_price, pnl, timestamp
+                     FROM paper_trades ORDER BY timestamp DESC LIMIT ?""", (limit,))
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return None
+
 def handle_command(text):
     """Procesa comandos"""
     text = text.lower().strip()
@@ -117,6 +151,11 @@ Comandos disponibles:
 /workers - Workers activos
 /progress - Progreso actual
 /linux - Progreso worker Linux
+/paper - Paper trading status
+/paper_trades - Ultimos 10 paper trades
+/paper_compare - Paper vs backtest
+/daily_report - Reporte diario de P&L
+/kill - EMERGENCIA: cerrar todas las posiciones
 /help - Este mensaje"""
 
     elif text == "/status":
@@ -198,6 +237,75 @@ Workers activos: {workers}"""
             return f"<b>Progreso Worker MacBook Pro</b>\n\n<code>{progress}</code>"
         else:
             return "No hay progreso disponible"
+
+    elif text == "/paper":
+        rows = get_paper_status()
+        if not rows:
+            return "No hay paper trading activo."
+        msg = "<b>Paper Trading Status</b>\n\n"
+        total_pnl = 0
+        for r in rows:
+            sid, contract, ppnl, ptrades, pwr, tpnl, deg, status = r
+            ppnl = ppnl or 0
+            ptrades = ptrades or 0
+            icon = "+" if ppnl >= 0 else "-"
+            total_pnl += ppnl
+            msg += f"[{icon}] {sid}\n"
+            msg += f"  PnL: ${ppnl:.2f} | Trades: {ptrades}\n"
+            msg += f"  Status: {status}\n\n"
+        msg += f"<b>Total PnL: ${total_pnl:.2f}</b>"
+        return msg
+
+    elif text == "/paper_trades":
+        rows = get_paper_trades_recent(10)
+        if not rows:
+            return "No hay paper trades recientes."
+        msg = "<b>Ultimos 10 Paper Trades</b>\n\n"
+        for r in rows:
+            sid, contract, direction, entry, exit_p, pnl, ts = r
+            pnl = pnl or 0
+            icon = "+" if pnl >= 0 else "-"
+            msg += f"[{icon}] {direction} {contract}\n"
+            msg += f"  Entry: ${entry:.2f} -> Exit: ${exit_p:.2f}\n"
+            msg += f"  PnL: ${pnl:.2f} | {ts}\n\n"
+        return msg
+
+    elif text == "/paper_compare":
+        rows = get_paper_status()
+        if not rows:
+            return "No hay paper trading para comparar."
+        msg = "<b>Paper vs Backtest</b>\n\n"
+        for r in rows:
+            sid, contract, ppnl, ptrades, pwr, tpnl, deg, status = r
+            ppnl = ppnl or 0
+            tpnl = tpnl or 0
+            deg = deg or 0
+            deg_icon = "OK" if deg < 0.25 else "WARN" if deg < 0.5 else "BAD"
+            msg += f"<b>{sid}</b>\n"
+            msg += f"  Paper: ${ppnl:.2f} | Train: ${tpnl:.2f}\n"
+            msg += f"  Degradation: {deg*100:.1f}% [{deg_icon}]\n\n"
+        return msg
+
+    elif text == "/daily_report":
+        try:
+            from daily_trading_report import generate_report
+            report = generate_report()
+            return report if report else "No hay datos para el reporte."
+        except ImportError:
+            return "daily_trading_report.py no disponible."
+        except Exception as e:
+            return f"Error generando reporte: {e}"
+
+    elif text == "/kill":
+        try:
+            from live_spot_executor import LiveSpotExecutor
+            from risk_manager_live import emergency_close_all, RiskManager, SPOT_RISK_CONFIG
+            executor = LiveSpotExecutor(dry_run=False)
+            rm = RiskManager(initial_balance=500, config=SPOT_RISK_CONFIG)
+            emergency_close_all(executor, rm)
+            return "<b>KILL SWITCH ACTIVADO</b>\n\nTodas las posiciones cerradas.\nTrading HALT activado."
+        except Exception as e:
+            return f"Error en kill switch: {e}"
 
     else:
         return "Comando no reconocido. Usa /help para ver comandos disponibles."

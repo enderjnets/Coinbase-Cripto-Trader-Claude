@@ -50,17 +50,17 @@ FEE_TAKER = 0.0005  # 0.05%
 # SLIPPAGE MODELING (PHASE 3A - Realistic Execution)
 # ============================================================================
 # Base slippage for crypto futures (market orders)
-SLIPPAGE_BASE = 0.0003  # 0.03% base slippage
+SLIPPAGE_BASE = 0.002  # 0.2% base slippage (realistic for crypto)
 
 # Volatility multiplier (higher ATR = more slippage)
-SLIPPAGE_VOLATILITY_MULT = 0.5  # 50% of volatility added
+SLIPPAGE_VOLATILITY_MULT = 1.5  # 150% of volatility added
 
 # Position size impact (larger positions = more market impact)
-SLIPPAGE_SIZE_BASE = 50000.0  # $50k position = no size impact
-SLIPPAGE_SIZE_MULT = 0.0001  # Additional 0.01% per $50k over base
+SLIPPAGE_SIZE_BASE = 10000.0  # $10k position = no size impact
+SLIPPAGE_SIZE_MULT = 0.0005  # Additional 0.05% per $10k over base
 
 # Maximum slippage cap (prevent absurd values)
-SLIPPAGE_MAX = 0.005  # 0.5% max slippage
+SLIPPAGE_MAX = 0.02  # 2% max slippage
 
 # Funding rate (average for BTC/ETH perpetuals)
 DEFAULT_FUNDING_RATE = 0.0001  # 0.01% per 8 hours
@@ -70,9 +70,9 @@ FUNDING_INTERVAL_CANDLES = 60  # Every 60 candles (1 hour for 1-min data)
 # SAFETY LIMITS
 # ============================================================================
 
-MAX_BALANCE = 1_000_000.0
-MAX_POSITION_VALUE = 100_000.0
-MAX_PNL = 1_000_000.0
+MAX_BALANCE = 50_000.0
+MAX_POSITION_VALUE = 10_000.0
+MAX_PNL = 50_000.0
 MIN_PRICE = 0.00001
 MAX_PRICE = 1_000_000.0
 
@@ -351,21 +351,23 @@ def decode_genome_futures(encoded):
 
 if HAS_NUMBA:
     @njit(cache=True)
-    def _calculate_slippage(price, position_value, atr_pct, is_entry):
+    def _calculate_slippage(price, position_value, atr_pct, is_entry, candle_idx):
         """
-        Calculate realistic slippage for market orders.
+        Calculate realistic slippage for market orders with deterministic noise.
 
         Components:
-        1. Base slippage (0.03%)
+        1. Base slippage (0.2%)
         2. Volatility-adjusted slippage (higher ATR = more slippage)
         3. Position size impact (larger = more market impact)
         4. Entry vs Exit (entries often have more slippage due to urgency)
+        5. Deterministic noise to prevent optimizer from exploiting predictability
 
         Args:
             price: Current price
             position_value: Dollar value of position
             atr_pct: ATR as percentage of price (volatility measure)
             is_entry: True for entry, False for exit
+            candle_idx: Current candle index (used as pseudo-random seed)
 
         Returns:
             Slippage as price adjustment (in price units)
@@ -385,6 +387,12 @@ if HAS_NUMBA:
         # Entry has slightly more slippage (market urgency)
         if is_entry:
             slippage_pct *= 1.1
+
+        # Deterministic noise: ±30% variation based on candle index
+        # Uses simple hash to create pseudo-random but reproducible noise
+        noise_seed = ((candle_idx * 2654435761) % (2**32)) / (2**32)  # Knuth multiplicative hash
+        noise_factor = 0.7 + noise_seed * 0.6  # Range: 0.7 to 1.3
+        slippage_pct *= noise_factor
 
         # Cap slippage
         if slippage_pct > SLIPPAGE_MAX:
@@ -437,12 +445,12 @@ if HAS_NUMBA:
         # Clamp parameters
         if size_pct < 0.05:
             size_pct = 0.05
-        if size_pct > 0.95:
-            size_pct = 0.95
+        if size_pct > 0.30:
+            size_pct = 0.30
         if max_positions < 1:
             max_positions = 1
-        if max_positions > 3:
-            max_positions = 3
+        if max_positions > 2:
+            max_positions = 2
         if leverage < 1.0:
             leverage = 1.0
         if leverage > MAX_LEVERAGE:
@@ -450,17 +458,17 @@ if HAS_NUMBA:
 
         balance = 500.0  # Starting balance
 
-        # Position arrays (up to 3 positions)
-        pos_active = np.zeros(3, dtype=np.int64)      # 0 or 1
-        pos_direction = np.zeros(3, dtype=np.int64)   # 0=LONG, 1=SHORT
-        pos_entry_price = np.zeros(3, dtype=np.float64)
-        pos_size = np.zeros(3, dtype=np.float64)       # contracts
-        pos_margin = np.zeros(3, dtype=np.float64)     # margin locked
-        pos_cost_basis = np.zeros(3, dtype=np.float64)
-        pos_entry_fee = np.zeros(3, dtype=np.float64)
-        pos_sl = np.zeros(3, dtype=np.float64)
-        pos_tp = np.zeros(3, dtype=np.float64)
-        pos_liquidation = np.zeros(3, dtype=np.float64)  # liquidation price
+        # Position arrays (up to 2 positions)
+        pos_active = np.zeros(2, dtype=np.int64)      # 0 or 1
+        pos_direction = np.zeros(2, dtype=np.int64)   # 0=LONG, 1=SHORT
+        pos_entry_price = np.zeros(2, dtype=np.float64)
+        pos_size = np.zeros(2, dtype=np.float64)       # contracts
+        pos_margin = np.zeros(2, dtype=np.float64)     # margin locked
+        pos_cost_basis = np.zeros(2, dtype=np.float64)
+        pos_entry_fee = np.zeros(2, dtype=np.float64)
+        pos_sl = np.zeros(2, dtype=np.float64)
+        pos_tp = np.zeros(2, dtype=np.float64)
+        pos_liquidation = np.zeros(2, dtype=np.float64)  # liquidation price
 
         total_pnl = 0.0
         num_trades = 0
@@ -471,9 +479,13 @@ if HAS_NUMBA:
         sum_ret = 0.0
         sum_ret_sq = 0.0
 
-        # Funding rate tracking (simplified - use random variation around average)
+        # Funding rate tracking (realistic distribution with occasional spikes)
         np.random.seed(42)  # Reproducible funding rates
-        funding_rates = np.random.normal(0.0001, 0.00005, n)
+        funding_rates = np.random.normal(0.0001, 0.0001, n)
+        # Add occasional funding rate spikes (1% of candles)
+        for fi in range(n):
+            if np.random.random() < 0.01:
+                funding_rates[fi] = np.random.normal(0.0005, 0.0003)
 
         # Main loop - starts at 200 for indicator warmup
         for i in range(200, n):
@@ -484,12 +496,12 @@ if HAS_NUMBA:
             # === FUNDING RATE PAYMENT (every hour for perpetuos) ===
             if is_perpetual and i % FUNDING_INTERVAL_CANDLES == 0 and i > 200:
                 funding_rate = funding_rates[i]
-                for s in range(3):
+                for s in range(2):
                     if pos_active[s] == 1:
                         # Position value
                         pos_value = pos_size[s] * price
-                        # Funding = position_value * funding_rate
-                        funding_cost = pos_value * funding_rate * leverage
+                        # Funding = position_value * funding_rate (no leverage multiplier - already in pos_value)
+                        funding_cost = pos_value * funding_rate
 
                         if pos_direction[s] == DIR_LONG:
                             # Longs pay when funding > 0
@@ -505,16 +517,49 @@ if HAS_NUMBA:
                             balance = 0
 
             # === EXIT LOOP: check all positions ===
-            for s in range(3):
+            for s in range(2):
                 if pos_active[s] == 0:
                     continue
 
-                # Check liquidation first
+                # Check margin call first (2% above liquidation price)
+                # This preserves some margin instead of total loss
+                margin_called = False
+                if pos_direction[s] == DIR_LONG:
+                    margin_call_price = pos_liquidation[s] * 1.02
+                    if candle_low <= margin_call_price and candle_low > pos_liquidation[s]:
+                        # Margin call - force close at margin call price, preserving some margin
+                        mc_exit_price = margin_call_price
+                        mc_pnl_pct = (mc_exit_price - pos_entry_price[s]) / pos_entry_price[s]
+                        mc_trade_pnl = mc_pnl_pct * leverage * pos_cost_basis[s] - pos_entry_fee[s] - (pos_size[s] * mc_exit_price * fee_rate)
+                        balance += pos_margin[s] + mc_trade_pnl
+                        if balance < 0:
+                            balance = 0.0
+                        total_pnl += mc_trade_pnl
+                        num_trades += 1
+                        pos_active[s] = 0
+                        margin_called = True
+                else:
+                    margin_call_price = pos_liquidation[s] * 0.98
+                    if candle_high >= margin_call_price and candle_high < pos_liquidation[s]:
+                        mc_exit_price = margin_call_price
+                        mc_pnl_pct = (pos_entry_price[s] - mc_exit_price) / pos_entry_price[s]
+                        mc_trade_pnl = mc_pnl_pct * leverage * pos_cost_basis[s] - pos_entry_fee[s] - (pos_size[s] * mc_exit_price * fee_rate)
+                        balance += pos_margin[s] + mc_trade_pnl
+                        if balance < 0:
+                            balance = 0.0
+                        total_pnl += mc_trade_pnl
+                        num_trades += 1
+                        pos_active[s] = 0
+                        margin_called = True
+
+                if margin_called:
+                    continue
+
+                # Check liquidation (safety net if margin call didn't trigger)
                 if pos_direction[s] == DIR_LONG:
                     # Long liquidates when price drops below liquidation price
                     if candle_low <= pos_liquidation[s]:
                         # Liquidation - lose all margin
-                        balance -= pos_margin[s]  # Margin is already deducted
                         liquidations += 1
                         num_trades += 1
                         total_pnl -= pos_margin[s]
@@ -523,7 +568,6 @@ if HAS_NUMBA:
                 else:
                     # Short liquidates when price rises above liquidation price
                     if candle_high >= pos_liquidation[s]:
-                        balance -= pos_margin[s]
                         liquidations += 1
                         num_trades += 1
                         total_pnl -= pos_margin[s]
@@ -562,7 +606,7 @@ if HAS_NUMBA:
                     atr_pct = (candle_high - candle_low) / price if price > 0 else 0.01
 
                     # Apply slippage against the exit direction
-                    slippage = _calculate_slippage(price, pos_cost_basis[s], atr_pct, is_entry=False)
+                    slippage = _calculate_slippage(price, pos_cost_basis[s], atr_pct, False, i)
                     if pos_direction[s] == DIR_LONG:
                         # Long exit (sell): get slightly worse price
                         exit_price = exit_price * (1.0 - slippage/price)
@@ -575,6 +619,13 @@ if HAS_NUMBA:
                         pnl_pct = (exit_price - pos_entry_price[s]) / pos_entry_price[s]
                     else:
                         pnl_pct = (pos_entry_price[s] - exit_price) / pos_entry_price[s]
+
+                    # Cap return per trade at ±100%
+                    MAX_TRADE_RETURN = 1.0
+                    if pnl_pct > MAX_TRADE_RETURN:
+                        pnl_pct = MAX_TRADE_RETURN
+                    if pnl_pct < -MAX_TRADE_RETURN:
+                        pnl_pct = -MAX_TRADE_RETURN
 
                     # Position value at exit
                     exit_value = pos_size[s] * exit_price
@@ -615,7 +666,7 @@ if HAS_NUMBA:
 
             # === ENTRY: evaluate rules and open if slot available ===
             num_open = 0
-            for s in range(3):
+            for s in range(2):
                 num_open += pos_active[s]
 
             if num_open < max_positions:
@@ -805,7 +856,7 @@ if HAS_NUMBA:
                     if margin_required >= 10.0 and balance >= margin_required:
                         # Find free slot
                         slot = -1
-                        for s in range(3):
+                        for s in range(2):
                             if pos_active[s] == 0:
                                 slot = s
                                 break
@@ -820,7 +871,7 @@ if HAS_NUMBA:
                             # === APPLY SLIPPAGE TO ENTRY ===
                             # Calculate local volatility (ATR proxy using high-low)
                             atr_pct = (candle_high - candle_low) / price if price > 0 else 0.01
-                            entry_slippage = _calculate_slippage(price, position_value, atr_pct, is_entry=True)
+                            entry_slippage = _calculate_slippage(price, position_value, atr_pct, True, i)
 
                             if entry_direction == DIR_LONG:
                                 # Long entry (buy): pay slightly higher price
@@ -853,11 +904,11 @@ if HAS_NUMBA:
         final_high = high[n - 1]
         final_low = low[n - 1]
 
-        for s in range(3):
+        for s in range(2):
             if pos_active[s] == 1:
                 # Apply slippage to final exit
                 final_atr_pct = (final_high - final_low) / final_price if final_price > 0 else 0.01
-                final_slippage = _calculate_slippage(final_price, pos_cost_basis[s], final_atr_pct, is_entry=False)
+                final_slippage = _calculate_slippage(final_price, pos_cost_basis[s], final_atr_pct, False, n - 1)
 
                 if pos_direction[s] == DIR_LONG:
                     # Long exit (sell): get slightly worse price
@@ -867,6 +918,13 @@ if HAS_NUMBA:
                     # Short exit (buy): pay slightly higher price
                     actual_final_price = final_price * (1.0 + final_slippage/final_price)
                     pnl_pct = (pos_entry_price[s] - actual_final_price) / pos_entry_price[s]
+
+                # Cap return per trade at ±100%
+                MAX_TRADE_RETURN = 1.0
+                if pnl_pct > MAX_TRADE_RETURN:
+                    pnl_pct = MAX_TRADE_RETURN
+                if pnl_pct < -MAX_TRADE_RETURN:
+                    pnl_pct = -MAX_TRADE_RETURN
 
                 exit_value = pos_size[s] * actual_final_price
                 exit_fee = exit_value * fee_rate

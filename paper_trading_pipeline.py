@@ -20,6 +20,7 @@ import os
 import sys
 import json
 import time
+import asyncio
 import sqlite3
 import threading
 from datetime import datetime, timedelta
@@ -132,6 +133,21 @@ class PaperTradingPipeline:
                 pnl REAL,
                 fees REAL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Paper daily summary
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS paper_daily_summary (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT,
+                strategy_id TEXT,
+                trades INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                pnl REAL DEFAULT 0,
+                drawdown REAL DEFAULT 0,
+                balance REAL DEFAULT 0,
+                UNIQUE(date, strategy_id)
             )
         """)
 
@@ -501,6 +517,62 @@ class PaperTradingPipeline:
     # MAIN LOOP
     # ========================================================================
 
+    async def run_paper_traders(self, product_id: str = "BTC-USD"):
+        """
+        Run all active paper traders in parallel using asyncio.
+
+        Loads strategies from paper_strategies table and creates
+        a LivePaperTrader for each one with 0.2% slippage.
+        """
+        try:
+            from live_paper_trader import LivePaperTrader
+        except ImportError:
+            print("ERROR: live_paper_trader.py not found")
+            return
+
+        conn = sqlite3.connect(self.paper_db)
+        c = conn.cursor()
+        c.execute("""
+            SELECT strategy_id, genome_json FROM paper_strategies
+            WHERE status = 'active'
+        """)
+        rows = c.fetchall()
+        conn.close()
+
+        if not rows:
+            print("No active strategies to run paper trading.")
+            return
+
+        print(f"Starting {len(rows)} paper traders in parallel...")
+
+        traders = []
+        tasks = []
+        for strategy_id, genome_json in rows:
+            genome = json.loads(genome_json) if genome_json else None
+            if not genome:
+                continue
+
+            trader = LivePaperTrader(
+                strategy_genome=genome,
+                initial_capital=10000.0,
+                slippage=0.002,  # 0.2% realistic slippage
+            )
+            traders.append((strategy_id, trader))
+            tasks.append(trader.run(product_id))
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Update metrics from traders
+        for strategy_id, trader in traders:
+            status = trader.get_status()
+            self.update_paper_metrics(
+                strategy_id,
+                paper_pnl=status['total_pnl'],
+                paper_trades=status['total_trades'],
+                paper_winrate=status['win_rate'],
+            )
+
     def run_discovery_loop(self, interval: int = 300):
         """
         Run continuous discovery and deployment loop.
@@ -509,7 +581,7 @@ class PaperTradingPipeline:
             interval: Seconds between discovery runs (default 5 minutes)
         """
         self.running = True
-        print(f"🔄 Starting Paper Trading Pipeline (checking every {interval}s)")
+        print(f"Starting Paper Trading Pipeline (checking every {interval}s)")
 
         while self.running:
             try:
@@ -520,7 +592,7 @@ class PaperTradingPipeline:
                 self.print_status()
 
             except Exception as e:
-                print(f"❌ Error in discovery loop: {e}")
+                print(f"Error in discovery loop: {e}")
 
             # Wait for next cycle
             time.sleep(interval)
@@ -543,6 +615,8 @@ if __name__ == "__main__":
     parser.add_argument("--deploy", type=int, default=0, help="Deploy N strategies")
     parser.add_argument("--status", action="store_true", help="Show pipeline status")
     parser.add_argument("--loop", action="store_true", help="Run continuous discovery loop")
+    parser.add_argument("--run", action="store_true", help="Run paper traders in parallel")
+    parser.add_argument("--product", default="BTC-USD", help="Trading pair for paper trading")
 
     args = parser.parse_args()
 
@@ -560,6 +634,12 @@ if __name__ == "__main__":
 
     elif args.status:
         pipeline.print_status()
+
+    elif args.run:
+        try:
+            asyncio.run(pipeline.run_paper_traders(args.product))
+        except KeyboardInterrupt:
+            pipeline.stop()
 
     elif args.loop:
         try:

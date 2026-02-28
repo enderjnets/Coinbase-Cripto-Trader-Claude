@@ -69,6 +69,31 @@ class RiskConfig:
     alert_margin_usage_pct: float = 0.70        # Alertar al 70% uso de margen
 
 
+# Pre-configured risk config for spot trading (conservative)
+SPOT_RISK_CONFIG = RiskConfig(
+    max_daily_loss_pct=0.03,       # 3% daily loss limit
+    max_weekly_loss_pct=0.07,      # 7% weekly loss limit
+    max_monthly_loss_pct=0.15,     # 15% monthly loss limit
+    max_drawdown_pct=0.20,         # 20% max drawdown
+    max_positions=2,               # Max 2 spot positions
+    max_position_size_pct=0.15,    # 15% per position
+    max_total_exposure_pct=0.30,   # 30% max exposure
+    max_leverage=1,                # Spot = no leverage
+    max_leverage_total=2,          # Sum of leverages (spot)
+    max_same_asset_positions=1,    # 1 position per asset
+    max_correlated_exposure_pct=0.20,
+    volatility_spike_threshold=0.05,
+    price_gap_threshold=0.02,
+    funding_rate_threshold=0.001,
+    loss_cooldown_minutes=60,      # 60 min cooldown after loss
+    liquidation_cooldown_hours=2,
+    daily_trade_limit=20,          # Conservative daily limit
+    alert_loss_threshold_pct=0.015,
+    alert_drawdown_threshold_pct=0.10,
+    alert_margin_usage_pct=0.70,
+)
+
+
 class RiskLevel(Enum):
     """Niveles de riesgo."""
     SAFE = "SAFE"              # Operación normal
@@ -708,6 +733,34 @@ class RiskManager:
             report += f"\n⏳ COOLDOWN: {int(status['cooldown_remaining'])}s remaining\n"
 
         return report
+
+
+def emergency_close_all(executor, risk_manager: 'RiskManager' = None):
+    """
+    Kill switch: close all positions immediately.
+
+    Works with both LiveSpotExecutor and LiveFuturesExecutor.
+    Activates HALT in risk manager if provided.
+
+    Args:
+        executor: LiveSpotExecutor or LiveFuturesExecutor instance
+        risk_manager: Optional RiskManager to halt
+    """
+    print("EMERGENCY: Closing all positions...")
+
+    # Halt risk manager
+    if risk_manager:
+        risk_manager.trigger_halt("Emergency close all triggered")
+
+    # Close all positions
+    try:
+        results = executor.close_all_positions()
+        for r in results:
+            print(f"  Closed: {r}")
+    except Exception as e:
+        print(f"  ERROR closing positions: {e}")
+
+    print("Emergency close complete.")
 
 
 # ============================================================================

@@ -1,0 +1,246 @@
+{
+  "selected_at": "2026-02-28T14:44:40.900585",
+  "count": 3,
+  "criteria": {
+    "min_trades": 10,
+    "win_rate_range": [
+      0.4,
+      0.8
+    ],
+    "sharpe_range": [
+      1.5,
+      50.0
+    ],
+    "max_drawdown": 0.5
+  },
+  "strategies": [
+    {
+      "result_id": 140963,
+      "strategy_id": "spot_strategy_140963",
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "ICHIMOKU_Base",
+              "period": 200
+            },
+            "op": "<=",
+            "right": {
+              "value": 50
+            }
+          },
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 200
+            },
+            "op": "<",
+            "right": {
+              "value": 40
+            }
+          },
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 100
+            },
+            "op": ">",
+            "right": {
+              "value": 45
+            }
+          },
+          {
+            "left": {
+              "field": "close"
+            },
+            "op": "==",
+            "right": {
+              "indicator": "EMA",
+              "period": 50
+            }
+          },
+          {
+            "left": {
+              "indicator": "ICHIMOKU_Conv",
+              "period": 9
+            },
+            "op": "==",
+            "right": {
+              "value": 50
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.04381679968436092,
+          "tp_pct": 0.07480576212713502,
+          "size_pct": 0.05,
+          "max_positions": 3.0,
+          "trailing_stop_pct": 0.013367216369833838,
+          "breakeven_after": 0.007495466397795098
+        }
+      },
+      "data_file": "BTC-USD_FIVE_MINUTE.csv",
+      "metrics": {
+        "pnl": 816.48,
+        "trades": 12,
+        "win_rate": 0.75,
+        "sharpe_ratio": 24.25,
+        "max_drawdown": 0.0933
+      },
+      "is_canonical": true,
+      "selected_at": "2026-02-28T14:44:40.900498"
+    },
+    {
+      "result_id": 138090,
+      "strategy_id": "spot_strategy_138090",
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 200
+            },
+            "op": ">",
+            "right": {
+              "value": 60
+            }
+          },
+          {
+            "left": {
+              "field": "close"
+            },
+            "op": ">",
+            "right": {
+              "indicator": "SMA",
+              "period": 50
+            }
+          },
+          {
+            "left": {
+              "field": "close"
+            },
+            "op": "==",
+            "right": {
+              "indicator": "EMA",
+              "period": 20
+            }
+          },
+          {
+            "left": {
+              "indicator": "MACD_Hist",
+              "period": 7
+            },
+            "op": ">",
+            "right": {
+              "value": 10
+            }
+          },
+          {
+            "left": {
+              "field": "volume"
+            },
+            "op": "<=",
+            "right": {
+              "indicator": "VOLSMA",
+              "period": 50
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.036245336207073924,
+          "tp_pct": 0.04831301073074154,
+          "size_pct": 0.95,
+          "max_positions": 2.53160657455535,
+          "trailing_stop_pct": 0.0217452476896048,
+          "breakeven_after": 0.012214054354505892
+        }
+      },
+      "data_file": "BTC-USD_FIVE_MINUTE.csv",
+      "metrics": {
+        "pnl": 678.87,
+        "trades": 14,
+        "win_rate": 0.71,
+        "sharpe_ratio": 15.2054,
+        "max_drawdown": 0.0736
+      },
+      "is_canonical": true,
+      "selected_at": "2026-02-28T14:44:40.900527"
+    },
+    {
+      "result_id": 139131,
+      "strategy_id": "spot_strategy_139131",
+      "genome": {
+        "entry_rules": [
+          {
+            "left": {
+              "indicator": "RSI",
+              "period": 200
+            },
+            "op": ">",
+            "right": {
+              "value": 55
+            }
+          },
+          {
+            "left": {
+              "field": "close"
+            },
+            "op": "<=",
+            "right": {
+              "indicator": "EMA",
+              "period": 200
+            }
+          },
+          {
+            "left": {
+              "field": "close"
+            },
+            "op": ">=",
+            "right": {
+              "indicator": "EMA",
+              "period": 100
+            }
+          },
+          {
+            "left": {
+              "indicator": "ROC",
+              "period": 14
+            },
+            "op": "<",
+            "right": {
+              "value": 1
+            }
+          },
+          {
+            "left": {
+              "indicator": "STOCH_D",
+              "period": 100
+            },
+            "op": "<",
+            "right": {
+              "value": 80
+            }
+          }
+        ],
+        "params": {
+          "sl_pct": 0.026449078085660306,
+          "tp_pct": 0.06097270570412455,
+          "size_pct": 0.95,
+          "max_positions": 2.0,
+          "trailing_stop_pct": 0.02240469786398535,
+          "breakeven_after": 0.00990722122102852
+        }
+      },
+      "data_file": "BTC-USD_FIVE_MINUTE.csv",
+      "metrics": {
+        "pnl": 682.01,
+        "trades": 15,
+        "win_rate": 0.8,
+        "sharpe_ratio": 12.8299,
+        "max_drawdown": 0.067
+      },
+      "is_canonical": true,
+      "selected_at": "2026-02-28T14:44:40.900563"
+    }
+  ]
+}

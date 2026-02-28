@@ -40,6 +40,7 @@ from numba_futures_backtester import numba_evaluate_futures_population
 from paper_futures_trader import PaperFuturesTrader
 from live_futures_executor import LiveFuturesExecutor, PositionSide
 from risk_manager_live import RiskManager, RiskLevel, RiskConfig
+from scaling_config import ScalingManager
 
 # ============================================================================
 # CONFIGURACIÓN
@@ -138,6 +139,9 @@ class FuturesOrchestrator:
         )
 
         self.live_executor = LiveFuturesExecutor(dry_run=dry_run)
+
+        # Scaling manager
+        self.scaling = ScalingManager()
 
         # Paper traders activos
         self.paper_traders: Dict[str, PaperFuturesTrader] = {}
@@ -612,6 +616,20 @@ Backtest Metrics:
 
     # ========== STATUS ==========
 
+    def get_current_stage(self) -> dict:
+        """
+        Determine current scaling stage based on trading history.
+        Adjusts capital and leverage limits automatically.
+        """
+        stats = self.scaling.get_trading_stats()
+        stage = self.scaling.get_current_stage(
+            trading_days=stats['days'],
+            total_trades=stats['trades'],
+            win_rate=stats['win_rate'],
+            total_pnl=stats['pnl'],
+        )
+        return self.scaling.get_status()
+
     def get_status(self) -> dict:
         """Obtiene estado completo del orquestador."""
         return {
@@ -620,6 +638,7 @@ Backtest Metrics:
 
             "risk_manager": self.risk_manager.get_status(),
             "live_executor": self.live_executor.get_status(),
+            "scaling": self.get_current_stage(),
 
             "strategies": {
                 "total": len(self.strategies),

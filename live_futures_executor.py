@@ -43,6 +43,13 @@ try:
 except ImportError:
     HAS_CRYPTO = False
 
+# Import shared auth module
+try:
+    from coinbase_auth import CoinbaseAuth
+    HAS_SHARED_AUTH = True
+except ImportError:
+    HAS_SHARED_AUTH = False
+
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
