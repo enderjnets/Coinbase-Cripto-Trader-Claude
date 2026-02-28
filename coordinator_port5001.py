@@ -2869,7 +2869,7 @@ async function updateDashboard() {
         const [statusRes, dashRes, resultsRes, parallelRes] = await Promise.all([
             fetch('/api/status'),
             fetch('/api/dashboard_stats'),
-            fetch('/api/results?limit=10&overfitted=0'),
+            fetch('/api/results?limit=50&overfitted=0'),
             fetch('/api/parallel_activity')
         ]);
         const status  = await statusRes.json();
@@ -3023,11 +3023,26 @@ async function updateDashboard() {
 
         // ── Top results table ──
         const tbody = document.getElementById('results-body');
-        const results = resData.results || [];
+        const allResults = resData.results || [];
+
+        // Deduplicar: mismo activo + trades en mismo bucket-10 + WR en bucket-5% + Sharpe en bucket-2
+        const seenKeys = new Set();
+        const results = [];
+        for (const r of allResults) {
+            const sp = r.strategy_params || {};
+            const asset = sp.data_file || JSON.stringify(sp.contracts || '');
+            const key = `${asset}|${Math.floor(r.trades / 10)}|${Math.floor((r.win_rate || 0) * 20)}|${Math.floor((r.sharpe_ratio || 0) / 2)}`;
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
+                results.push(r);
+            }
+            if (results.length >= 10) break;
+        }
+
         if (results.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:20px">Sin resultados canónicos</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Sin resultados canónicos</td></tr>';
         } else {
-            tbody.innerHTML = results.slice(0, 10).map((r, i) => {
+            tbody.innerHTML = results.map((r, i) => {
                 const rankColors = ['#f1c40f','#adb5bd','#cd7f32'];
                 const medal = i < 3 ? `<span style="color:${rankColors[i]}">●</span> ` : '';
                 const pnlColor = r.pnl > 0 ? 'var(--green)' : 'var(--red)';
