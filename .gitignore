@@ -82,12 +82,31 @@ tmp_opt_results_*.json
 Thumbs.db
 
 # =============================================================================
-# DATOS (OPCIONAL - descomentar si quieres excluir datos)
+# DATOS (demasiado grandes para git)
 # =============================================================================
-# data/*.csv
-# *.csv
-
-# Data files (too large for git)
+data/*.csv
 data_futures/*.csv
+data_spot/*.csv
+data_binance/*.csv
+data_coingecko/*.csv
+data_coingecko_free/*.csv
+data_crypto_csv/*.csv
+data_public/*.csv
+data_public_apis/*.csv
+data_with_api/*.csv
 worker_checkpoint_*.json
+
+# Archivos de resultados temporales
+temp_opt_results_*.json
+all_strategies_*.json
+BEST_STRATEGY_*.json
+best_strategy.json
+
+# Archivos grandes de instaladores
+*.zip
+Bittrader_*.zip
+
+# Bases de datos locales
+*.db
+market_data.db
 
