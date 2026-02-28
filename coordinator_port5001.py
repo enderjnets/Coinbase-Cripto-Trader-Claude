@@ -651,7 +651,9 @@ def validate_work_unit(work_id):
         valid_results = [r for r in results
                          if r['pnl'] is not None
                          and r['pnl'] < PNL_MAX
-                         and (r['trades'] or 0) >= MIN_TRADES]
+                         and (r['trades'] or 0) >= MIN_TRADES
+                         and ((r.get('oos_trades') or 0) == 0 or (r.get('oos_pnl') or 0) >= MIN_OOS_PNL)
+                         and ((r.get('oos_trades') or 0) == 0 or (r.get('oos_degradation') or 1) <= MAX_OOS_DEGRADATION)]
 
         if valid_results:
             best_result = valid_results[0]  # Ya ordenado por pnl DESC
@@ -765,6 +767,7 @@ def api_status():
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE r.is_canonical = 1
+        AND r.is_overfitted = 0
         AND r.trades >= ?
         AND r.win_rate >= ?
         AND r.win_rate <= ?
@@ -774,6 +777,8 @@ def api_status():
         AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
              / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0 ELSE 288.0 END
             ) >= ?
+        AND (r.oos_trades IS NULL OR r.oos_trades = 0
+             OR (r.oos_pnl >= 0 AND r.oos_degradation <= 0.35))
         ORDER BY r.pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
                      MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MIN_BACKTEST_DAYS))
@@ -788,6 +793,7 @@ def api_status():
             FROM results r
             JOIN work_units w ON r.work_unit_id = w.id
             WHERE r.is_canonical = 1
+            AND r.is_overfitted = 0
             AND r.trades >= 10
             ORDER BY r.pnl DESC
             LIMIT 1""")
@@ -1018,17 +1024,40 @@ def api_workers():
 
 @app.route('/api/results', methods=['GET'])
 def api_results():
-    """Lista resultados canónicos (validados). Soporta ?limit=N (default 50)."""
+    """Lista resultados canónicos. Soporta ?limit=N, ?overfitted=0|1, ?min_pnl=X, ?min_sharpe=X."""
     limit = request.args.get('limit', 50, type=int)
+    overfitted = request.args.get('overfitted', type=int)   # 0=excluir, 1=solo overfitted
+    min_pnl = request.args.get('min_pnl', type=float)
+    min_sharpe = request.args.get('min_sharpe', type=float)
+
     conn = get_db_connection()
     c = conn.cursor()
 
-    c.execute("""SELECT r.*, w.strategy_params
+    where_clauses = ["r.is_canonical = 1"]
+    params = []
+
+    if overfitted == 0:
+        where_clauses.append("r.is_overfitted = 0")
+    elif overfitted == 1:
+        where_clauses.append("r.is_overfitted = 1")
+
+    if min_pnl is not None:
+        where_clauses.append("r.pnl >= ?")
+        params.append(min_pnl)
+
+    if min_sharpe is not None:
+        where_clauses.append("r.sharpe_ratio >= ?")
+        params.append(min_sharpe)
+
+    where_sql = " AND ".join(where_clauses)
+    params.append(limit)
+
+    c.execute(f"""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
-        WHERE r.is_canonical = 1
+        WHERE {where_sql}
         ORDER BY r.pnl DESC
-        LIMIT ?""", (limit,))
+        LIMIT ?""", params)
 
     results = []
     for row in c.fetchall():
@@ -1041,12 +1070,17 @@ def api_results():
             'sharpe_ratio': row['sharpe_ratio'],
             'max_drawdown': row['max_drawdown'],
             'execution_time': row['execution_time'],
+            'is_canonical': bool(row['is_canonical']),
+            'is_overfitted': bool(row['is_overfitted']),
+            'oos_pnl': row['oos_pnl'],
+            'oos_trades': row['oos_trades'],
+            'oos_degradation': row['oos_degradation'],
             'strategy_params': json.loads(row['strategy_params'])
         })
 
     conn.close()
 
-    return jsonify({'results': results})
+    return jsonify({'results': results, 'count': len(results)})
 
 
 @app.route('/api/results/all', methods=['GET'])
@@ -1155,6 +1189,7 @@ def api_dashboard_stats():
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE r.is_canonical = 1
+        AND r.is_overfitted = 0
         AND r.trades >= ?
         AND r.win_rate >= ?
         AND r.win_rate <= ?
@@ -1164,6 +1199,8 @@ def api_dashboard_stats():
         AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
              / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0 ELSE 288.0 END
             ) >= ?
+        AND (r.oos_trades IS NULL OR r.oos_trades = 0
+             OR (r.oos_pnl >= 0 AND r.oos_degradation <= 0.35))
         ORDER BY r.pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
                      MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MIN_BACKTEST_DAYS))
@@ -1176,6 +1213,7 @@ def api_dashboard_stats():
             FROM results r
             JOIN work_units w ON r.work_unit_id = w.id
             WHERE r.is_canonical = 1
+            AND r.is_overfitted = 0
             AND r.trades >= 10
             ORDER BY r.pnl DESC LIMIT 1""")
         best_row = c.fetchone()
@@ -1297,8 +1335,8 @@ def api_dashboard_stats():
     c.execute("""
         SELECT
             json_extract(w.strategy_params, '$.data_file') as data_file,
-            COUNT(*) as total_wus,
-            SUM(CASE WHEN w.status='completed' THEN 1 ELSE 0 END) as completed,
+            COUNT(DISTINCT w.id) as total_wus,
+            COUNT(DISTINCT CASE WHEN w.status='completed' THEN w.id END) as completed,
             AVG(CASE WHEN r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as avg_pnl,
             MAX(CASE WHEN r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as max_pnl,
             SUM(CASE WHEN r.trades >= 10 THEN r.trades END) as total_trades,
