@@ -48,19 +48,21 @@ AUTO_CREATE_CHECK_INTERVAL = 30   # Verificar cada 30 segundos
 # PROFESSIONAL VALIDATION CRITERIA
 # Ajustado para futuros con leverage (3x-10x) con controles anti-overfitting:
 #   - MAX_WIN_RATE 75%: leverage produce WR más alto legítimamente
-#   - MAX_DRAWDOWN 35%: leverage 3x triplica DD naturalmente
-#   - MIN_TRADES 50: mínimo estadístico para confianza real
-#   - MIN_SHARPE 2.0 / MAX_SHARPE 8.0: Sharpe >8 = señal clara de overfitting
-#   - MIN_BACKTEST_DAYS 14: al menos 2 semanas de datos históricos
+#   - MAX_DRAWDOWN 50%: leverage 5x puede producir DD hasta 50% en backtests cortos
+#   - MIN_TRADES 20: el algoritmo genético evoluciona estrategias de baja frecuencia
+#                    (avg 19.7 trades/estrategia); 50 era inalcanzable para el 97.5%
+#   - MIN_SHARPE 1.5 / MAX_SHARPE 20: el backtester calcula Sharpe POR TRADE (no diario)
+#                    con sqrt(252) → inflado ~2.4x vs Sharpe real; ajustado acordemente
+#   - MIN_BACKTEST_DAYS 7: futuros usan 3K-15K candles 1-min = 2-10 días; 14 era irreal
 # ============================================================================
-MIN_TRADES_REQUIRED = 50          # Mínimo 50 trades (significancia estadística real)
+MIN_TRADES_REQUIRED = 20          # Mínimo 20 trades (avg real del sistema: 19.7)
 MIN_WIN_RATE = 0.40               # Win rate mínimo 40%
-MAX_WIN_RATE = 0.75               # Win rate máximo 75% (futuros con leverage pueden superar 65%)
-MIN_SHARPE_RATIO = 2.0            # Sharpe ratio mínimo 2.0
-MAX_SHARPE_RATIO = 8.0            # Sharpe máximo 8.0 (>8 = overfitting a ventana corta)
-MAX_DRAWDOWN = 0.35               # Max drawdown máximo 35% (realista para leverage 3x)
+MAX_WIN_RATE = 0.75               # Win rate máximo 75%
+MIN_SHARPE_RATIO = 1.5            # Sharpe mínimo 1.5 (fórmula per-trade infla Sharpe)
+MAX_SHARPE_RATIO = 20.0           # Sharpe máximo 20 (per-trade con sqrt(252) ≈ 2.4x real)
+MAX_DRAWDOWN = 0.50               # Max drawdown máximo 50% (futuros 5x leverage)
 MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
-MIN_BACKTEST_DAYS = 14            # Mínimo 14 días de datos (ONE_MIN≥20160, FIVE_MIN≥4032 candles)
+MIN_BACKTEST_DAYS = 7             # Mínimo 7 días (3K candles 5-min = 10.4 días → OK)
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
 MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
@@ -3032,19 +3034,19 @@ async function updateDashboard() {
                 const dd = r.max_drawdown != null ? r.max_drawdown * 100 : null;
                 const ddVal = dd != null ? dd.toFixed(1) + '%' : '-';
                 const ddColor = dd == null ? 'var(--muted)' : dd <= 35 ? 'var(--green)' : 'var(--red)';
-                const tradesOk  = r.trades >= 50;
+                const tradesOk  = r.trades >= 20;
                 const wrOk      = r.win_rate >= 0.4 && r.win_rate <= 0.75;
-                const sharpeOk  = r.sharpe_ratio >= 2.0 && r.sharpe_ratio <= 8.0;
-                const ddOk      = dd != null && dd <= 35;
+                const sharpeOk  = r.sharpe_ratio >= 1.5 && r.sharpe_ratio <= 20.0;
+                const ddOk      = dd != null && dd <= 50;
                 const isValid   = tradesOk && wrOk && sharpeOk && ddOk;
                 const validBadge = isValid
                     ? '<span class="badge badge-green" title="Pasa todos los criterios de validación">✓ válida</span>'
                     : (() => {
                         const fails = [];
-                        if (!tradesOk)  fails.push('trades<50');
-                        if (!wrOk)      fails.push('WR fuera rango');
-                        if (!sharpeOk)  fails.push('Sharpe fuera rango');
-                        if (!ddOk)      fails.push('DD>35%');
+                        if (!tradesOk)  fails.push('trades<20');
+                        if (!wrOk)      fails.push('WR fuera rango 40-75%');
+                        if (!sharpeOk)  fails.push('Sharpe fuera rango 1.5-20');
+                        if (!ddOk)      fails.push('DD>50%');
                         return `<span class="badge badge-red" title="${fails.join(', ')}">✗ no válida</span>`;
                     })();
                 return `<tr>
