@@ -15,10 +15,13 @@ import sqlite3
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+from pathlib import Path
 
 # Base directory for all file operations
 BASE_DIR = "/Users/enderj/Library/CloudStorage/GoogleDrive-enderjnets@gmail.com/My Drive/Bittrader/Bittrader EA/Dev Folder/Coinbase Cripto Trader Claude"
 COORDINATOR_DB = os.path.join(BASE_DIR, "coordinator.db")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_FUTURES_DIR = os.path.join(BASE_DIR, "data_futures")
 
 # --- BROKER & BOT SETUP ---
 from backtester import Backtester
@@ -2838,7 +2841,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
     st.divider()
 
     # Tabs for different sections
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Dashboard", "👥 Workers", "⚙️ Control", "📜 Logs", "➕ Crear Work Units", "📈 Paper Trading", "🚀 Futures"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["📊 Dashboard", "👥 Workers", "⚙️ Control", "📜 Logs", "➕ Crear Work Units", "📈 Paper Trading", "🚀 Futures", "🔄 Data & Auto"])
 
     # TAB 1: Dashboard
     with tab1:
@@ -5530,3 +5533,254 @@ python data_manager.py --futures --products BIP-20DEC30-CDE ETP-20DEC30-CDE
 
                 st.markdown("#### 📅 Dated (Con Vencimiento)")
                 st.caption("Los contratos dated vencen en la fecha indicada. Sin funding rate.")
+    # TAB 8: Data & Auto
+    with tab8:
+        st.subheader("🔄 Actualización de Datos & Auto-Work Units")
+
+        # === SECCIÓN 1: ESTADO ACTUAL ===
+        st.markdown("### 📊 Estado de Datos")
+
+        col_d1, col_d2, col_d3 = st.columns(3)
+
+        with col_d1:
+            spot_files = len(list(Path(DATA_DIR).glob("*.csv"))) if Path(DATA_DIR).exists() else 0
+            st.metric("📁 Archivos SPOT", spot_files)
+
+        with col_d2:
+            futures_files = len(list(Path(DATA_FUTURES_DIR).glob("*.csv"))) if Path(DATA_FUTURES_DIR).exists() else 0
+            st.metric("📁 Archivos FUTURES", futures_files)
+
+        with col_d3:
+            # Contar WUs pendientes
+            try:
+                conn = sqlite3.connect(COORDINATOR_DB)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM work_units WHERE status='pending'")
+                pending = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM work_units WHERE status='in_progress'")
+                in_progress = cursor.fetchone()[0]
+                conn.close()
+                st.metric("📋 WUs Disponibles", f"{pending} / {pending + in_progress}", delta="pendientes / en progreso")
+            except:
+                st.metric("📋 WUs Disponibles", "N/A")
+
+        st.divider()
+
+        # === SECCIÓN 2: ACTUALIZAR DATOS ===
+        st.markdown("### 🔄 Actualizar Datos")
+
+        col_btn1, col_btn2 = st.columns([1, 3])
+
+        with col_btn1:
+            if st.button("📥 Actualizar Todos los Datos", type="primary"):
+                st.session_state['updating_data'] = True
+
+        with col_btn2:
+            st.caption("Descarga los datos más recientes de Coinbase y los mergea con los existentes.")
+
+        # Barra de progreso y ejecución
+        if st.session_state.get('updating_data', False):
+            st.info("⏳ Actualizando datos... Esto puede tomar unos minutos.")
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            import subprocess
+            import sys
+
+            try:
+                # Ejecutar script de actualización
+                update_script = os.path.join(BASE_DIR, "update_data_daily.py")
+
+                status_text.text("📥 Iniciando actualización...")
+                progress_bar.progress(10)
+
+                # Ejecutar en subprocess para capturar output
+                result = subprocess.run(
+                    [sys.executable, update_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    cwd=BASE_DIR
+                )
+
+                progress_bar.progress(90)
+                status_text.text("📊 Procesando resultados...")
+
+                if result.returncode == 0:
+                    progress_bar.progress(100)
+                    status_text.text("✅ Actualización completada!")
+                    st.success("✅ Datos actualizados correctamente!")
+                    with st.expander("📋 Ver Log", expanded=False):
+                        st.text(result.stdout)
+                else:
+                    progress_bar.progress(100)
+                    st.error(f"❌ Error en actualización: {result.stderr[:500]}")
+
+            except subprocess.TimeoutExpired:
+                st.error("⏱️ Timeout - La actualización tomó más de 5 minutos")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+            finally:
+                st.session_state['updating_data'] = False
+
+        st.divider()
+
+        # === SECCIÓN 3: AUTO-GENERACIÓN DE WUs ===
+        st.markdown("### 🤖 Auto-Generación de Work Units")
+
+        # Configuración
+        col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+
+        with col_cfg1:
+            min_pending = st.number_input("Mínimo WUs Pendientes", min_value=10, max_value=500, value=50,
+                                          help="Cuando los WUs pendientes bajen de este número, se generarán más automáticamente")
+
+        with col_cfg2:
+            auto_wu_count = st.number_input("WUs a Generar", min_value=10, max_value=200, value=50,
+                                            help="Cantidad de WUs a crear cuando se active la auto-generación")
+
+        with col_cfg3:
+            auto_enabled = st.checkbox("🟢 Auto-Generación Activa", value=False,
+                                       help="Activa la generación automática de WUs")
+
+        # Estado del auto-generador
+        if auto_enabled:
+            st.info(f"🤖 Auto-generación activa: Se crearán {auto_wu_count} WUs cuando pendientes < {min_pending}")
+
+            # Verificar si necesitamos generar más
+            try:
+                conn = sqlite3.connect(COORDINATOR_DB)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM work_units WHERE status='pending'")
+                current_pending = cursor.fetchone()[0]
+                conn.close()
+
+                if current_pending < min_pending:
+                    st.warning(f"⚠️ WUs pendientes ({current_pending}) < mínimo ({min_pending})")
+
+                    if st.button("🔧 Generar WUs Ahora", type="primary"):
+                        # Ejecutar create_work_units.py
+                        create_script = os.path.join(BASE_DIR, "create_work_units.py")
+                        result = subprocess.run(
+                            [sys.executable, create_script, "--all"],
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                            cwd=BASE_DIR
+                        )
+
+                        if result.returncode == 0:
+                            st.success(f"✅ WUs generados! Revisa la pestaña 'Crear Work Units' para ver detalles.")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Error generando WUs: {result.stderr[:500]}")
+                else:
+                    st.success(f"✅ WUs suficientes: {current_pending} pendientes")
+
+            except Exception as e:
+                st.error(f"❌ Error verificando WUs: {e}")
+
+        st.divider()
+
+        # === SECCIÓN 4: DESCARGAR NUEVOS ACTIVOS ===
+        st.markdown("### 📥 Descargar Nuevos Activos")
+
+        col_dl1, col_dl2 = st.columns(2)
+
+        with col_dl1:
+            st.markdown("**SPOT**")
+            if st.button("📥 Descargar SPOT Faltantes"):
+                st.session_state['downloading_spot'] = True
+
+            if st.session_state.get('downloading_spot', False):
+                progress_spot = st.progress(0)
+                status_spot = st.empty()
+
+                try:
+                    dl_script = os.path.join(BASE_DIR, "download_spot_data.py")
+                    status_spot.text("📥 Descargando datos SPOT...")
+
+                    result = subprocess.run(
+                        [sys.executable, dl_script, "--granularity", "5m,15m", "--days", "90"],
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                        cwd=BASE_DIR
+                    )
+
+                    progress_spot.progress(100)
+
+                    if result.returncode == 0:
+                        status_spot.text("✅ Descarga SPOT completada!")
+                        st.success("✅ Datos SPOT descargados!")
+                    else:
+                        st.error(f"❌ Error: {result.stderr[:500]}")
+
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                finally:
+                    st.session_state['downloading_spot'] = False
+
+        with col_dl2:
+            st.markdown("**FUTURES**")
+            if st.button("📥 Descargar FUTURES Faltantes"):
+                st.session_state['downloading_futures'] = True
+
+            if st.session_state.get('downloading_futures', False):
+                progress_fut = st.progress(0)
+                status_fut = st.empty()
+
+                try:
+                    dl_script = os.path.join(BASE_DIR, "download_futures_data.py")
+                    status_fut.text("📥 Descargando datos FUTURES...")
+
+                    result = subprocess.run(
+                        [sys.executable, dl_script, "--granularity", "FIVE_MINUTE", "--days", "30"],
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                        cwd=BASE_DIR
+                    )
+
+                    progress_fut.progress(100)
+
+                    if result.returncode == 0:
+                        status_fut.text("✅ Descarga FUTURES completada!")
+                        st.success("✅ Datos FUTURES descargados!")
+                    else:
+                        st.error(f"❌ Error: {result.stderr[:500]}")
+
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                finally:
+                    st.session_state['downloading_futures'] = False
+
+        st.divider()
+
+        # === SECCIÓN 5: INFO ===
+        with st.expander("ℹ️ Información del Sistema", expanded=False):
+            st.markdown("""
+            #### 🔄 Actualización de Datos
+            - Los datos se actualizan automáticamente cada día a las 6:00 AM (cron job)
+            - Puedes actualizar manualmente con el botón "Actualizar Todos los Datos"
+            - El sistema detecta el último timestamp y solo descarga datos nuevos
+
+            #### 🤖 Auto-Generación de Work Units
+            - Cuando los WUs pendientes bajan del mínimo, se generan más automáticamente
+            - Los WUs se crean para todos los activos que tienen datos disponibles
+            - Puedes configurar el mínimo y la cantidad a generar
+
+            #### 📥 Descarga de Nuevos Activos
+            - SPOT: Descarga datos de 5min y 15min para los activos faltantes
+            - FUTURES: Descarga datos de contratos activos de Coinbase
+            - Los datos se guardan en `data/` y `data_futures/`
+            """)
+
+            # Mostrar directorios
+            st.markdown(f"**Directorios:**")
+            st.code(f"""
+            data/          → {DATA_DIR}
+            data_futures/  → {DATA_FUTURES_DIR}
+            coordinator.db → {COORDINATOR_DB}
+            """)

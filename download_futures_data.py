@@ -145,16 +145,16 @@ class FuturesDataDownloader:
         
         return sizes.get(prefix, 1.0)
     
-    def download_candles(self, product_id: str, granularity: int = 60, 
-                        max_candles: int = 10000) -> pd.DataFrame:
+    def download_candles(self, product_id: str, granularity: int = 300,
+                        days: int = 30) -> pd.DataFrame:
         """
-        Descarga datos de velas para un producto.
-        
+        Descarga datos de velas REALES para un contrato de futuros.
+
         Args:
-            product_id: ID del producto
+            product_id: ID del producto (ej: BIT-27FEB26-CDE)
             granularity: Segundos por vela (60=1min, 300=5min, etc)
-            max_candles: Máximo de velas a descargar
-            
+            days: Días de historial
+
         Returns:
             DataFrame con datos OHLCV
         """
@@ -166,34 +166,124 @@ class FuturesDataDownloader:
             "ONE_HOUR": 3600,
             "ONE_DAY": 86400,
         }
-        
+
         if isinstance(granularity, str):
-            granularity = gran_map.get(granularity, 60)
-        
-        # Para futuros, intentar obtener datos
-        # Nota: La API de Coinbase tiene datos limitados para futuros
-        
-        # Intentar con el endpoint de mercado
-        url = f"{API_URL}/api/v3/brokerage/products/{product_id}/ticker"
-        
-        try:
-            # Obtener precio actual
-            response = requests.get(url, timeout=10)
-            
-            if response.status_code != 200:
-                print(f"   ⚠️ {product_id}: Sin datos de ticker")
-                return pd.DataFrame()
-            
-            # Los datos históricos de futuros son limitados
-            # Crear DataFrame con datos disponibles
-            
-            # Por ahora, marcar como "sin datos históricos disponibles"
-            print(f"   ⚠️ {product_id}: Datos históricos limitados en API pública")
+            granularity = gran_map.get(granularity, 300)
+
+        # Usar endpoint público de Coinbase Exchange para datos de futuros
+        url = f"https://api.exchange.coinbase.com/products/{product_id}/candles"
+
+        end_time = int(time.time())
+        start_time = int(end_time - (days * 86400))
+
+        all_candles = []
+        current_end = end_time
+        request_count = 0
+        max_requests = 100
+
+        while current_end > start_time and request_count < max_requests:
+            params = {
+                "granularity": granularity,
+                "end": str(current_end)
+            }
+
+            try:
+                response = requests.get(url, params=params, timeout=30)
+
+                if response.status_code == 404:
+                    # Intentar con endpoint alternativo de CDE
+                    return self._download_candles_cde(product_id, granularity, days)
+
+                if response.status_code != 200:
+                    break
+
+                candles = response.json()
+
+                if not candles:
+                    break
+
+                all_candles.extend(candles)
+                request_count += 1
+
+                # El timestamp más antiguo es el último (ordenados desc)
+                oldest_ts = min(c[0] for c in candles)
+                current_end = oldest_ts - 1
+
+                if request_count % 5 == 0:
+                    print(f"📊 {len(all_candles):,} velas...", end="\r")
+
+                time.sleep(0.3)
+
+            except Exception as e:
+                break
+
+        if not all_candles:
             return pd.DataFrame()
-            
-        except Exception as e:
-            print(f"   ❌ {product_id}: Error - {e}")
+
+        # Formato Coinbase: [time, low, high, open, close, volume]
+        df = pd.DataFrame(all_candles, columns=[
+            "timestamp", "low", "high", "open", "close", "volume"
+        ])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+        df = df.sort_values("timestamp").drop_duplicates().reset_index(drop=True)
+
+        return df
+
+    def _download_candles_cde(self, product_id: str, granularity: int, days: int) -> pd.DataFrame:
+        """Endpoint alternativo para contratos CDE de futuros."""
+        url = f"{API_URL}/api/v3/brokerage/market/products/{product_id}/candles"
+
+        end_time = int(time.time())
+        start_time = int(end_time - (days * 86400))
+
+        all_candles = []
+        current_end = end_time
+
+        for _ in range(50):
+            params = {
+                "granularity": granularity,
+                "end": str(current_end)
+            }
+
+            try:
+                response = requests.get(url, params=params, timeout=30)
+                if response.status_code != 200:
+                    break
+
+                data = response.json()
+                candles = data.get("candles", [])
+
+                if not candles:
+                    break
+
+                all_candles.extend(candles)
+                oldest_ts = min(int(c.get("start", c.get("timestamp", 0))) for c in candles)
+                current_end = oldest_ts - granularity
+
+                time.sleep(0.3)
+            except:
+                break
+
+        if not all_candles:
             return pd.DataFrame()
+
+        # Normalizar formato
+        normalized = []
+        for c in all_candles:
+            normalized.append({
+                "timestamp": int(c.get("start", c.get("timestamp", 0))),
+                "open": float(c.get("open", 0)),
+                "high": float(c.get("high", 0)),
+                "low": float(c.get("low", 0)),
+                "close": float(c.get("close", 0)),
+                "volume": float(c.get("volume", 0))
+            })
+
+        df = pd.DataFrame(normalized)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+        df = df.sort_values("timestamp").drop_duplicates().reset_index(drop=True)
+
+        return df
     
     def generate_synthetic_data(self, product_id: str, days: int = 90, 
                                granularity: str = "ONE_MINUTE") -> pd.DataFrame:
@@ -307,72 +397,106 @@ class FuturesDataDownloader:
         except:
             return 0
     
-    def download_all_contracts(self, assets: List[str] = None, 
-                               granularity: str = "ONE_MINUTE",
-                               days: int = 90) -> Dict[str, pd.DataFrame]:
+    def download_all_contracts(self, assets: List[str] = None,
+                               granularity: str = "FIVE_MINUTE",
+                               days: int = 30,
+                               force: bool = False) -> Dict[str, pd.DataFrame]:
         """
-        Descarga datos para todos los contratos.
-        
+        Descarga datos REALES para todos los contratos disponibles.
+
         Args:
-            assets: Lista de activos a descargar (None = todos)
+            assets: Lista de activos a descargar (None = todos los disponibles en API)
             granularity: Granularidad de datos
-            days: Días de datos a generar
-            
+            days: Días de historial
+            force: Re-descargar aunque existan
+
         Returns:
             Dict con product_id -> DataFrame
         """
-        # Determinar activos
-        if assets:
-            contracts = {a: CONTRACTS_CONFIG.get(a, []) for a in assets}
+        # Obtener productos disponibles de la API
+        print("🔍 Obteniendo contratos disponibles de API...")
+        api_products = self.get_products_from_api()
+
+        if not api_products:
+            print("   ⚠️ No se pudieron obtener productos de API, usando config estática")
+            if assets:
+                contracts = {a: CONTRACTS_CONFIG.get(a, []) for a in assets}
+            else:
+                contracts = CONTRACTS_CONFIG
         else:
-            contracts = CONTRACTS_CONFIG
-        
+            # Usar productos de la API
+            contracts = {}
+            for p in api_products:
+                pid = p.get("product_id", "")
+                base = p.get("base_currency_id", pid.split("-")[0] if "-" in pid else "")
+                if base not in contracts:
+                    contracts[base] = []
+                contracts[base].append(pid)
+
+        # Verificar archivos existentes
+        existing = set()
+        for f in os.listdir(self.data_dir):
+            if f.endswith('.csv'):
+                contract = f.split('_')[0]
+                existing.add(contract)
+
         results = {}
-        
-        print(f"\n📥 DESCARGANDO DATOS:")
-        print(f"   Activos: {list(contracts.keys())}")
+        skipped = 0
+        downloaded = 0
+        failed = []
+
+        total = sum(len(v) for v in contracts.values())
+        current = 0
+
+        print(f"\n📥 DESCARGANDO DATOS REALES:")
+        print(f"   Activos: {len(contracts)}")
+        print(f"   Contratos totales: {total}")
+        print(f"   Ya existentes: {len(existing)}")
         print(f"   Granularidad: {granularity}")
         print(f"   Días: {days}")
         print()
-        
-        total_contracts = sum(len(v) for v in contracts.values())
-        current = 0
-        
+
         for asset, product_ids in contracts.items():
-            print(f"\n🔄 {asset}:")
-            
             for product_id in product_ids:
                 current += 1
-                print(f"   [{current}/{total_contracts}] {product_id}...", end=" ")
-                
-                # Intentar descargar datos reales
-                df = self.download_candles(product_id, granularity)
-                
-                # Si no hay datos, generar sintéticos
-                if df.empty:
-                    print(f"generando datos sintéticos...", end=" ")
-                    df = self.generate_synthetic_data(product_id, days, granularity)
-                
+
+                # Nombre de archivo
+                filename = f"{product_id}_{granularity}.csv"
+                filepath = self.data_dir / filename
+
+                # Verificar si ya existe
+                if product_id in existing and not force:
+                    print(f"[{current}/{total}] ⏭️  {product_id}")
+                    skipped += 1
+                    continue
+
+                print(f"[{current}/{total}] 🔄 {product_id}...", end=" ")
+
+                # Descargar datos REALES
+                df = self.download_candles(product_id, granularity, days)
+
                 if not df.empty:
-                    # Guardar
-                    filename = f"{product_id}_{granularity}.csv"
-                    filepath = self.data_dir / filename
                     df.to_csv(filepath, index=False)
-                    
+                    size_kb = filepath.stat().st_size / 1024
                     results[product_id] = df
-                    print(f"✅ {len(df)} velas guardadas")
+                    print(f"✅ {len(df):,} velas ({size_kb:.1f} KB)")
+                    downloaded += 1
                 else:
                     print(f"❌ Sin datos")
-                
-                # Rate limiting
-                time.sleep(0.5)
-        
+                    failed.append(product_id)
+
+                time.sleep(0.3)
+
         print(f"\n{'='*60}")
-        print(f"✅ DESCARGA COMPLETADA")
+        print(f"📊 RESUMEN")
         print(f"{'='*60}")
-        print(f"   Contratos descargados: {len(results)}")
-        print(f"   Directorio: {self.data_dir}")
-        
+        print(f"   ✅ Descargados: {downloaded}")
+        print(f"   ⏭️  Saltados: {skipped}")
+        print(f"   ❌ Fallidos: {len(failed)}")
+
+        if failed:
+            print(f"\n⚠️ Contratos sin datos: {failed[:20]}")
+
         return results
     
     def list_available_data(self) -> List[str]:
@@ -397,38 +521,52 @@ class FuturesDataDownloader:
 def main():
     parser = argparse.ArgumentParser(description="Descargador de Datos de Futuros")
     parser.add_argument("--assets", type=str, help="Activos a descargar (BTC,ETH,SOL)")
-    parser.add_argument("--granularity", type=str, default="ONE_MINUTE",
+    parser.add_argument("--granularity", type=str, default="FIVE_MINUTE",
                        choices=["ONE_MINUTE", "FIVE_MINUTE", "FIFTEEN_MINUTE", "ONE_HOUR", "ONE_DAY"],
                        help="Granularidad de datos")
-    parser.add_argument("--days", type=int, default=90, help="Días de datos")
+    parser.add_argument("--days", type=int, default=30, help="Días de historial")
+    parser.add_argument("--force", action="store_true", help="Re-descargar aunque existan")
     parser.add_argument("--list", action="store_true", help="Listar datos disponibles")
-    
+    parser.add_argument("--list-api", action="store_true", help="Listar contratos de la API")
+
     args = parser.parse_args()
-    
+
     downloader = FuturesDataDownloader()
-    
+
     if args.list:
         files = downloader.list_available_data()
         print(f"\n📁 DATOS DISPONIBLES ({len(files)} archivos):")
-        for f in sorted(files)[:20]:
+        for f in sorted(files)[:30]:
             print(f"   {f}")
-        if len(files) > 20:
-            print(f"   ... y {len(files) - 20} más")
+        if len(files) > 30:
+            print(f"   ... y {len(files) - 30} más")
         return
-    
+
+    if args.list_api:
+        products = downloader.get_products_from_api()
+        print(f"\n📋 CONTRATOS EN API ({len(products)}):")
+        for p in products:
+            pid = p.get("product_id", "")
+            exp = p.get("contract_expiry_date", "PERP") or "PERP"
+            lev = p.get("max_leverage", 1)
+            print(f"   {pid:25} exp: {str(exp)[:12]} leverage: {lev}x")
+        return
+
     # Descargar
     assets = args.assets.split(",") if args.assets else None
-    
+
     results = downloader.download_all_contracts(
         assets=assets,
         granularity=args.granularity,
-        days=args.days
+        days=args.days,
+        force=args.force
     )
-    
-    # Resumen
-    print(f"\n📊 RESUMEN:")
-    for product_id, df in results.items():
-        print(f"   {product_id}: {len(df)} velas")
+
+    # Listar archivos finales
+    print(f"\n📁 Contenido de data_futures/:")
+    for f in sorted(Path(DATA_DIR).glob("*.csv"))[:20]:
+        size = f.stat().st_size / 1024
+        print(f"   {f.name:40} {size:>8.1f} KB")
 
 
 if __name__ == "__main__":
