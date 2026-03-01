@@ -181,7 +181,16 @@ GENETIC_CONFIGS = [
 ]
 
 RISK_LEVELS = ["LOW", "MEDIUM", "HIGH"]
-CANDLE_CONFIGS = [5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000]  # Más opciones = mejor exploración
+# Candle configs por timeframe - mínimo 6 meses de datos para estrategias robustas
+# ONE_MINUTE: 262,800 candles = 6 meses, 525,600 = 1 año
+# FIVE_MINUTE: 52,560 = 6 meses, 105,120 = 1 año
+# FIFTEEN_MINUTE: 17,520 = 6 meses, 35,040 = 1 año
+CANDLE_CONFIGS_BY_TIMEFRAME = {
+    "ONE_MINUTE": [200000, 300000, 400000, 525000, 750000, 1000000],
+    "FIVE_MINUTE": [50000, 75000, 100000, 150000, 200000],
+    "FIFTEEN_MINUTE": [17000, 25000, 35000],
+}
+CANDLE_CONFIGS = [50000, 75000, 100000, 200000, 300000]  # Fallback genérico (mín 6 meses 5-min)
 
 
 def generate_random_work_unit():
@@ -211,7 +220,13 @@ def generate_random_work_unit():
         contract_type = "spot"
         category = "Spot"
         is_perpetual = False
-        max_candles = random.choice(CANDLE_CONFIGS)
+        # Seleccionar candles según timeframe del archivo
+        timeframe = "FIVE_MINUTE"  # default
+        for tf in ["ONE_MINUTE", "FIVE_MINUTE", "FIFTEEN_MINUTE"]:
+            if tf in data_file:
+                timeframe = tf
+                break
+        max_candles = random.choice(CANDLE_CONFIGS_BY_TIMEFRAME.get(timeframe, CANDLE_CONFIGS))
         max_leverage = 1  # Spot has no leverage
 
     config = random.choice(GENETIC_CONFIGS)

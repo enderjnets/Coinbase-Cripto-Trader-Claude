@@ -310,7 +310,7 @@ def decode_genome_rules(encoded):
 # ============================================================================
 
 if HAS_NUMBA:
-    @njit(cache=True)
+    @njit(cache=False)
     def _calculate_slippage(price, position_value, candle_idx):
         """
         Calculate realistic slippage for market orders with deterministic noise.
@@ -343,7 +343,7 @@ if HAS_NUMBA:
 
         return price * slippage_pct
 
-    @njit(cache=True)
+    @njit(cache=False)
     def _fast_backtest(close, high, low, indicators, genome_encoded, fee_rate):
         """
         JIT-compiled backtest loop for a single genome.
