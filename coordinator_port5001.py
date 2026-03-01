@@ -708,6 +708,70 @@ def mobile():
     """Dashboard mobile-optimizado (PWA)"""
     return render_template_string(MOBILE_HTML)
 
+def _build_best_strategy(best_row, is_validated):
+    """Build best_strategy dict with asset, timeframe, risk, OOS details."""
+    try:
+        _sp = json.loads(best_row['strategy_params'])
+        _data_file = _sp.get('data_file', '')
+        _risk_level = _sp.get('risk_level', '')
+        _max_candles = _sp.get('max_candles', 10000)
+    except Exception:
+        _data_file = ''
+        _risk_level = ''
+        _max_candles = 10000
+
+    _tf_map = {'ONE_MINUTE': '1m', 'FIVE_MINUTE': '5m', 'FIFTEEN_MINUTE': '15m',
+               'ONE_HOUR': '1h', 'SIX_HOUR': '6h', 'ONE_DAY': '1d'}
+    _timeframe = '?'
+    _asset = _data_file.replace('.csv', '')
+    _cpd = 1440  # candles per day default
+    for _k, _v in _tf_map.items():
+        if _k in _data_file:
+            _timeframe = _v
+            _asset = _data_file.replace('.csv', '').replace('_' + _k, '')
+            break
+    _cpd_map = {'1m': 1440, '5m': 288, '15m': 96, '1h': 24, '6h': 4, '1d': 1}
+    _cpd = _cpd_map.get(_timeframe, 1440)
+    _backtest_days = round(_max_candles / _cpd, 1) if _cpd > 0 else 0
+
+    _wid = best_row['worker_id'] or ''
+    _wshort = _wid.rsplit('_W', 1)[0] if '_W' in _wid else _wid
+    for _sfx in ('_Darwin', '_Linux', '_Windows'):
+        if _wshort.endswith(_sfx):
+            _wshort = _wshort[:-len(_sfx)]
+            break
+    _wshort = _wshort.replace('.local', '')
+    _winst = _wid.rsplit('_W', 1)[1] if '_W' in _wid else ''
+    _worker_short = _wshort + (' W' + _winst if _winst else '')
+
+    return {
+        'pnl': best_row['pnl'],
+        'trades': best_row['trades'],
+        'win_rate': best_row['win_rate'],
+        'sharpe_ratio': best_row['sharpe_ratio'],
+        'max_drawdown': best_row['max_drawdown'],
+        'execution_time': best_row.get('execution_time', 0) if hasattr(best_row, 'get') else (best_row['execution_time'] if 'execution_time' in best_row.keys() else 0),
+        'work_unit_id': best_row['work_unit_id'],
+        'worker_id': best_row['worker_id'],
+        'is_canonical': best_row['is_canonical'] if 'is_canonical' in best_row.keys() else None,
+        'is_validated': is_validated,
+        'asset': _asset,
+        'timeframe': _timeframe,
+        'risk_level': _risk_level,
+        'data_file': _data_file,
+        'backtest_days': _backtest_days,
+        'result_id': best_row['id'],
+        'worker_short': _worker_short,
+        'max_candles': _max_candles,
+        'candles_per_day': _cpd,
+        'oos_pnl': best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0,
+        'oos_trades': best_row['oos_trades'] if 'oos_trades' in best_row.keys() else 0,
+        'oos_degradation': best_row['oos_degradation'] if 'oos_degradation' in best_row.keys() else 0,
+        'robustness_score': best_row['robustness_score'] if 'robustness_score' in best_row.keys() else 0,
+        'is_overfitted': bool(best_row['is_overfitted']) if 'is_overfitted' in best_row.keys() else False,
+    }
+
+
 @app.route('/api/status', methods=['GET'])
 def api_status():
     """Obtiene estadísticas generales del sistema"""
@@ -814,14 +878,7 @@ def api_status():
         'workers': {
             'active': active_workers
         },
-        'best_strategy': {
-            'pnl': best['pnl'] if best else 0,
-            'trades': best['trades'] if best else 0,
-            'win_rate': best['win_rate'] if best else 0,
-            'sharpe_ratio': best['sharpe_ratio'] if best else 0,
-            'max_drawdown': best['max_drawdown'] if best else 0,
-            'is_validated': is_validated
-        } if best else None,
+        'best_strategy': _build_best_strategy(best, is_validated) if best else None,
         'validation_criteria': {
             'min_trades': MIN_TRADES_REQUIRED,
             'min_win_rate': MIN_WIN_RATE,
@@ -1221,39 +1278,7 @@ def api_dashboard_stats():
         best_row = c.fetchone()
         is_validated = False  # No pasó validación profesional
 
-    best_strategy = None
-    if best_row:
-        # Extraer max_candles y timeframe del strategy_params para cálculo correcto de dailyReturn
-        try:
-            _sp = json.loads(best_row['strategy_params'])
-            _max_candles = _sp.get('max_candles', 10000)
-            _data_file = _sp.get('data_file', '')
-            _candles_per_day = 288 if 'FIVE_MINUTE' in _data_file else 1440  # 5min=288/día, 1min=1440/día
-        except Exception:
-            _max_candles = 10000
-            _candles_per_day = 1440
-
-        best_strategy = {
-            'pnl': best_row['pnl'],
-            'trades': best_row['trades'],
-            'win_rate': best_row['win_rate'],
-            'sharpe_ratio': best_row['sharpe_ratio'],
-            'max_drawdown': best_row['max_drawdown'],
-            'execution_time': best_row['execution_time'],
-            'work_unit_id': best_row['work_unit_id'],
-            'worker_id': best_row['worker_id'],
-            'is_canonical': best_row['is_canonical'],
-            'is_validated': is_validated,
-            # Timeframe info para Goal Panel
-            'max_candles': _max_candles,
-            'candles_per_day': _candles_per_day,
-            # OOS Metrics (Phase 3A)
-            'oos_pnl': best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0,
-            'oos_trades': best_row['oos_trades'] if 'oos_trades' in best_row.keys() else 0,
-            'oos_degradation': best_row['oos_degradation'] if 'oos_degradation' in best_row.keys() else 0,
-            'robustness_score': best_row['robustness_score'] if 'robustness_score' in best_row.keys() else 0,
-            'is_overfitted': bool(best_row['is_overfitted']) if 'is_overfitted' in best_row.keys() else False
-        }
+    best_strategy = _build_best_strategy(best_row, is_validated) if best_row else None
     
     # Worker performance stats — pre-fetch max_pnl for ALL workers in one query
     c.execute("""SELECT worker_id, MAX(pnl) as max_pnl
@@ -1567,7 +1592,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .gm-lbl{font-size:10px;color:var(--muted);margin-top:2px}
 
 /* ── BEST STRATEGY ── */
-.best-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.best-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:12px}
 .best-item{background:var(--surface2);border-radius:8px;padding:10px;text-align:center}
 .best-val{font-size:20px;font-weight:700;color:var(--green)}
 .best-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
@@ -1726,12 +1751,36 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <!-- MEJOR ESTRATEGIA -->
   <div class="card">
     <div class="card-title">🏆 Mejor Estrategia <span id="b-validated" style="font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;display:none">✓ Validada</span></div>
+    <!-- Asset & Timeframe header -->
+    <div id="b-info-bar" style="display:none;padding:4px 14px 0;display:flex;gap:6px;flex-wrap:wrap">
+      <span id="b-asset" style="font-size:11px;font-weight:700;background:var(--blue);color:#fff;padding:2px 8px;border-radius:4px">-</span>
+      <span id="b-tf" style="font-size:11px;font-weight:600;background:var(--surface2);color:var(--text);padding:2px 8px;border-radius:4px">-</span>
+      <span id="b-risk" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:none">-</span>
+      <span id="b-worker" style="font-size:11px;color:var(--muted);padding:2px 8px;border-radius:4px;background:var(--surface2)">-</span>
+      <span id="b-rid" style="font-size:10px;color:var(--muted);padding:2px 6px;margin-left:auto">#-</span>
+    </div>
     <div class="best-grid">
       <div class="best-item"><div class="best-val" id="b-pnl">$-</div><div class="best-lbl">PnL</div></div>
       <div class="best-item"><div class="best-val" id="b-wr">-%</div><div class="best-lbl">Win Rate</div></div>
       <div class="best-item"><div class="best-val" id="b-trades">-</div><div class="best-lbl">Trades</div></div>
       <div class="best-item"><div class="best-val" id="b-sharpe">-</div><div class="best-lbl">Sharpe</div></div>
       <div class="best-item"><div class="best-val" id="b-dd">-%</div><div class="best-lbl">Max DD</div></div>
+      <div class="best-item"><div class="best-val" id="b-days" style="color:var(--blue)">-</div><div class="best-lbl">Backtest Días</div></div>
+    </div>
+    <!-- OOS row -->
+    <div id="b-oos-row" style="display:none;padding:0 12px 10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+      <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center">
+        <div style="font-size:14px;font-weight:700" id="b-oos-pnl">-</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">OOS PnL</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center">
+        <div style="font-size:14px;font-weight:700" id="b-oos-trades">-</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">OOS Trades</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center">
+        <div style="font-size:14px;font-weight:700" id="b-robustness">-</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Robustness</div>
+      </div>
     </div>
     <div id="b-warning" style="font-size:11px;color:var(--yellow);margin-top:8px;display:none">⚠️ Estrategia no validada - menos de 50 trades o win rate sospechoso</div>
   </div>
@@ -1913,6 +1962,45 @@ async function fetchAll() {
       const dd = (best.max_drawdown||0)*100;
       document.getElementById('b-dd').textContent = fmt(dd,1) + '%';
       document.getElementById('b-dd').style.color = dd<=10 ? 'var(--green)' : dd<=20 ? 'var(--yellow)' : 'var(--red)';
+
+      // Backtest days
+      document.getElementById('b-days').textContent = best.backtest_days ? fmt(best.backtest_days, 0) + 'd' : '-';
+
+      // Asset, timeframe, risk, worker info bar
+      const infoBar = document.getElementById('b-info-bar');
+      if (best.asset) {
+        infoBar.style.display = 'flex';
+        document.getElementById('b-asset').textContent = best.asset || '-';
+        document.getElementById('b-tf').textContent = best.timeframe || '-';
+        document.getElementById('b-worker').textContent = best.worker_short || best.worker_id || '-';
+        document.getElementById('b-rid').textContent = '#' + (best.result_id || best.work_unit_id || '-');
+
+        const riskEl = document.getElementById('b-risk');
+        if (best.risk_level) {
+          riskEl.style.display = 'inline';
+          riskEl.textContent = best.risk_level;
+          const rc = {'LOW':'var(--green)','MEDIUM':'var(--yellow)','HIGH':'var(--red)'}[best.risk_level] || 'var(--muted)';
+          riskEl.style.background = rc;
+          riskEl.style.color = best.risk_level === 'MEDIUM' ? '#000' : '#fff';
+        } else {
+          riskEl.style.display = 'none';
+        }
+      }
+
+      // OOS metrics row
+      const oosRow = document.getElementById('b-oos-row');
+      if (best.oos_pnl || best.oos_trades) {
+        oosRow.style.display = 'grid';
+        const oosPnl = best.oos_pnl || 0;
+        document.getElementById('b-oos-pnl').textContent = '$' + fmt(oosPnl, 2);
+        document.getElementById('b-oos-pnl').style.color = oosPnl >= 0 ? 'var(--green)' : 'var(--red)';
+        document.getElementById('b-oos-trades').textContent = best.oos_trades || 0;
+        const rob = best.robustness_score || 0;
+        document.getElementById('b-robustness').textContent = fmt(rob, 0) + '/100';
+        document.getElementById('b-robustness').style.color = rob >= 60 ? 'var(--green)' : rob >= 30 ? 'var(--yellow)' : 'var(--red)';
+      } else {
+        oosRow.style.display = 'none';
+      }
 
       // Validation status
       const validatedEl = document.getElementById('b-validated');
@@ -2622,12 +2710,19 @@ DASHBOARD_HTML = """
 
     <!-- BEST STRATEGY -->
     <div class="section-title">🏆 Mejor Estrategia Encontrada</div>
+    <div id="b-info-bar2" style="display:none;margin:0 16px 8px;display:flex;gap:6px;flex-wrap:wrap">
+        <span id="b-asset2" style="font-size:12px;font-weight:700;background:var(--blue);color:#fff;padding:3px 10px;border-radius:5px">-</span>
+        <span id="b-tf2" style="font-size:12px;font-weight:600;background:rgba(255,255,255,.08);color:var(--text);padding:3px 10px;border-radius:5px">-</span>
+        <span id="b-risk2" style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:5px;display:none">-</span>
+        <span id="b-rid2" style="font-size:11px;color:var(--muted);padding:3px 6px;margin-left:auto">#-</span>
+    </div>
     <div class="best-panel" id="best-panel">
         <div class="best-stat"><div class="best-stat-val" id="b-pnl">$-</div><div class="best-stat-lbl">PnL</div></div>
         <div class="best-stat"><div class="best-stat-val" id="b-trades">-</div><div class="best-stat-lbl">Trades</div></div>
         <div class="best-stat"><div class="best-stat-val" id="b-wr">-%</div><div class="best-stat-lbl">Win Rate</div></div>
         <div class="best-stat"><div class="best-stat-val" id="b-sharpe">-</div><div class="best-stat-lbl">Sharpe Ratio</div></div>
         <div class="best-stat"><div class="best-stat-val" id="b-dd">-%</div><div class="best-stat-lbl">Max Drawdown</div></div>
+        <div class="best-stat"><div class="best-stat-val" id="b-days2" style="color:var(--blue)">-</div><div class="best-stat-lbl">Backtest Días</div></div>
         <div class="best-stat"><div class="best-stat-val" id="b-worker" style="font-size:13px;word-break:break-all">-</div><div class="best-stat-lbl">Worker</div></div>
     </div>
 
@@ -2907,7 +3002,25 @@ async function updateDashboard() {
             document.getElementById('b-wr').textContent      = (best.win_rate * 100).toFixed(1) + '%';
             document.getElementById('b-sharpe').textContent  = fmt(best.sharpe_ratio, 2);
             document.getElementById('b-dd').textContent      = ((best.max_drawdown || 0) * 100).toFixed(1) + '%';
-            document.getElementById('b-worker').textContent  = (best.worker_id || '-').split('_').slice(-1)[0];
+            document.getElementById('b-worker').textContent  = best.worker_short || (best.worker_id || '-').split('_').slice(-1)[0];
+            document.getElementById('b-days2').textContent   = best.backtest_days ? fmt(best.backtest_days, 0) + 'd' : '-';
+
+            // Asset, timeframe, risk info bar (mobile)
+            const ib2 = document.getElementById('b-info-bar2');
+            if (best.asset) {
+                ib2.style.display = 'flex';
+                document.getElementById('b-asset2').textContent = best.asset || '-';
+                document.getElementById('b-tf2').textContent = best.timeframe || '-';
+                document.getElementById('b-rid2').textContent = '#' + (best.result_id || '-');
+                const riskEl2 = document.getElementById('b-risk2');
+                if (best.risk_level) {
+                    riskEl2.style.display = 'inline';
+                    riskEl2.textContent = best.risk_level;
+                    const rc2 = {'LOW':'var(--green)','MEDIUM':'var(--yellow)','HIGH':'var(--red)'}[best.risk_level] || 'var(--muted)';
+                    riskEl2.style.background = rc2;
+                    riskEl2.style.color = best.risk_level === 'MEDIUM' ? '#000' : '#fff';
+                }
+            }
         }
 
         // ── Objetivo 5% Diario ──
