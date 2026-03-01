@@ -1810,6 +1810,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <div class="gm"><div class="gm-val" id="g-sharpe" style="color:var(--yellow)">-</div><div class="gm-lbl">Sharpe</div></div>
       <div class="gm"><div class="gm-val" id="g-dd" style="color:var(--yellow)">-%</div><div class="gm-lbl">Max Drawdown</div></div>
     </div>
+    <div id="g-source" style="font-size:10px;color:var(--muted);margin-top:8px;text-align:center;display:none"></div>
+    <div id="g-v2" style="font-size:10px;color:#58a6ff;margin-top:4px;text-align:center;display:none"></div>
   </div>
 
   <!-- MEJOR ESTRATEGIA -->
@@ -2086,9 +2088,10 @@ async function fetchAll() {
       }
 
       // Objetivo 5%
-      const CAP = 500, TARGET = 5.0, DAYS = 80000/1440;
+      const CAP = 500, TARGET = 5.0;
+      const DAYS = best.backtest_days || ((best.max_candles || 15000) / (best.candles_per_day || 288));
       const totalRet  = best.pnl / CAP * 100;
-      const dailyPct  = totalRet / DAYS;
+      const dailyPct  = DAYS > 0 ? totalRet / DAYS : 0;
       const dailyPnl  = CAP * (dailyPct / 100);
       const progress  = Math.min(dailyPct / TARGET * 100, 100);
 
@@ -2126,6 +2129,28 @@ async function fetchAll() {
       const ddGoal = (best.max_drawdown||0)*100;
       ddEl.textContent = fmt(ddGoal,1) + '%';
       ddEl.style.color = ddGoal<=10 ? 'var(--green)' : ddGoal<=25 ? 'var(--yellow)' : 'var(--red)';
+
+      // Source indicator (old vs corrected backtester)
+      const FIRST_V2 = 30819;
+      const rid = best.result_id || 0;
+      const wuid = best.work_unit_id || 0;
+      const isV2 = wuid >= FIRST_V2;
+      const srcEl = document.getElementById('g-source');
+      srcEl.style.display = 'block';
+      srcEl.textContent = isV2
+        ? '✓ Backtester V2 (slippage 0.2%)'
+        : '⚠ Backtester V1 (slippage 0.03%) — pendiente validación V2';
+      srcEl.style.color = isV2 ? 'var(--green)' : '#d29922';
+
+      // V2 comparison
+      const v2p = perf || {};
+      if (!isV2 && v2p.v2_max_pnl > 0) {
+        const v2el = document.getElementById('g-v2');
+        v2el.style.display = 'block';
+        const v2days = DAYS;
+        const v2daily = (v2p.v2_max_pnl / CAP * 100) / v2days;
+        v2el.textContent = '📊 V2 real: max $' + fmt(v2p.v2_max_pnl,0) + ' → ' + fmt(v2daily,2) + '%/día (avg $' + fmt(v2p.v2_avg_pnl,0) + ')';
+      }
     }
 
     // ── Parallel Activity Grid ──
@@ -2785,6 +2810,8 @@ DASHBOARD_HTML = """
         <div class="goal-footer">
             <span id="goal-status-msg">Calculando...</span>
         </div>
+        <div id="goal-source" style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center;padding:6px 10px;background:var(--surface2);border-radius:6px;display:none"></div>
+        <div id="goal-v2" style="font-size:11px;color:#58a6ff;margin-top:4px;text-align:center;padding:6px 10px;background:var(--surface2);border-radius:6px;display:none"></div>
     </div>
 
     <!-- BEST STRATEGY -->
@@ -3179,7 +3206,7 @@ async function updateDashboard() {
             document.getElementById('gm-total-return').textContent  = fmt(totalReturn, 2) + '%';
             document.getElementById('gm-total-return-target').textContent = 'objetivo ' + fmt(targetTotalReturn, 0) + '%';
             document.getElementById('gm-days').textContent          = fmt(BACKTEST_DAYS, 1) + ' días';
-            const tfLabel = CANDLES_PER_DAY === 288 ? '5min' : '1min';
+            const tfLabel = CANDLES_PER_DAY === 96 ? '15min' : CANDLES_PER_DAY === 288 ? '5min' : '1min';
             document.getElementById('gm-candles').textContent       = MAX_CANDLES.toLocaleString() + ' candles ' + tfLabel;
             document.getElementById('gm-multiplier').textContent    = fmt(multiplier, 1) + 'x';
 
@@ -3199,6 +3226,28 @@ async function updateDashboard() {
             ddEl.style.color = dd <= 20 ? 'var(--green)' : dd <= 35 ? 'var(--yellow)' : 'var(--red)';
 
             document.getElementById('goal-status-msg').textContent = statusMsg;
+
+            // Source indicator (old vs corrected backtester)
+            const FIRST_V2_WU = 30819;
+            const bestWuId = best.work_unit_id || 0;
+            const isV2src = bestWuId >= FIRST_V2_WU;
+            const gsEl = document.getElementById('goal-source');
+            gsEl.style.display = 'block';
+            gsEl.innerHTML = isV2src
+                ? '<span style="color:var(--green)">✓ Datos del Backtester V2</span> (slippage 0.2%, margin calls, PnL caps)'
+                : '<span style="color:#d29922">⚠ Datos del Backtester V1</span> (slippage 0.03%) — Resultados inflados. Pendiente: más resultados V2 para comparación realista.';
+
+            // V2 comparison line
+            const perfData = dash.performance || {};
+            if (!isV2src && perfData.v2_max_pnl > 0) {
+                const gv2El = document.getElementById('goal-v2');
+                gv2El.style.display = 'block';
+                const v2DailyPct = (perfData.v2_max_pnl / BACKTEST_CAPITAL * 100) / BACKTEST_DAYS;
+                const v2Progress = Math.min(v2DailyPct / TARGET_DAILY_PCT * 100, 100);
+                gv2El.innerHTML = '📊 <strong>Backtester V2 real:</strong> max $' + fmt(perfData.v2_max_pnl, 0)
+                    + ' → ' + fmt(v2DailyPct, 2) + '%/día (' + fmt(v2Progress, 1) + '% del objetivo)'
+                    + ' | avg $' + fmt(perfData.v2_avg_pnl, 0) + ' (' + perfData.v2_total + ' resultados)';
+            }
         }
 
         // ── Progress bar ──
