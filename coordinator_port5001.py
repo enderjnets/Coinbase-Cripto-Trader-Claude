@@ -65,6 +65,7 @@ MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
 MIN_BACKTEST_DAYS = 7             # Mínimo 7 días (3K candles 5-min = 10.4 días → OK)
 MAX_PNL_REALISTIC = 2000.0        # PnL máximo realista sobre $500 capital (400% retorno)
 MAX_DAILY_RETURN_PCT = 10.0       # Retorno diario máximo 10% (backtester corregido produce 0.5-3%)
+FIRST_CORRECTED_WU_ID = 30819    # Primer WU con backtester corregido (slippage 0.2%, margin calls, PnL caps)
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
 MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
@@ -1223,10 +1224,10 @@ def api_dashboard_stats():
     c.execute("SELECT COUNT(*) FROM results")
     total_results = c.fetchone()[0]
     
-    c.execute("SELECT COUNT(*) FROM results WHERE pnl > 0 AND pnl < 5000 AND trades >= 10")
+    c.execute("SELECT COUNT(*) FROM results WHERE pnl > 0 AND pnl <= ? AND trades >= 10", (MAX_PNL_REALISTIC,))
     positive_results = c.fetchone()[0]
 
-    c.execute("SELECT AVG(pnl) FROM results WHERE pnl > 0 AND pnl < 5000 AND trades >= 10")
+    c.execute("SELECT AVG(pnl) FROM results WHERE pnl > 0 AND pnl <= ? AND trades >= 10", (MAX_PNL_REALISTIC,))
     avg_pnl = c.fetchone()[0] or 0
 
     # PnL timeline - últimos 500 resultados (chart usa solo 200, más que suficiente)
@@ -1379,6 +1380,37 @@ def api_dashboard_stats():
     results_last_24h = c.fetchone()[0] or 0
     results_per_hour = results_last_24h / 24.0
 
+    # Corrected backtester stats (V2: slippage 0.2%, margin calls, PnL caps)
+    c.execute("SELECT COUNT(*) FROM results WHERE work_unit_id >= ?", (FIRST_CORRECTED_WU_ID,))
+    v2_total = c.fetchone()[0] or 0
+
+    c.execute("SELECT COUNT(*), AVG(pnl), MAX(pnl) FROM results WHERE work_unit_id >= ? AND pnl > 0",
+              (FIRST_CORRECTED_WU_ID,))
+    v2_row = c.fetchone()
+    v2_positive = v2_row[0] or 0
+    v2_avg_pnl = v2_row[1] or 0
+    v2_max_pnl = v2_row[2] or 0
+
+    # Canonical and validation rates
+    c.execute("SELECT COUNT(*) FROM results WHERE is_canonical = 1")
+    canonical_count = c.fetchone()[0] or 0
+    canonical_rate = (canonical_count / total_results * 100) if total_results > 0 else 0
+
+    c.execute("""SELECT COUNT(*) FROM results r
+        JOIN work_units w ON r.work_unit_id = w.id
+        WHERE r.is_canonical = 1 AND r.is_overfitted = 0
+        AND r.trades >= ? AND r.win_rate >= ? AND r.win_rate <= ?
+        AND r.sharpe_ratio >= ? AND r.sharpe_ratio <= ?
+        AND r.max_drawdown <= ? AND r.pnl <= ?""",
+        (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
+         MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MAX_PNL_REALISTIC))
+    validated_count = c.fetchone()[0] or 0
+
+    # Last result timestamp
+    c.execute("SELECT MAX(submitted_at) FROM results")
+    last_jd = c.fetchone()[0]
+    last_result_unix = (last_jd - 2440587.5) * 86400 if last_jd else 0
+
     # =====================================================
     # ESTADÍSTICAS POR ACTIVO (NUEVO)
     # =====================================================
@@ -1388,8 +1420,8 @@ def api_dashboard_stats():
             json_extract(w.strategy_params, '$.data_file') as data_file,
             COUNT(DISTINCT w.id) as total_wus,
             COUNT(DISTINCT CASE WHEN w.status='completed' THEN w.id END) as completed,
-            AVG(CASE WHEN r.is_canonical=1 AND r.is_overfitted=0 AND r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as avg_pnl,
-            MAX(CASE WHEN r.is_canonical=1 AND r.is_overfitted=0 AND r.pnl > -5000 AND r.pnl < 5000 AND r.trades >= 10 THEN r.pnl END) as max_pnl,
+            AVG(CASE WHEN r.is_canonical=1 AND r.is_overfitted=0 AND r.pnl > -2000 AND r.pnl <= 2000 AND r.trades >= 10 THEN r.pnl END) as avg_pnl,
+            MAX(CASE WHEN r.is_canonical=1 AND r.is_overfitted=0 AND r.pnl > -2000 AND r.pnl <= 2000 AND r.trades >= 10 THEN r.pnl END) as max_pnl,
             SUM(CASE WHEN r.is_canonical=1 AND r.trades >= 10 THEN r.trades END) as total_trades,
             SUM(r.execution_time) as total_time
         FROM work_units w
@@ -1445,7 +1477,7 @@ def api_dashboard_stats():
         })
 
     # Capital simulado total - solo resultados válidos (cada backtest usa $500)
-    c.execute("SELECT COUNT(*) FROM results WHERE pnl > -5000 AND pnl < 5000 AND trades >= 10")
+    c.execute("SELECT COUNT(*) FROM results WHERE pnl > -2000 AND pnl <= 2000 AND trades >= 10")
     valid_results = c.fetchone()[0]
     simulated_capital = valid_results * 500
 
@@ -1473,7 +1505,15 @@ def api_dashboard_stats():
             'results_per_hour': results_per_hour,
             'avg_execution_time': avg_exec_time,
             'total_compute_time': total_compute_time,
-            'simulated_capital': simulated_capital
+            'simulated_capital': simulated_capital,
+            'v2_total': v2_total,
+            'v2_positive': v2_positive,
+            'v2_avg_pnl': v2_avg_pnl,
+            'v2_max_pnl': v2_max_pnl,
+            'canonical_count': canonical_count,
+            'canonical_rate': canonical_rate,
+            'validated_count': validated_count,
+            'last_result_unix': last_result_unix
         },
         'best_strategy': best_strategy,
         'pnl_timeline': pnl_timeline,
@@ -2624,14 +2664,29 @@ DASHBOARD_HTML = """
             <div class="kpi-sub" id="k-bestwr">- win rate</div>
         </div>
         <div class="kpi" style="--accent:var(--blue)">
-            <div class="kpi-label">Avg PnL (válido)</div>
+            <div class="kpi-label">Avg PnL (filtrado)</div>
             <div class="kpi-value" id="k-avgpnl">$-</div>
-            <div class="kpi-sub" id="k-positive">- resultados positivos</div>
+            <div class="kpi-sub" id="k-positive">- positivos</div>
         </div>
         <div class="kpi" style="--accent:var(--yellow)">
             <div class="kpi-label">Resultados/hr</div>
             <div class="kpi-value" id="k-rph">-</div>
-            <div class="kpi-sub" id="k-totalres">- total resultados</div>
+            <div class="kpi-sub" id="k-totalres">- total</div>
+        </div>
+        <div class="kpi" style="--accent:#58a6ff">
+            <div class="kpi-label">Backtester V2</div>
+            <div class="kpi-value" id="k-v2count">-</div>
+            <div class="kpi-sub" id="k-v2detail">avg $- / max $-</div>
+        </div>
+        <div class="kpi" style="--accent:var(--green)">
+            <div class="kpi-label">Validadas</div>
+            <div class="kpi-value" id="k-validated">-</div>
+            <div class="kpi-sub" id="k-canonical">- canónicas (-%)</div>
+        </div>
+        <div class="kpi" style="--accent:#b392f0">
+            <div class="kpi-label">Último Resultado</div>
+            <div class="kpi-value" id="k-lastres">-</div>
+            <div class="kpi-sub" id="k-lastres-sub">-</div>
         </div>
     </div>
 
@@ -3017,6 +3072,29 @@ async function updateDashboard() {
         document.getElementById('k-positive').textContent  = (perf.positive_pnl_count || 0).toLocaleString() + ' positivos';
         document.getElementById('k-rph').textContent       = fmt(perf.results_per_hour, 1);
         document.getElementById('k-totalres').textContent  = (perf.total_results || 0).toLocaleString() + ' total';
+
+        // Backtester V2 stats
+        const v2t = perf.v2_total || 0;
+        document.getElementById('k-v2count').textContent = v2t.toLocaleString();
+        document.getElementById('k-v2detail').textContent = 'avg $' + fmt(perf.v2_avg_pnl || 0, 0) + ' / max $' + fmt(perf.v2_max_pnl || 0, 0);
+
+        // Validated / Canonical
+        document.getElementById('k-validated').textContent = (perf.validated_count || 0).toLocaleString();
+        document.getElementById('k-canonical').textContent = (perf.canonical_count || 0).toLocaleString() + ' canónicas (' + fmt(perf.canonical_rate || 0, 1) + '%)';
+
+        // Last result
+        const lastUnix = perf.last_result_unix || 0;
+        if (lastUnix > 0) {
+            const agoSec = Math.floor(Date.now() / 1000 - lastUnix);
+            let agoStr;
+            if (agoSec < 60) agoStr = agoSec + 's';
+            else if (agoSec < 3600) agoStr = Math.floor(agoSec / 60) + 'm';
+            else if (agoSec < 86400) agoStr = Math.floor(agoSec / 3600) + 'h ' + Math.floor((agoSec % 3600) / 60) + 'm';
+            else agoStr = Math.floor(agoSec / 86400) + 'd ' + Math.floor((agoSec % 86400) / 3600) + 'h';
+            document.getElementById('k-lastres').textContent = 'hace ' + agoStr;
+            const d = new Date(lastUnix * 1000);
+            document.getElementById('k-lastres-sub').textContent = d.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'});
+        }
 
         // Best strategy
         const best = dash.best_strategy || status.best_strategy;
