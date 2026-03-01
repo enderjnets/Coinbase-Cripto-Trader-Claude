@@ -1391,6 +1391,37 @@ def api_dashboard_stats():
     v2_avg_pnl = v2_row[1] or 0
     v2_max_pnl = v2_row[2] or 0
 
+    # Best V2 result (full details for Objetivo 5% section)
+    c.execute("""SELECT r.pnl, r.trades, r.win_rate, r.sharpe_ratio, r.max_drawdown,
+                        r.work_unit_id, r.id as result_id, w.strategy_params
+                 FROM results r
+                 JOIN work_units w ON r.work_unit_id = w.id
+                 WHERE r.work_unit_id >= ? AND r.pnl > 0 AND r.trades >= 5
+                 ORDER BY r.pnl DESC LIMIT 1""", (FIRST_CORRECTED_WU_ID,))
+    v2_best_row = c.fetchone()
+    v2_best = None
+    if v2_best_row:
+        try:
+            _v2sp = json.loads(v2_best_row['strategy_params'])
+            _v2mc = _v2sp.get('max_candles', 10000)
+            _v2df = _v2sp.get('data_file', '')
+            _v2cpd = 96 if 'FIFTEEN' in _v2df else 288 if 'FIVE' in _v2df else 1440
+            _v2days = round(_v2mc / _v2cpd, 1)
+        except Exception:
+            _v2mc, _v2cpd, _v2days = 10000, 288, 34.7
+        v2_best = {
+            'pnl': v2_best_row['pnl'],
+            'trades': v2_best_row['trades'],
+            'win_rate': v2_best_row['win_rate'],
+            'sharpe_ratio': v2_best_row['sharpe_ratio'],
+            'max_drawdown': v2_best_row['max_drawdown'],
+            'work_unit_id': v2_best_row['work_unit_id'],
+            'result_id': v2_best_row['result_id'],
+            'max_candles': _v2mc,
+            'candles_per_day': _v2cpd,
+            'backtest_days': _v2days
+        }
+
     # Canonical and validation rates
     c.execute("SELECT COUNT(*) FROM results WHERE is_canonical = 1")
     canonical_count = c.fetchone()[0] or 0
@@ -1513,7 +1544,8 @@ def api_dashboard_stats():
             'canonical_count': canonical_count,
             'canonical_rate': canonical_rate,
             'validated_count': validated_count,
-            'last_result_unix': last_result_unix
+            'last_result_unix': last_result_unix,
+            'v2_best': v2_best
         },
         'best_strategy': best_strategy,
         'pnl_timeline': pnl_timeline,
@@ -2087,10 +2119,16 @@ async function fetchAll() {
         warningEl.style.display = 'none';
       }
 
-      // Objetivo 5%
+      // Objetivo 5% — prioriza V2 (backtester corregido)
       const CAP = 500, TARGET = 5.0;
-      const DAYS = best.backtest_days || ((best.max_candles || 15000) / (best.candles_per_day || 288));
-      const totalRet  = best.pnl / CAP * 100;
+      const FIRST_V2 = 30819;
+      const bestIsV2m = (best.work_unit_id || 0) >= FIRST_V2;
+      const v2p = perf || {};
+      const v2bm = v2p.v2_best;
+      const useV2m = !bestIsV2m && v2bm && v2bm.pnl > 0;
+      const srcM = useV2m ? v2bm : best;
+      const DAYS = srcM.backtest_days || ((srcM.max_candles || best.max_candles || 15000) / (srcM.candles_per_day || best.candles_per_day || 288));
+      const totalRet  = srcM.pnl / CAP * 100;
       const dailyPct  = DAYS > 0 ? totalRet / DAYS : 0;
       const dailyPnl  = CAP * (dailyPct / 100);
       const progress  = Math.min(dailyPct / TARGET * 100, 100);
@@ -2098,16 +2136,16 @@ async function fetchAll() {
       let gc, gg, msg;
       if (progress < 20) {
         gc='#f85149'; gg='linear-gradient(90deg,#f85149,#d29922)';
-        msg = '⚡ Inicio — sigue minando estrategias';
+        msg = '⚡ Inicio — sigue minando con V2';
       } else if (progress < 50) {
         gc='#d29922'; gg='linear-gradient(90deg,#d29922,#e3b341)';
-        msg = '📈 Buen progreso — ' + fmt(progress,1) + '% del objetivo';
+        msg = '📈 Progreso — ' + fmt(progress,1) + '% del objetivo';
       } else if (progress < 80) {
         gc='#58a6ff'; gg='linear-gradient(90deg,#58a6ff,#3fb950)';
         msg = '🚀 Muy cerca — ' + fmt(100-progress,1) + '% restante';
       } else {
         gc='#3fb950'; gg='linear-gradient(90deg,#238636,#3fb950)';
-        msg = '🏆 ¡Objetivo casi alcanzado!';
+        msg = '🏆 ¡Objetivo alcanzado! Validar en live.';
       }
 
       const gc_card = document.getElementById('goal-card');
@@ -2118,38 +2156,38 @@ async function fetchAll() {
       document.getElementById('g-badge').textContent  = fmt(progress,1) + '%';
       document.getElementById('g-fill').style.width   = progress.toFixed(1) + '%';
       document.getElementById('g-msg').textContent    = msg;
-      document.getElementById('g-pnl').textContent    = '$' + fmt(best.pnl,2);
+      document.getElementById('g-pnl').textContent    = '$' + fmt(srcM.pnl,2);
       document.getElementById('g-dailypnl').textContent = '$' + fmt(dailyPnl,2) + '/día';
 
       const srEl = document.getElementById('g-sharpe');
-      srEl.textContent = fmt(best.sharpe_ratio,2);
-      setColor(srEl, best.sharpe_ratio||0, 2, 1);
+      const srVal = (useV2m && v2bm ? v2bm.sharpe_ratio : best.sharpe_ratio) || 0;
+      srEl.textContent = fmt(srVal,2);
+      setColor(srEl, srVal, 2, 1);
 
       const ddEl = document.getElementById('g-dd');
-      const ddGoal = (best.max_drawdown||0)*100;
+      const ddGoal = ((useV2m && v2bm ? v2bm.max_drawdown : best.max_drawdown)||0)*100;
       ddEl.textContent = fmt(ddGoal,1) + '%';
       ddEl.style.color = ddGoal<=10 ? 'var(--green)' : ddGoal<=25 ? 'var(--yellow)' : 'var(--red)';
 
-      // Source indicator (old vs corrected backtester)
-      const FIRST_V2 = 30819;
-      const rid = best.result_id || 0;
-      const wuid = best.work_unit_id || 0;
-      const isV2 = wuid >= FIRST_V2;
+      // Source indicator
       const srcEl = document.getElementById('g-source');
       srcEl.style.display = 'block';
-      srcEl.textContent = isV2
-        ? '✓ Backtester V2 (slippage 0.2%)'
-        : '⚠ Backtester V1 (slippage 0.03%) — pendiente validación V2';
-      srcEl.style.color = isV2 ? 'var(--green)' : '#d29922';
+      if (bestIsV2m) {
+        srcEl.textContent = '✓ Backtester V2 (slippage 0.2%)';
+        srcEl.style.color = 'var(--green)';
+      } else if (useV2m) {
+        const v1d = (best.pnl / CAP * 100) / ((best.max_candles||10000)/(best.candles_per_day||288));
+        srcEl.innerHTML = '<span style="color:var(--green)">✓ Datos V2 (realistas)</span> <span style="color:var(--muted)">— V1 inflado: ' + fmt(v1d,1) + '%/día</span>';
+      } else {
+        srcEl.textContent = '⚠ Solo datos V1 (inflados)';
+        srcEl.style.color = '#d29922';
+      }
 
-      // V2 comparison
-      const v2p = perf || {};
-      if (!isV2 && v2p.v2_max_pnl > 0) {
+      // V2 stats
+      if (v2p.v2_total > 0) {
         const v2el = document.getElementById('g-v2');
         v2el.style.display = 'block';
-        const v2days = DAYS;
-        const v2daily = (v2p.v2_max_pnl / CAP * 100) / v2days;
-        v2el.textContent = '📊 V2 real: max $' + fmt(v2p.v2_max_pnl,0) + ' → ' + fmt(v2daily,2) + '%/día (avg $' + fmt(v2p.v2_avg_pnl,0) + ')';
+        v2el.textContent = '📊 V2: ' + v2p.v2_total + ' resultados | avg $' + fmt(v2p.v2_avg_pnl||0,0) + ' | max $' + fmt(v2p.v2_max_pnl||0,0);
       }
     }
 
@@ -3155,43 +3193,46 @@ async function updateDashboard() {
         }
 
         // ── Objetivo 5% Diario ──
+        // Prioriza V2 (backtester corregido) en display principal
         if (best && best.pnl) {
-            // El backtester corre con $500 capital (numba_backtester.py, balance = 500).
-            // max_candles y candles_per_day vienen del backend (strategy_params real de la mejor estrategia).
-            const BACKTEST_CAPITAL = 500;    // capital del backtester
+            const BACKTEST_CAPITAL = 500;
             const TARGET_DAILY_PCT = 5.0;
-            const MAX_CANDLES      = best.max_candles || 10000;
-            const CANDLES_PER_DAY  = best.candles_per_day || 1440;  // 288 si FIVE_MINUTE, 1440 si ONE_MINUTE
-            const BACKTEST_DAYS    = MAX_CANDLES / CANDLES_PER_DAY;
+            const perfData = dash.performance || {};
+            const v2b = perfData.v2_best;
+            const FIRST_V2_WU = 30819;
+            const bestIsV2 = (best.work_unit_id || 0) >= FIRST_V2_WU;
 
-            // % de retorno basado en $500 capital
-            const totalReturn    = best.pnl / BACKTEST_CAPITAL * 100;
-            const dailyReturnPct = totalReturn / BACKTEST_DAYS;
-            // PnL diario equivalente sobre $500
+            // Si hay datos V2 y best NO es V2, usar V2 como display principal
+            const useV2 = !bestIsV2 && v2b && v2b.pnl > 0;
+            const src = useV2 ? v2b : best;
+            const srcDays = src.backtest_days || ((src.max_candles || best.max_candles || 10000) / (src.candles_per_day || best.candles_per_day || 288));
+            const srcCpd = src.candles_per_day || best.candles_per_day || 288;
+            const srcMc = src.max_candles || best.max_candles || 10000;
+
+            const totalReturn    = src.pnl / BACKTEST_CAPITAL * 100;
+            const dailyReturnPct = srcDays > 0 ? totalReturn / srcDays : 0;
             const dailyPnl       = BACKTEST_CAPITAL * (dailyReturnPct / 100);
             const targetDailyPnl = BACKTEST_CAPITAL * (TARGET_DAILY_PCT / 100);
-            const targetTotalPnl = targetDailyPnl * BACKTEST_DAYS;
-            const targetTotalReturn = TARGET_DAILY_PCT * BACKTEST_DAYS;
+            const targetTotalPnl = targetDailyPnl * srcDays;
+            const targetTotalReturn = TARGET_DAILY_PCT * srcDays;
             const progressPct    = Math.min(dailyReturnPct / TARGET_DAILY_PCT * 100, 100);
-            const multiplier     = targetTotalPnl / Math.max(BACKTEST_CAPITAL * (totalReturn/100), 0.01);
+            const multiplier     = targetDailyPnl / Math.max(dailyPnl, 0.01);
 
-            // Color based on progress
             let goalColor, goalGradient, statusMsg;
             if (progressPct < 20) {
                 goalColor = '#f85149'; goalGradient = 'linear-gradient(90deg,#f85149,#d29922)';
-                statusMsg = `⚡ Inicio del camino — necesitamos ${fmt(multiplier,1)}x de mejora en PnL diario para alcanzar el objetivo.`;
+                statusMsg = `⚡ Inicio — necesitamos ${fmt(multiplier,1)}x mejora. Seguir minando con backtester V2.`;
             } else if (progressPct < 50) {
                 goalColor = '#d29922'; goalGradient = 'linear-gradient(90deg,#d29922,#e3b341)';
-                statusMsg = `📈 Buen progreso — ${fmt(progressPct,1)}% del objetivo alcanzado. Seguir optimizando indicadores y leverage.`;
+                statusMsg = `📈 Buen progreso — ${fmt(progressPct,1)}% del objetivo. Optimizar indicadores y timeframes.`;
             } else if (progressPct < 80) {
                 goalColor = '#58a6ff'; goalGradient = 'linear-gradient(90deg,#58a6ff,#3fb950)';
-                statusMsg = `🚀 Muy cerca — ${fmt(100 - progressPct, 1)}% restante para el 5% diario. Refinando la estrategia...`;
+                statusMsg = `🚀 Muy cerca — ${fmt(100 - progressPct, 1)}% restante para el 5% diario.`;
             } else {
                 goalColor = '#3fb950'; goalGradient = 'linear-gradient(90deg,#238636,#3fb950)';
-                statusMsg = `🏆 ¡Objetivo casi alcanzado! Retorno diario de ${fmt(dailyReturnPct,2)}%. Validar en live trading.`;
+                statusMsg = `🏆 ¡Objetivo alcanzado! ${fmt(dailyReturnPct,2)}%/día. Validar en paper/live trading.`;
             }
 
-            // Apply color CSS var via style
             const gw = document.getElementById('goal-wrap');
             gw.style.setProperty('--goal-color', goalColor);
             gw.style.setProperty('--goal-gradient', goalGradient);
@@ -3201,52 +3242,51 @@ async function updateDashboard() {
             document.getElementById('goal-fill').style.width        = progressPct.toFixed(1) + '%';
 
             document.getElementById('gm-daily-pnl').textContent     = '$' + fmt(dailyPnl, 2) + '/día';
-            document.getElementById('gm-total-pnl').textContent     = '$' + fmt(best.pnl, 2);
+            document.getElementById('gm-total-pnl').textContent     = '$' + fmt(src.pnl, 2);
             document.getElementById('gm-total-target').textContent  = 'objetivo $' + fmt(targetTotalPnl, 0);
             document.getElementById('gm-total-return').textContent  = fmt(totalReturn, 2) + '%';
             document.getElementById('gm-total-return-target').textContent = 'objetivo ' + fmt(targetTotalReturn, 0) + '%';
-            document.getElementById('gm-days').textContent          = fmt(BACKTEST_DAYS, 1) + ' días';
-            const tfLabel = CANDLES_PER_DAY === 96 ? '15min' : CANDLES_PER_DAY === 288 ? '5min' : '1min';
-            document.getElementById('gm-candles').textContent       = MAX_CANDLES.toLocaleString() + ' candles ' + tfLabel;
+            document.getElementById('gm-days').textContent          = fmt(srcDays, 1) + ' días';
+            const tfLabel = srcCpd === 96 ? '15min' : srcCpd === 288 ? '5min' : '1min';
+            document.getElementById('gm-candles').textContent       = srcMc.toLocaleString() + ' candles ' + tfLabel;
             document.getElementById('gm-multiplier').textContent    = fmt(multiplier, 1) + 'x';
 
-            const wr = best.win_rate || 0;
+            const wr = (useV2 && v2b ? v2b.win_rate : best.win_rate) || 0;
             const wrEl = document.getElementById('gm-winrate');
             wrEl.textContent = (wr * 100).toFixed(1) + '%';
             wrEl.style.color = wr >= 0.6 ? 'var(--green)' : wr >= 0.5 ? 'var(--yellow)' : 'var(--red)';
 
+            const sr = (useV2 && v2b ? v2b.sharpe_ratio : best.sharpe_ratio) || 0;
             const srEl = document.getElementById('gm-sharpe');
-            const sr = best.sharpe_ratio || 0;
             srEl.textContent = fmt(sr, 2);
             srEl.style.color = sr >= 2 ? 'var(--green)' : sr >= 1 ? 'var(--yellow)' : 'var(--red)';
 
+            const dd = ((useV2 && v2b ? v2b.max_drawdown : best.max_drawdown) || 0) * 100;
             const ddEl = document.getElementById('gm-drawdown');
-            const dd = (best.max_drawdown || 0) * 100;
             ddEl.textContent = fmt(dd, 1) + '%';
             ddEl.style.color = dd <= 20 ? 'var(--green)' : dd <= 35 ? 'var(--yellow)' : 'var(--red)';
 
             document.getElementById('goal-status-msg').textContent = statusMsg;
 
-            // Source indicator (old vs corrected backtester)
-            const FIRST_V2_WU = 30819;
-            const bestWuId = best.work_unit_id || 0;
-            const isV2src = bestWuId >= FIRST_V2_WU;
+            // Source indicator
             const gsEl = document.getElementById('goal-source');
             gsEl.style.display = 'block';
-            gsEl.innerHTML = isV2src
-                ? '<span style="color:var(--green)">✓ Datos del Backtester V2</span> (slippage 0.2%, margin calls, PnL caps)'
-                : '<span style="color:#d29922">⚠ Datos del Backtester V1</span> (slippage 0.03%) — Resultados inflados. Pendiente: más resultados V2 para comparación realista.';
+            if (bestIsV2) {
+                gsEl.innerHTML = '<span style="color:var(--green)">✓ Backtester V2</span> (slippage 0.2%, margin calls, PnL caps)';
+            } else if (useV2) {
+                const v1daily = (best.pnl / BACKTEST_CAPITAL * 100) / ((best.max_candles || 10000) / (best.candles_per_day || 288));
+                gsEl.innerHTML = '<span style="color:var(--green)">✓ Mostrando datos V2 (realistas)</span>'
+                    + ' — <span style="color:var(--muted)">V1 inflado mostraba ' + fmt(v1daily,2) + '%/día ($' + fmt(best.pnl,0) + ' PnL)</span>';
+            } else {
+                gsEl.innerHTML = '<span style="color:#d29922">⚠ Solo datos V1</span> — resultados inflados (slippage 0.03%). Pendiente: más resultados V2.';
+            }
 
-            // V2 comparison line
-            const perfData = dash.performance || {};
-            if (!isV2src && perfData.v2_max_pnl > 0) {
-                const gv2El = document.getElementById('goal-v2');
+            // V2 stats summary
+            const gv2El = document.getElementById('goal-v2');
+            if (perfData.v2_total > 0) {
                 gv2El.style.display = 'block';
-                const v2DailyPct = (perfData.v2_max_pnl / BACKTEST_CAPITAL * 100) / BACKTEST_DAYS;
-                const v2Progress = Math.min(v2DailyPct / TARGET_DAILY_PCT * 100, 100);
-                gv2El.innerHTML = '📊 <strong>Backtester V2 real:</strong> max $' + fmt(perfData.v2_max_pnl, 0)
-                    + ' → ' + fmt(v2DailyPct, 2) + '%/día (' + fmt(v2Progress, 1) + '% del objetivo)'
-                    + ' | avg $' + fmt(perfData.v2_avg_pnl, 0) + ' (' + perfData.v2_total + ' resultados)';
+                gv2El.innerHTML = '📊 V2: ' + perfData.v2_total + ' resultados | avg $' + fmt(perfData.v2_avg_pnl || 0, 0)
+                    + ' | max $' + fmt(perfData.v2_max_pnl || 0, 0);
             }
         }
 
