@@ -63,6 +63,8 @@ MAX_SHARPE_RATIO = 20.0           # Sharpe máximo 20 (per-trade con sqrt(252) �
 MAX_DRAWDOWN = 0.50               # Max drawdown máximo 50% (futuros 5x leverage)
 MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
 MIN_BACKTEST_DAYS = 7             # Mínimo 7 días (3K candles 5-min = 10.4 días → OK)
+MAX_PNL_REALISTIC = 2000.0        # PnL máximo realista sobre $500 capital (400% retorno)
+MAX_DAILY_RETURN_PCT = 10.0       # Retorno diario máximo 10% (backtester corregido produce 0.5-3%)
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
 MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
@@ -828,7 +830,7 @@ def api_status():
     c.execute("SELECT COUNT(*) as active FROM workers WHERE (strftime('%s', 'now') - last_seen) < 300")
     active_workers = c.fetchone()['active']
 
-    # Mejor estrategia (que pase criterios de validación anti-overfitting)
+    # Mejor estrategia (que pase criterios de validación anti-overfitting + realismo)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
@@ -840,20 +842,30 @@ def api_status():
         AND r.sharpe_ratio >= ?
         AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ?
+        AND r.pnl <= ?
         AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
-             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0 ELSE 288.0 END
+             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
+                    WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
+                    ELSE 288.0 END
             ) >= ?
+        AND (r.pnl / 500.0 * 100.0)
+            / (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
+               / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
+                      WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
+                      ELSE 288.0 END)
+            <= ?
         AND (r.oos_trades IS NULL OR r.oos_trades = 0
              OR (r.oos_pnl >= 0 AND r.oos_degradation <= 0.35))
         ORDER BY r.pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
-                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MIN_BACKTEST_DAYS))
+                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN,
+                     MAX_PNL_REALISTIC, MIN_BACKTEST_DAYS, MAX_DAILY_RETURN_PCT))
 
     best = c.fetchone()
     is_validated = best is not None  # True si pasó validación
 
-    # Fallback: si no hay estrategia que pase validación, buscar la mejor disponible
-    # pero marcarla como "no validada"
+    # Fallback: si no hay estrategia que pase validación completa,
+    # buscar la mejor con filtros de realismo pero sin todos los criterios
     if not best:
         c.execute("""SELECT r.*, w.strategy_params
             FROM results r
@@ -861,8 +873,9 @@ def api_status():
             WHERE r.is_canonical = 1
             AND r.is_overfitted = 0
             AND r.trades >= 10
+            AND r.pnl <= ?
             ORDER BY r.pnl DESC
-            LIMIT 1""")
+            LIMIT 1""", (MAX_PNL_REALISTIC,))
         best = c.fetchone()
         is_validated = False  # No pasó validación profesional
 
@@ -1243,7 +1256,7 @@ def api_dashboard_stats():
                  ORDER BY bucket_start ASC""")
     completion_timeline = [{'hour_unix': (row[1] - 2440587.5) * 86400, 'count': row[0]} for row in c.fetchall()]
     
-    # Best strategy (que pase criterios de validación anti-overfitting)
+    # Best strategy (que pase criterios de validación anti-overfitting + realismo)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
@@ -1255,14 +1268,24 @@ def api_dashboard_stats():
         AND r.sharpe_ratio >= ?
         AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ?
+        AND r.pnl <= ?
         AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
-             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0 ELSE 288.0 END
+             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
+                    WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
+                    ELSE 288.0 END
             ) >= ?
+        AND (r.pnl / 500.0 * 100.0)
+            / (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
+               / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
+                      WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
+                      ELSE 288.0 END)
+            <= ?
         AND (r.oos_trades IS NULL OR r.oos_trades = 0
              OR (r.oos_pnl >= 0 AND r.oos_degradation <= 0.35))
         ORDER BY r.pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
-                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN, MIN_BACKTEST_DAYS))
+                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN,
+                     MAX_PNL_REALISTIC, MIN_BACKTEST_DAYS, MAX_DAILY_RETURN_PCT))
     best_row = c.fetchone()
     is_validated = best_row is not None  # True si pasó validación
 
@@ -1274,7 +1297,8 @@ def api_dashboard_stats():
             WHERE r.is_canonical = 1
             AND r.is_overfitted = 0
             AND r.trades >= 10
-            ORDER BY r.pnl DESC LIMIT 1""")
+            AND r.pnl <= ?
+            ORDER BY r.pnl DESC LIMIT 1""", (MAX_PNL_REALISTIC,))
         best_row = c.fetchone()
         is_validated = False  # No pasó validación profesional
 
