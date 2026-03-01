@@ -2800,7 +2800,9 @@ DASHBOARD_HTML = """
                         <th>#</th>
                         <th>WU ID</th>
                         <th>Activo</th>
+                        <th>TF</th>
                         <th>PnL</th>
+                        <th>Ret/día</th>
                         <th>Trades</th>
                         <th>Win Rate</th>
                         <th>Sharpe</th>
@@ -2810,7 +2812,7 @@ DASHBOARD_HTML = """
                     </tr>
                 </thead>
                 <tbody id="results-body">
-                    <tr><td colspan="10" style="color:var(--muted);text-align:center;padding:20px">Cargando...</td></tr>
+                    <tr><td colspan="12" style="color:var(--muted);text-align:center;padding:20px">Cargando...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -3173,7 +3175,7 @@ async function updateDashboard() {
         }
 
         if (results.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" style="color:var(--muted);text-align:center;padding:20px">Sin resultados canónicos</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:20px">Sin resultados canónicos</td></tr>';
         } else {
             tbody.innerHTML = results.map((r, i) => {
                 const rankColors = ['#f1c40f','#adb5bd','#cd7f32'];
@@ -3182,11 +3184,19 @@ async function updateDashboard() {
                 const dd = r.max_drawdown != null ? r.max_drawdown * 100 : null;
                 const ddVal = dd != null ? dd.toFixed(1) + '%' : '-';
                 const ddColor = dd == null ? 'var(--muted)' : dd <= 50 ? 'var(--green)' : 'var(--red)';
+                const sp = r.strategy_params || {};
+                const maxCandles = sp.max_candles || 10000;
+                const df = sp.data_file || '';
+                const cpd = df.includes('ONE_MINUTE') ? 1440 : df.includes('FIFTEEN') ? 96 : 288;
+                const bDays = maxCandles / cpd;
+                const dailyRetPct = bDays > 0 ? (r.pnl / 500 * 100) / bDays : 999;
                 const tradesOk  = r.trades >= 20;
                 const wrOk      = r.win_rate >= 0.4 && r.win_rate <= 0.75;
                 const sharpeOk  = r.sharpe_ratio >= 1.5 && r.sharpe_ratio <= 20.0;
                 const ddOk      = dd != null && dd <= 50;
-                const isValid   = tradesOk && wrOk && sharpeOk && ddOk;
+                const retOk     = dailyRetPct <= 10.0;
+                const pnlOk     = r.pnl <= 2000;
+                const isValid   = tradesOk && wrOk && sharpeOk && ddOk && retOk && pnlOk;
                 const validBadge = isValid
                     ? '<span class="badge badge-green" title="Pasa todos los criterios de validación">✓ válida</span>'
                     : (() => {
@@ -3195,17 +3205,25 @@ async function updateDashboard() {
                         if (!wrOk)      fails.push('WR fuera rango 40-75%');
                         if (!sharpeOk)  fails.push('Sharpe fuera rango 1.5-20');
                         if (!ddOk)      fails.push('DD>50%');
+                        if (!retOk)     fails.push('Retorno>' + dailyRetPct.toFixed(1) + '%/día');
+                        if (!pnlOk)     fails.push('PnL>$2000 irreal');
                         return `<span class="badge badge-red" title="${fails.join(', ')}">✗ no válida</span>`;
                     })();
                 const asset = getAssetLabel(r.strategy_params || {});
                 const assetBadge = asset.isFutures
                     ? `<span title="${asset.full}" style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3)">${asset.name}</span>`
                     : `<span title="${asset.full}" style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3)">${asset.name}</span>`;
+                const tfMap = {'ONE_MINUTE':'1m','FIVE_MINUTE':'5m','FIFTEEN_MINUTE':'15m','ONE_HOUR':'1h'};
+                const tfLabel = Object.entries(tfMap).find(([k]) => df.includes(k));
+                const tf = tfLabel ? tfLabel[1] : '?';
+                const retColor = dailyRetPct <= 5 ? 'var(--green)' : dailyRetPct <= 10 ? 'var(--yellow)' : 'var(--red)';
                 return `<tr>
                     <td style="color:var(--muted)">${medal}${i+1}</td>
                     <td style="color:var(--blue)">#${r.work_id}</td>
                     <td>${assetBadge}</td>
+                    <td style="font-size:11px;color:var(--muted)">${tf}</td>
                     <td style="color:${pnlColor};font-weight:600">$${fmt(r.pnl, 2)}</td>
+                    <td style="color:${retColor};font-size:11px">${fmt(dailyRetPct,1)}%</td>
                     <td style="color:${tradesOk?'var(--green)':'var(--red)'}">${r.trades}</td>
                     <td style="color:${wrOk?'var(--green)':'var(--red)'}">${(r.win_rate * 100).toFixed(1)}%</td>
                     <td style="color:${sharpeOk?'var(--green)':'var(--red)'}">${r.sharpe_ratio ? fmt(r.sharpe_ratio, 2) : '-'}</td>
