@@ -65,7 +65,7 @@ MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
 MIN_BACKTEST_DAYS = 7             # Mínimo 7 días (3K candles 5-min = 10.4 días → OK)
 MAX_PNL_REALISTIC = 2000.0        # PnL máximo realista sobre $500 capital (400% retorno)
 MAX_DAILY_RETURN_PCT = 10.0       # Retorno diario máximo 10% (backtester corregido produce 0.5-3%)
-FIRST_CORRECTED_WU_ID = 30819    # Primer WU con backtester corregido (slippage 0.2%, margin calls, PnL caps)
+FIRST_CORRECTED_WU_ID = 1        # DB limpiada 2026-02-28, todos los WU nuevos usan backtester V2 con slippage 0.2%
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
 MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
@@ -187,7 +187,7 @@ CANDLE_CONFIGS = [5000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 
 def generate_random_work_unit():
     """Genera un work unit con configuración aleatoria diversa, usando élite como semilla"""
     # Elegir tipo de datos (spot o futures)
-    use_futures = random.random() > 0.3  # 70% probabilidad de futuros
+    use_futures = False  # Solo SPOT hasta validar backtester V2 (antes: random.random() > 0.3)
 
     if use_futures and FUTURES_DATA_FILES:
         data_info = random.choice(FUTURES_DATA_FILES)

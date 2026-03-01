@@ -82,11 +82,20 @@ OP_LT = 1  # <
 MAX_RULES = 3
 
 # ============================================================================
-# SAFETY LIMITS - Prevent absurd values from futures/extreme data
+# SLIPPAGE MODELING - Realistic execution costs
 # ============================================================================
-MAX_BALANCE = 1_000_000.0       # Cap balance at $1M
-MAX_POSITION_VALUE = 100_000.0  # Cap position value at $100K
-MAX_PNL = 1_000_000.0           # Cap total PnL at $1M
+SLIPPAGE_BASE = 0.002           # 0.2% base slippage (realistic for crypto spot)
+SLIPPAGE_SIZE_BASE = 10000.0    # $10k position = no size impact
+SLIPPAGE_SIZE_MULT = 0.0005     # Additional 0.05% per $10k over base
+SLIPPAGE_MAX = 0.02             # 2% max slippage cap
+
+# ============================================================================
+# SAFETY LIMITS - Prevent absurd values
+# ============================================================================
+MAX_BALANCE = 50_000.0          # Cap balance at $50K (realistic for $500 start)
+MAX_POSITION_VALUE = 10_000.0   # Cap position value at $10K
+MAX_PNL = 2_000.0               # Cap total PnL at $2K
+MAX_TRADE_RETURN = 1.0          # 100% max return per trade
 MIN_PRICE = 0.00001             # Minimum valid price (prevent division by zero)
 MAX_PRICE = 1_000_000.0         # Maximum valid price (sanity check)
 
@@ -302,13 +311,47 @@ def decode_genome_rules(encoded):
 
 if HAS_NUMBA:
     @njit(cache=True)
+    def _calculate_slippage(price, position_value, candle_idx):
+        """
+        Calculate realistic slippage for market orders with deterministic noise.
+        Simpler model than futures (no ATR needed for spot).
+        V2.0: SLIPPAGE_BASE=0.002, MAX_PNL=2000, MAX_BALANCE=50000
+
+        Args:
+            price: Current price
+            position_value: Dollar value of position
+            candle_idx: Current candle index (pseudo-random seed)
+
+        Returns:
+            Slippage as price adjustment (in price units)
+        """
+        slippage_pct = SLIPPAGE_BASE
+
+        # Position size impact (larger positions = more market impact)
+        if position_value > SLIPPAGE_SIZE_BASE:
+            size_ratio = (position_value - SLIPPAGE_SIZE_BASE) / SLIPPAGE_SIZE_BASE
+            slippage_pct += size_ratio * SLIPPAGE_SIZE_MULT
+
+        # Deterministic noise: ±30% variation based on candle index
+        noise_seed = ((candle_idx * 2654435761) % (2**32)) / (2**32)
+        noise_factor = 0.7 + noise_seed * 0.6  # Range: 0.7 to 1.3
+        slippage_pct *= noise_factor
+
+        # Cap slippage
+        if slippage_pct > SLIPPAGE_MAX:
+            slippage_pct = SLIPPAGE_MAX
+
+        return price * slippage_pct
+
+    @njit(cache=True)
     def _fast_backtest(close, high, low, indicators, genome_encoded, fee_rate):
         """
         JIT-compiled backtest loop for a single genome.
+        V2.0: Slippage 0.2%, MAX_PNL=$2K, max_positions=2, size_pct<=30%, trade_return_cap=100%
 
         Multi-position + percentage sizing + compounding:
-        - Up to 3 simultaneous positions
-        - Position size = balance * size_pct (compounding)
+        - Up to 2 simultaneous positions
+        - Position size = balance * size_pct (compounding, max 30%)
         - Trailing stop per position
         - Minimum $10 per trade to avoid dust
 
@@ -337,24 +380,24 @@ if HAS_NUMBA:
         # Clamp parameters
         if size_pct < 0.05:
             size_pct = 0.05
-        if size_pct > 0.95:
-            size_pct = 0.95
+        if size_pct > 0.30:
+            size_pct = 0.30
         if max_positions < 1:
             max_positions = 1
-        if max_positions > 3:
-            max_positions = 3
+        if max_positions > 2:
+            max_positions = 2
 
         balance = 500.0
 
-        # Fixed arrays for up to 3 positions
-        pos_active = np.zeros(3, dtype=np.int64)      # 0 or 1
-        pos_entry_price = np.zeros(3, dtype=np.float64)
-        pos_size = np.zeros(3, dtype=np.float64)       # quantity (coins)
-        pos_cost_basis = np.zeros(3, dtype=np.float64)  # USD spent
-        pos_entry_fee = np.zeros(3, dtype=np.float64)
-        pos_sl = np.zeros(3, dtype=np.float64)
-        pos_tp = np.zeros(3, dtype=np.float64)
-        pos_trail = np.zeros(3, dtype=np.float64)
+        # Fixed arrays for up to 2 positions
+        pos_active = np.zeros(2, dtype=np.int64)      # 0 or 1
+        pos_entry_price = np.zeros(2, dtype=np.float64)
+        pos_size = np.zeros(2, dtype=np.float64)       # quantity (coins)
+        pos_cost_basis = np.zeros(2, dtype=np.float64)  # USD spent
+        pos_entry_fee = np.zeros(2, dtype=np.float64)
+        pos_sl = np.zeros(2, dtype=np.float64)
+        pos_tp = np.zeros(2, dtype=np.float64)
+        pos_trail = np.zeros(2, dtype=np.float64)
 
         total_pnl = 0.0
         num_trades = 0
@@ -371,7 +414,7 @@ if HAS_NUMBA:
             candle_low = low[i]
 
             # === EXIT LOOP: check all positions ===
-            for s in range(3):
+            for s in range(2):
                 if pos_active[s] == 0:
                     continue
 
@@ -390,6 +433,10 @@ if HAS_NUMBA:
                     else:
                         exit_price = pos_tp[s]
 
+                    # Apply slippage to exit (worse price)
+                    exit_slippage = _calculate_slippage(exit_price, pos_cost_basis[s], i)
+                    exit_price -= exit_slippage  # Sells lower due to slippage
+
                     # Close position
                     exit_val_gross = pos_size[s] * exit_price
                     exit_fee = exit_val_gross * fee_rate
@@ -402,6 +449,15 @@ if HAS_NUMBA:
                         balance = MAX_BALANCE
 
                     trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+
+                    # === PER-TRADE RETURN CAP ===
+                    if pos_cost_basis[s] > 0.0:
+                        pnl_pct = trade_pnl / pos_cost_basis[s]
+                        if pnl_pct > MAX_TRADE_RETURN:
+                            trade_pnl = pos_cost_basis[s] * MAX_TRADE_RETURN
+                        elif pnl_pct < -MAX_TRADE_RETURN:
+                            trade_pnl = -pos_cost_basis[s] * MAX_TRADE_RETURN
+
                     # === SAFETY CAP: Limit individual trade PnL ===
                     if trade_pnl > MAX_POSITION_VALUE:
                         trade_pnl = MAX_POSITION_VALUE
@@ -429,7 +485,7 @@ if HAS_NUMBA:
             # === ENTRY: evaluate rules and open if slot available ===
             # Count open positions
             num_open = 0
-            for s in range(3):
+            for s in range(2):
                 num_open += pos_active[s]
 
             if num_open < max_positions:
@@ -488,13 +544,17 @@ if HAS_NUMBA:
                         size_usd = 0.0  # Skip dust trades
 
                     if size_usd >= 10.0:
+                        # Apply slippage to entry (buy higher)
+                        entry_slippage = _calculate_slippage(price, size_usd, i)
+                        entry_price = price + entry_slippage
+
                         entry_fee_val = size_usd * fee_rate
                         cost_deduct = size_usd + entry_fee_val
 
                         if balance >= cost_deduct:
                             # Find free slot
                             slot = -1
-                            for s in range(3):
+                            for s in range(2):
                                 if pos_active[s] == 0:
                                     slot = s
                                     break
@@ -502,19 +562,23 @@ if HAS_NUMBA:
                             if slot >= 0:
                                 balance -= cost_deduct
                                 pos_active[slot] = 1
-                                pos_entry_price[slot] = price
-                                pos_size[slot] = size_usd / price
+                                pos_entry_price[slot] = entry_price
+                                pos_size[slot] = size_usd / entry_price
                                 pos_cost_basis[slot] = size_usd
                                 pos_entry_fee[slot] = entry_fee_val
-                                pos_sl[slot] = price * (1.0 - sl_pct)
-                                pos_tp[slot] = price * (1.0 + tp_pct)
-                                pos_trail[slot] = (price - pos_sl[slot]) * 0.8
+                                pos_sl[slot] = entry_price * (1.0 - sl_pct)
+                                pos_tp[slot] = entry_price * (1.0 + tp_pct)
+                                pos_trail[slot] = (entry_price - pos_sl[slot]) * 0.8
 
         # === CLOSE ALL OPEN POSITIONS AT END ===
         final_price = close[n - 1]
-        for s in range(3):
+        for s in range(2):
             if pos_active[s] == 1:
-                exit_val_gross = pos_size[s] * final_price
+                # Apply slippage to final exit
+                final_slippage = _calculate_slippage(final_price, pos_cost_basis[s], n - 1)
+                adj_final_price = final_price - final_slippage
+
+                exit_val_gross = pos_size[s] * adj_final_price
                 exit_fee = exit_val_gross * fee_rate
                 exit_val_net = exit_val_gross - exit_fee
                 balance += exit_val_net
@@ -522,6 +586,15 @@ if HAS_NUMBA:
                 if balance > MAX_BALANCE:
                     balance = MAX_BALANCE
                 trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+
+                # === PER-TRADE RETURN CAP ===
+                if pos_cost_basis[s] > 0.0:
+                    pnl_pct = trade_pnl / pos_cost_basis[s]
+                    if pnl_pct > MAX_TRADE_RETURN:
+                        trade_pnl = pos_cost_basis[s] * MAX_TRADE_RETURN
+                    elif pnl_pct < -MAX_TRADE_RETURN:
+                        trade_pnl = -pos_cost_basis[s] * MAX_TRADE_RETURN
+
                 # === SAFETY CAP: Limit individual trade PnL ===
                 if trade_pnl > MAX_POSITION_VALUE:
                     trade_pnl = MAX_POSITION_VALUE
