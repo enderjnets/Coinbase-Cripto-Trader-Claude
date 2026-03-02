@@ -399,9 +399,10 @@ class StrategyMiner:
         # Penalize high coefficient of variation between windows
         fitness -= 50 * min(cv, 5.0)
 
-        # === SHARPE BONUS (corrected) ===
+        # === SHARPE BONUS (corrected and capped) ===
         if sharpe > 0 and num_trades > 0:
             sharpe_corrected = sharpe * min(1.0, (num_trades / 252) ** 0.5)
+            sharpe_corrected = min(sharpe_corrected, 3.0)  # Cap at 3.0 — even elite funds rarely exceed this
             fitness += 30 * sharpe_corrected
 
         # === COMPLEXITY PENALTY ===
