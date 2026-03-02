@@ -68,6 +68,10 @@ def select_top_strategies(db_path: str = DEFAULT_DB, top_n: int = 5,
     has_overfitted = 'is_overfitted' in columns
     has_max_dd = 'max_drawdown' in columns
 
+    # Check for OOS columns
+    has_oos = 'oos_trades' in columns and 'oos_pnl' in columns
+    has_robustness = 'robustness_score' in columns
+
     # Build query dynamically based on available columns
     conditions = [
         "r.trades >= ?",
@@ -84,6 +88,12 @@ def select_top_strategies(db_path: str = DEFAULT_DB, top_n: int = 5,
 
     if has_overfitted:
         conditions.append("(r.is_overfitted = 0 OR r.is_overfitted IS NULL)")
+
+    # OOS validation filters (mandatory when columns exist)
+    if has_oos:
+        conditions.append("r.oos_trades >= 15")
+        conditions.append("r.oos_pnl >= 0")
+        conditions.append("r.oos_degradation <= 0.35")
 
     if has_max_dd:
         conditions.append(f"(r.max_drawdown <= ? OR r.max_drawdown IS NULL)")
@@ -106,6 +116,9 @@ def select_top_strategies(db_path: str = DEFAULT_DB, top_n: int = 5,
 
     where_clause = " AND ".join(conditions)
 
+    # Order by robustness_score when available, fallback to sharpe_ratio
+    order_clause = "r.robustness_score DESC, r.sharpe_ratio DESC" if has_robustness else "r.sharpe_ratio DESC"
+
     query = f"""
         SELECT
             r.id as result_id,
@@ -118,11 +131,15 @@ def select_top_strategies(db_path: str = DEFAULT_DB, top_n: int = 5,
             {"r.max_drawdown," if has_max_dd else "NULL as max_drawdown,"}
             {"r.is_canonical," if has_canonical else "NULL as is_canonical,"}
             {"r.is_overfitted," if has_overfitted else "NULL as is_overfitted,"}
+            {"r.oos_pnl," if has_oos else "NULL as oos_pnl,"}
+            {"r.oos_trades," if has_oos else "NULL as oos_trades,"}
+            {"r.oos_degradation," if has_oos else "NULL as oos_degradation,"}
+            {"r.robustness_score," if has_robustness else "NULL as robustness_score,"}
             w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE {where_clause}
-        ORDER BY r.sharpe_ratio DESC
+        ORDER BY {order_clause}
         LIMIT ?
     """
     params.append(top_n * 3)  # Get more than needed for filtering
@@ -162,6 +179,12 @@ def select_top_strategies(db_path: str = DEFAULT_DB, top_n: int = 5,
                 'win_rate': round(row['win_rate'], 2),
                 'sharpe_ratio': round(row['sharpe_ratio'], 4),
                 'max_drawdown': round(row['max_drawdown'], 4) if row['max_drawdown'] else None,
+            },
+            'oos_metrics': {
+                'oos_pnl': round(row['oos_pnl'], 2) if row['oos_pnl'] else None,
+                'oos_trades': row['oos_trades'],
+                'oos_degradation': round(row['oos_degradation'], 4) if row['oos_degradation'] is not None else None,
+                'robustness_score': round(row['robustness_score'], 1) if row['robustness_score'] else None,
             },
             'is_canonical': bool(row['is_canonical']),
             'selected_at': datetime.now().isoformat(),
@@ -208,6 +231,7 @@ def main():
     print(f"Top N: {args.top}")
     print(f"Criteria: trades>={MIN_TRADES}, win_rate {MIN_WIN_RATE*100:.0f}-{MAX_WIN_RATE*100:.0f}%, "
           f"sharpe {MIN_SHARPE}-{MAX_SHARPE}, drawdown<={MAX_DRAWDOWN*100}%")
+    print(f"OOS Filter: oos_trades>=15, oos_pnl>=0, oos_degradation<=0.35, is_overfitted=0")
     print()
 
     strategies = select_top_strategies(
@@ -231,9 +255,13 @@ def main():
         print(f"\nFound {len(strategies)} strategies:\n")
         for i, s in enumerate(strategies, 1):
             m = s['metrics']
+            oos = s.get('oos_metrics', {})
             print(f"  {i}. {s['strategy_id']}")
             print(f"     PnL: ${m['pnl']:.2f} | Trades: {m['trades']} | "
                   f"Win Rate: {m['win_rate']*100:.1f}% | Sharpe: {m['sharpe_ratio']:.2f}")
+            if oos.get('robustness_score') is not None:
+                print(f"     OOS: PnL=${oos.get('oos_pnl', 0):.2f} | Trades={oos.get('oos_trades', 0)} | "
+                      f"Degradation={oos.get('oos_degradation', 0):.2f} | Robustness={oos['robustness_score']:.0f}/100")
             print(f"     Data: {s['data_file']}")
             print()
 

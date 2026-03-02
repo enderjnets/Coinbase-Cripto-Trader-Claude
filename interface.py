@@ -5033,9 +5033,10 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
 
     # TAB 6: Paper Trading
     with tab6:
-        st.subheader("📈 Paper Trading en Vivo")
+        st.subheader("📈 Paper Trading en Vivo (OOS Pipeline)")
         st.markdown("""
-        Sistema de paper trading que usa la mejor estrategia encontrada para operar en tiempo real con datos de Coinbase.
+        Pipeline automático: **OOS Validation → Auto-detect → Paper Trading**.
+        Solo opera con estrategias que pasaron validación Out-of-Sample.
         **NO ejecuta órdenes reales**, solo simula con condiciones realistas.
         """)
 
@@ -5060,6 +5061,179 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
             st.session_state['paper_capital'] = 10000
             st.session_state['paper_trades'] = []
 
+        # Load monitor state
+        monitor_state_file = "/tmp/paper_trading_monitor.json"
+        monitor_state = None
+        if os.path.exists(monitor_state_file):
+            try:
+                with open(monitor_state_file, 'r') as f:
+                    monitor_state = json.load(f)
+            except:
+                pass
+
+        # Query for best OOS-validated strategy
+        oos_strategy = None
+        oos_count = 0
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+
+            # Count OOS-validated strategies
+            c.execute("""
+                SELECT COUNT(*) FROM results
+                WHERE is_canonical = 1 AND is_overfitted = 0
+                  AND oos_trades >= 15 AND oos_pnl >= 0 AND oos_degradation <= 0.35
+            """)
+            oos_count = c.fetchone()[0]
+
+            # Get the best one
+            if oos_count > 0:
+                c.execute("""
+                    SELECT r.id, r.strategy_genome, r.pnl, r.trades, r.win_rate,
+                           r.sharpe_ratio, r.max_drawdown,
+                           r.oos_pnl, r.oos_trades, r.oos_degradation, r.robustness_score,
+                           w.strategy_params
+                    FROM results r
+                    JOIN work_units w ON r.work_unit_id = w.id
+                    WHERE r.is_canonical = 1 AND r.is_overfitted = 0
+                      AND r.oos_trades >= 15 AND r.oos_pnl >= 0 AND r.oos_degradation <= 0.35
+                    ORDER BY r.robustness_score DESC, r.oos_pnl DESC
+                    LIMIT 1
+                """)
+                oos_strategy = dict(c.fetchone())
+
+            conn.close()
+        except:
+            pass
+
+        # --- Monitor Status Section ---
+        st.markdown("### 🤖 Monitor Auto-Launcher")
+
+        if monitor_state and monitor_state.get('running'):
+            monitor_ts = monitor_state.get('timestamp', 0)
+            minutes_ago = (time.time() - monitor_ts) / 60 if monitor_ts else 999
+
+            if minutes_ago < 10:  # Updated within last 10 min
+                st.success("Monitor ACTIVO")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Estrategia", f"#{monitor_state.get('current_strategy_id', 'N/A')}")
+                with col2:
+                    st.metric("Producto", monitor_state.get('current_product', 'N/A'))
+                with col3:
+                    st.metric("Swaps", monitor_state.get('swap_count', 0))
+                with col4:
+                    st.metric("Restarts", monitor_state.get('restarts', 0))
+
+                # Trader stats from monitor
+                trader_info = monitor_state.get('trader', {})
+                if trader_info:
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Capital", f"${trader_info.get('capital', 0):,.2f}")
+                    with col2:
+                        st.metric("Trades", trader_info.get('total_trades', 0))
+                    with col3:
+                        pnl = trader_info.get('total_pnl', 0)
+                        st.metric("PnL", f"${pnl:+,.2f}")
+                    with col4:
+                        ret = trader_info.get('return_pct', 0)
+                        st.metric("Return", f"{ret:+.2f}%")
+            else:
+                st.warning(f"Monitor no responde (última actualización hace {minutes_ago:.0f} min)")
+        else:
+            st.info("Monitor no activo. Inícialo en terminal para auto-lanzar paper trading.")
+
+        st.divider()
+
+        # --- OOS Strategy Status ---
+        st.markdown("### 🛡️ Estrategia OOS-Validada")
+
+        if oos_count == 0:
+            st.info("⏳ Esperando primera estrategia que pase validación OOS...\n\n"
+                    "**Criterios**: oos_trades ≥ 15, oos_pnl ≥ 0, oos_degradation ≤ 0.35, is_overfitted = 0")
+        else:
+            st.success(f"✅ {oos_count} estrategia(s) OOS-validada(s) encontrada(s)")
+
+            if oos_strategy:
+                # OOS metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Robustness Score", f"{oos_strategy.get('robustness_score', 0):.0f}/100")
+                with col2:
+                    st.metric("OOS PnL", f"${oos_strategy.get('oos_pnl', 0):,.2f}")
+                with col3:
+                    st.metric("OOS Trades", oos_strategy.get('oos_trades', 0))
+                with col4:
+                    deg = oos_strategy.get('oos_degradation', 0)
+                    st.metric("OOS Degradation", f"{deg:.2f}")
+
+                # Backtest metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("PnL Backtest", f"${oos_strategy.get('pnl', 0):,.2f}")
+                with col2:
+                    st.metric("Trades Backtest", oos_strategy.get('trades', 0))
+                with col3:
+                    wr = oos_strategy.get('win_rate', 0)
+                    st.metric("Win Rate", f"{wr*100:.1f}%")
+                with col4:
+                    st.metric("Sharpe", f"{oos_strategy.get('sharpe_ratio', 0):.2f}")
+
+                # Strategy genome
+                try:
+                    genome = json.loads(oos_strategy['strategy_genome']) if oos_strategy.get('strategy_genome') else {}
+                    entry_rules = genome.get('entry_rules', [])
+                    params = genome.get('params', {})
+
+                    if entry_rules:
+                        st.markdown("**Reglas de Entrada:**")
+                        for i, rule in enumerate(entry_rules):
+                            left = rule.get('left', {})
+                            right = rule.get('right', {})
+                            op = rule.get('op', '>')
+
+                            left_str = left.get('indicator', left.get('field', left.get('value', '?')))
+                            if 'period' in left:
+                                left_str += f"_{left['period']}"
+                            right_str = right.get('indicator', right.get('field', right.get('value', '?')))
+                            if 'period' in right:
+                                right_str += f"_{right['period']}"
+
+                            st.code(f"  {i+1}. {left_str} {op} {right_str}")
+
+                    if params:
+                        st.markdown(f"**Parámetros:** SL={params.get('sl_pct', 0.05)*100:.1f}%, TP={params.get('tp_pct', 0.10)*100:.1f}%")
+                except:
+                    pass
+
+        st.divider()
+
+        # --- Paper Trading Live State ---
+        st.markdown("### 📊 Estado Paper Trading")
+
+        paper_capital = st.session_state.get('paper_capital', 10000)
+        paper_trades = st.session_state.get('paper_trades', [])
+        paper_initial = st.session_state.get('paper_initial_capital', 10000)
+
+        total_pnl = sum(t.get('pnl', 0) for t in paper_trades)
+        return_pct = ((paper_capital / paper_initial) - 1) * 100 if paper_initial > 0 else 0
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("💰 Capital Virtual", f"${paper_capital:,.2f}", f"{return_pct:+.2f}%")
+        with col2:
+            st.metric("📊 Total Trades", len(paper_trades))
+        with col3:
+            wins = sum(1 for t in paper_trades if t.get('pnl', 0) > 0)
+            win_rate_paper = (wins / len(paper_trades) * 100) if paper_trades else 0
+            st.metric("🎯 Win Rate", f"{win_rate_paper:.1f}%")
+        with col4:
+            st.metric("💵 PnL Total", f"${total_pnl:+,.2f}")
+
+        st.divider()
+
         # Configuration section
         with st.expander("⚙️ Configuración", expanded=False):
             col1, col2, col3 = st.columns(3)
@@ -5067,10 +5241,10 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
             with col1:
                 initial_capital = st.number_input(
                     "Capital Inicial ($)",
-                    min_value=1000,
+                    min_value=100,
                     max_value=1000000,
-                    value=10000,
-                    step=1000,
+                    value=500,
+                    step=100,
                     key="paper_initial_capital"
                 )
 
@@ -5091,138 +5265,20 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
                     key="paper_product"
                 )
 
-            col1, col2 = st.columns(2)
-            with col1:
-                fee_rate = st.number_input(
-                    "Fee Rate (%)",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.4,
-                    step=0.1,
-                    key="paper_fee_rate"
-                ) / 100
-
-            with col2:
-                slippage = st.number_input(
-                    "Slippage (%)",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.05,
-                    step=0.01,
-                    key="paper_slippage"
-                ) / 100
-
-        # Get best strategy from database
-        try:
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-
-            # Try canonical first
-            c.execute("""
-                SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio
-                FROM results r
-                WHERE r.is_canonical = 1
-                ORDER BY r.pnl DESC
-                LIMIT 1
-            """)
-            best_row = c.fetchone()
-
-            # Fallback to best overall
-            if not best_row:
-                c.execute("""
-                    SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio
-                    FROM results r
-                    WHERE r.pnl > 0 AND r.trades >= 10
-                    ORDER BY r.sharpe_ratio DESC
-                    LIMIT 1
-                """)
-                best_row = c.fetchone()
-
-            conn.close()
-        except:
-            best_row = None
-
-        # Status metrics
-        st.markdown("### 📊 Estado Actual")
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        paper_capital = st.session_state.get('paper_capital', 10000)
-        paper_trades = st.session_state.get('paper_trades', [])
-        paper_initial = st.session_state.get('paper_initial_capital', 10000)
-
-        total_pnl = sum(t.get('pnl', 0) for t in paper_trades)
-        return_pct = ((paper_capital / paper_initial) - 1) * 100 if paper_initial > 0 else 0
-
-        with col1:
-            st.metric("💰 Capital Virtual", f"${paper_capital:,.2f}", f"{return_pct:+.2f}%")
-
-        with col2:
-            st.metric("📊 Total Trades", len(paper_trades))
-
-        with col3:
-            wins = sum(1 for t in paper_trades if t.get('pnl', 0) > 0)
-            win_rate = (wins / len(paper_trades) * 100) if paper_trades else 0
-            st.metric("🎯 Win Rate", f"{win_rate:.1f}%")
-
-        with col4:
-            st.metric("💵 PnL Total", f"${total_pnl:+,.2f}")
-
-        st.divider()
-
-        # Strategy info
-        if best_row:
-            st.markdown("### 🧠 Estrategia Activa")
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric("PnL Backtest", f"${best_row[1]:,.2f}")
-            with col2:
-                st.metric("Trades Backtest", best_row[2])
-            with col3:
-                st.metric("Win Rate Backtest", f"{best_row[3]*100:.1f}%")
-            with col4:
-                st.metric("Sharpe Backtest", f"{best_row[4]:.2f}")
-
-            # Show strategy rules
-            try:
-                strategy_genome = json.loads(best_row[0]) if best_row[0] else {}
-                entry_rules = strategy_genome.get('entry_rules', [])
-                params = strategy_genome.get('params', {})
-
-                if entry_rules:
-                    st.markdown("**Reglas de Entrada:**")
-                    for i, rule in enumerate(entry_rules):
-                        left = rule.get('left', {})
-                        right = rule.get('right', {})
-                        op = rule.get('op', '>')
-
-                        left_str = left.get('indicator', left.get('field', left.get('value', '?')))
-                        if 'period' in left:
-                            left_str += f"_{left['period']}"
-                        right_str = right.get('indicator', right.get('field', right.get('value', '?')))
-                        if 'period' in right:
-                            right_str += f"_{right['period']}"
-
-                        st.code(f"  {i+1}. {left_str} {op} {right_str}")
-
-                if params:
-                    st.markdown(f"**Parámetros:** SL={params.get('sl_pct', 0.05)*100:.1f}%, TP={params.get('tp_pct', 0.10)*100:.1f}%")
-            except:
-                st.warning("No se pudo cargar la estrategia")
-        else:
-            st.warning("⚠️ No hay estrategias válidas en la base de datos. Ejecuta más work units primero.")
-
-        st.divider()
-
         # Control buttons
+        has_oos = oos_count > 0
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button("▶️ Iniciar Paper Trading", type="primary", disabled=st.session_state['paper_trading_running']):
-                st.session_state['paper_trading_running'] = True
-                st.success("Paper Trading iniciado! (Se ejecuta en background)")
-                st.info("Nota: El paper trader se ejecuta como proceso separado. Monitorea los logs para ver las operaciones.")
+            if has_oos:
+                if st.button("▶️ Iniciar Paper Trading", type="primary",
+                             disabled=st.session_state['paper_trading_running']):
+                    st.session_state['paper_trading_running'] = True
+                    st.success("Paper Trading iniciado! (Se ejecuta en background)")
+            else:
+                st.button("▶️ Iniciar Paper Trading", type="primary", disabled=True,
+                           help="Requiere al menos una estrategia OOS-validada")
+                st.caption("⚠️ No hay estrategia OOS-validada")
 
         with col2:
             if st.button("⏹️ Detener", disabled=not st.session_state['paper_trading_running']):
@@ -5231,9 +5287,8 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
 
         with col3:
             if st.button("🔄 Reiniciar Contadores"):
-                st.session_state['paper_capital'] = st.session_state.get('paper_initial_capital', 10000)
+                st.session_state['paper_capital'] = st.session_state.get('paper_initial_capital', 500)
                 st.session_state['paper_trades'] = []
-                # Also clear the state file
                 if os.path.exists(paper_state_file):
                     os.remove(paper_state_file)
                 st.success("Contadores reiniciados")
@@ -5262,7 +5317,6 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
             st.markdown("### 📋 Últimos Trades")
             df_trades = pd.DataFrame(paper_trades[-20:])
             if not df_trades.empty:
-                # Format columns
                 display_cols = ['entry_time', 'exit_time', 'entry_price', 'exit_price', 'pnl', 'pnl_pct', 'exit_reason']
                 available_cols = [c for c in display_cols if c in df_trades.columns]
                 st.dataframe(
@@ -5275,16 +5329,25 @@ ssh enderj@10.0.0.240 "pgrep -a crypto_worker" """, language="bash")
                     use_container_width=True
                 )
 
-        # How to run paper trader
+        # How to run
         with st.expander("🔧 Cómo Ejecutar Paper Trading", expanded=False):
+            st.markdown("**Opción 1: Monitor automático (recomendado)**")
             st.code(f"""
-# En una terminal separada, ejecuta:
+# Daemon que auto-detecta estrategias OOS y lanza paper trading:
 source ~/coinbase_trader_venv/bin/activate
 cd "{BASE_DIR}"
-python live_paper_trader.py --product {product_id} --capital {initial_capital} --size {position_size_pct/100}
+python paper_trading_monitor.py --capital {initial_capital}
 
-# El paper trader se conectará a Coinbase WebSocket y
-# ejecutará la mejor estrategia encontrada en tiempo real.
+# El monitor revisará cada 5 min si hay estrategia OOS-validada.
+# Cuando encuentre una, auto-lanzará paper trading.
+            """, language="bash")
+
+            st.markdown("**Opción 2: Ejecución manual**")
+            st.code(f"""
+# Solo funciona si hay estrategia OOS-validada:
+source ~/coinbase_trader_venv/bin/activate
+cd "{BASE_DIR}"
+python live_paper_trader.py --product {product_id} --capital {initial_capital}
             """, language="bash")
 
     # TAB 7: Futures Trading

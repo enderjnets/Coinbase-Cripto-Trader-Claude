@@ -550,9 +550,13 @@ class LivePaperTrader:
 
 def get_best_strategy_from_db(db_path: str = "coordinator.db") -> Optional[Dict]:
     """
-    Get the best strategy from the results database.
+    Get the best OOS-validated strategy from the results database.
 
-    Returns strategy genome that passed all validation criteria.
+    Only returns strategies that passed OOS validation:
+    - is_canonical = 1, is_overfitted = 0
+    - oos_trades >= 15, oos_pnl >= 0, oos_degradation <= 0.35
+
+    Returns None if no OOS-validated strategy exists (does NOT fallback to non-OOS).
     """
     if not os.path.exists(db_path):
         print(f"Database not found: {db_path}")
@@ -562,38 +566,113 @@ def get_best_strategy_from_db(db_path: str = "coordinator.db") -> Optional[Dict]
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
 
-        # Try to get canonical result first
+        # Only OOS-validated strategies
         c.execute("""
-            SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio
+            SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio,
+                   r.oos_pnl, r.oos_trades, r.oos_degradation, r.robustness_score
             FROM results r
             WHERE r.is_canonical = 1
-            ORDER BY r.pnl DESC
+              AND r.is_overfitted = 0
+              AND r.oos_trades >= 15
+              AND r.oos_pnl >= 0
+              AND r.oos_degradation <= 0.35
+            ORDER BY r.robustness_score DESC, r.oos_pnl DESC
             LIMIT 1
         """)
         row = c.fetchone()
-
-        # Fallback to best overall
-        if not row:
-            c.execute("""
-                SELECT r.strategy_genome, r.pnl, r.trades, r.win_rate, r.sharpe_ratio
-                FROM results r
-                WHERE r.pnl > 0 AND r.trades >= 10
-                ORDER BY r.sharpe_ratio DESC
-                LIMIT 1
-            """)
-            row = c.fetchone()
 
         conn.close()
 
         if row:
             genome = json.loads(row[0]) if row[0] else None
-            print(f"Loaded strategy: PnL=${row[1]:.2f}, Trades={row[2]}, WinRate={row[3]:.1f}%, Sharpe={row[4]:.2f}")
+            print(f"Loaded OOS-validated strategy: PnL=${row[1]:.2f}, Trades={row[2]}, "
+                  f"WinRate={row[3]*100:.1f}%, Sharpe={row[4]:.2f}, "
+                  f"OOS_PnL=${row[5]:.2f}, OOS_Trades={row[6]}, "
+                  f"OOS_Degradation={row[7]:.2f}, Robustness={row[8]:.0f}/100")
             return genome
 
+        print("No OOS-validated strategy found. All strategies overfitted or insufficient OOS data.")
         return None
 
     except Exception as e:
         print(f"Error loading strategy: {e}")
+        return None
+
+
+def get_best_oos_strategy(db_path: str = "coordinator.db") -> Optional[Dict]:
+    """
+    Get the best OOS-validated strategy with full metadata.
+
+    Returns dict with 'genome' + 'metadata' (asset, timeframe, OOS metrics, result_id)
+    or None if no OOS-validated strategy exists.
+    """
+    if not os.path.exists(db_path):
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        c.execute("""
+            SELECT r.id as result_id, r.strategy_genome, r.pnl, r.trades, r.win_rate,
+                   r.sharpe_ratio, r.max_drawdown,
+                   r.oos_pnl, r.oos_trades, r.oos_degradation, r.robustness_score,
+                   w.strategy_params
+            FROM results r
+            JOIN work_units w ON r.work_unit_id = w.id
+            WHERE r.is_canonical = 1
+              AND r.is_overfitted = 0
+              AND r.oos_trades >= 15
+              AND r.oos_pnl >= 0
+              AND r.oos_degradation <= 0.35
+            ORDER BY r.robustness_score DESC, r.oos_pnl DESC
+            LIMIT 1
+        """)
+        row = c.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        genome = json.loads(row['strategy_genome']) if row['strategy_genome'] else None
+        if not genome:
+            return None
+
+        # Extract asset from data_file in strategy_params
+        strategy_params = json.loads(row['strategy_params']) if row['strategy_params'] else {}
+        data_file = strategy_params.get('data_file', '')
+
+        # Determine Coinbase product from data file name
+        # e.g. "BTC-USD_ONE_MINUTE.csv" -> "BTC-USD"
+        product_id = "BTC-USD"  # default
+        if data_file:
+            parts = data_file.split('_')
+            if len(parts) >= 2 and '-' in parts[0]:
+                product_id = parts[0]  # e.g. "BTC-USD", "ETH-USD"
+
+        return {
+            'genome': genome,
+            'result_id': row['result_id'],
+            'product_id': product_id,
+            'data_file': data_file,
+            'metrics': {
+                'pnl': row['pnl'],
+                'trades': row['trades'],
+                'win_rate': row['win_rate'],
+                'sharpe_ratio': row['sharpe_ratio'],
+                'max_drawdown': row['max_drawdown'],
+            },
+            'oos_metrics': {
+                'oos_pnl': row['oos_pnl'],
+                'oos_trades': row['oos_trades'],
+                'oos_degradation': row['oos_degradation'],
+                'robustness_score': row['robustness_score'],
+            },
+        }
+
+    except Exception as e:
+        print(f"Error loading OOS strategy: {e}")
         return None
 
 
@@ -611,17 +690,26 @@ async def main():
     parser.add_argument("--size", type=float, default=0.10, help="Position size %%")
     args = parser.parse_args()
 
-    # Get best strategy
-    genome = get_best_strategy_from_db()
+    # Get best OOS-validated strategy
+    strategy_data = get_best_oos_strategy()
+
+    if strategy_data:
+        genome = strategy_data['genome']
+        # Use the product from the strategy's data file if not explicitly specified
+        if args.product == "BTC-USD" and strategy_data['product_id'] != "BTC-USD":
+            args.product = strategy_data['product_id']
+            print(f"Auto-selected product: {args.product} (from strategy data)")
+        oos = strategy_data['oos_metrics']
+        print(f"OOS Metrics: PnL=${oos['oos_pnl']:.2f}, Trades={oos['oos_trades']}, "
+              f"Degradation={oos['oos_degradation']:.2f}, Robustness={oos['robustness_score']:.0f}/100")
+    else:
+        # Fallback to legacy function for backwards compatibility
+        genome = get_best_strategy_from_db()
 
     if not genome:
-        print("No strategy found. Using default RSI strategy.")
-        genome = {
-            "entry_rules": [
-                {"left": {"indicator": "RSI", "period": 14}, "op": "<", "right": {"value": 30}}
-            ],
-            "params": {"sl_pct": 0.03, "tp_pct": 0.06}
-        }
+        print("No OOS-validated strategy found. Paper trading requires a strategy that passed OOS validation.")
+        print("Waiting for genetic algorithm to produce a robust strategy...")
+        return
 
     # Create and run trader
     trader = LivePaperTrader(
