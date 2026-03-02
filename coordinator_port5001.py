@@ -914,8 +914,12 @@ def _build_best_strategy(best_row, is_validated):
     _winst = _wid.rsplit('_W', 1)[1] if '_W' in _wid else ''
     _worker_short = _wshort + (' W' + _winst if _winst else '')
 
+    _oos_pnl = best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0
+    _train_pnl = best_row['pnl']
+
     return {
-        'pnl': best_row['pnl'],
+        'pnl': _oos_pnl if _oos_pnl > 0 else _train_pnl,  # Show OOS PnL when available
+        'train_pnl': _train_pnl,
         'trades': best_row['trades'],
         'win_rate': best_row['win_rate'],
         'sharpe_ratio': best_row['sharpe_ratio'],
@@ -935,7 +939,7 @@ def _build_best_strategy(best_row, is_validated):
         'max_candles': _max_candles,
         'actual_candles': _actual_candles,
         'candles_per_day': _cpd,
-        'oos_pnl': best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0,
+        'oos_pnl': _oos_pnl,
         'oos_trades': best_row['oos_trades'] if 'oos_trades' in best_row.keys() else 0,
         'oos_degradation': best_row['oos_degradation'] if 'oos_degradation' in best_row.keys() else 0,
         'robustness_score': best_row['robustness_score'] if 'robustness_score' in best_row.keys() else 0,
@@ -999,54 +1003,37 @@ def api_status():
     c.execute("SELECT COUNT(*) as active FROM workers WHERE (strftime('%s', 'now') - last_seen) < 300")
     active_workers = c.fetchone()['active']
 
-    # Mejor estrategia (que pase criterios de validación anti-overfitting + realismo)
+    # Mejor estrategia (OOS-validated, robustness >= 50)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
-        WHERE r.is_canonical = 1
-        AND r.is_overfitted = 0
+        WHERE r.is_overfitted = 0
+        AND r.robustness_score >= 50
+        AND r.oos_pnl > 0
         AND r.trades >= ?
         AND r.win_rate >= ?
         AND r.win_rate <= ?
-        AND r.sharpe_ratio >= ?
-        AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ?
         AND r.pnl <= ?
-        AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
-             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
-                    WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
-                    ELSE 288.0 END
-            ) >= ?
-        AND (r.pnl / 500.0 * 100.0)
-            / (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
-               / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
-                      WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
-                      ELSE 288.0 END)
-            <= ?
-        AND (r.oos_trades IS NULL OR r.oos_trades = 0
-             OR (r.oos_pnl >= 0 AND r.oos_degradation <= 0.35))
-        ORDER BY r.pnl DESC
+        ORDER BY r.oos_pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
-                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN,
-                     MAX_PNL_REALISTIC, MIN_BACKTEST_DAYS, MAX_DAILY_RETURN_PCT))
+                     MAX_DRAWDOWN, MAX_PNL_REALISTIC))
 
     best = c.fetchone()
-    is_validated = best is not None  # True si pasó validación
+    is_validated = best is not None
 
-    # Fallback: si no hay estrategia que pase validación completa,
-    # buscar la mejor con filtros de realismo pero sin todos los criterios
+    # Fallback: relax criteria but still require OOS validation
     if not best:
         c.execute("""SELECT r.*, w.strategy_params
             FROM results r
             JOIN work_units w ON r.work_unit_id = w.id
-            WHERE r.is_canonical = 1
-            AND r.is_overfitted = 0
+            WHERE r.is_overfitted = 0
+            AND r.oos_pnl > 0
             AND r.trades >= 10
-            AND r.pnl <= ?
-            ORDER BY r.pnl DESC
-            LIMIT 1""", (MAX_PNL_REALISTIC,))
+            ORDER BY r.oos_pnl DESC
+            LIMIT 1""")
         best = c.fetchone()
-        is_validated = False  # No pasó validación profesional
+        is_validated = False
 
     conn.close()
 
@@ -1534,51 +1521,35 @@ def api_dashboard_stats():
                  ORDER BY bucket_start ASC""")
     completion_timeline = [{'hour_unix': (row[1] - 2440587.5) * 86400, 'count': row[0]} for row in c.fetchall()]
     
-    # Best strategy (que pase criterios de validación anti-overfitting + realismo)
+    # Best strategy (OOS-validated, robustness >= 50)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
-        WHERE r.is_canonical = 1
-        AND r.is_overfitted = 0
+        WHERE r.is_overfitted = 0
+        AND r.robustness_score >= 50
+        AND r.oos_pnl > 0
         AND r.trades >= ?
         AND r.win_rate >= ?
         AND r.win_rate <= ?
-        AND r.sharpe_ratio >= ?
-        AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ?
         AND r.pnl <= ?
-        AND (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
-             / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
-                    WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
-                    ELSE 288.0 END
-            ) >= ?
-        AND (r.pnl / 500.0 * 100.0)
-            / (CAST(json_extract(w.strategy_params,'$.max_candles') AS INTEGER)
-               / CASE WHEN w.strategy_params LIKE '%ONE_MINUTE%' THEN 1440.0
-                      WHEN w.strategy_params LIKE '%FIFTEEN%' THEN 96.0
-                      ELSE 288.0 END)
-            <= ?
-        AND (r.oos_trades IS NULL OR r.oos_trades = 0
-             OR (r.oos_pnl >= 0 AND r.oos_degradation <= 0.35))
-        ORDER BY r.pnl DESC
+        ORDER BY r.oos_pnl DESC
         LIMIT 1""", (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
-                     MIN_SHARPE_RATIO, MAX_SHARPE_RATIO, MAX_DRAWDOWN,
-                     MAX_PNL_REALISTIC, MIN_BACKTEST_DAYS, MAX_DAILY_RETURN_PCT))
+                     MAX_DRAWDOWN, MAX_PNL_REALISTIC))
     best_row = c.fetchone()
-    is_validated = best_row is not None  # True si pasó validación
+    is_validated = best_row is not None
 
-    # Fallback si no hay estrategia validada
+    # Fallback: relax criteria but still require OOS validation
     if not best_row:
         c.execute("""SELECT r.*, w.strategy_params
             FROM results r
             JOIN work_units w ON r.work_unit_id = w.id
-            WHERE r.is_canonical = 1
-            AND r.is_overfitted = 0
+            WHERE r.is_overfitted = 0
+            AND r.oos_pnl > 0
             AND r.trades >= 10
-            AND r.pnl <= ?
-            ORDER BY r.pnl DESC LIMIT 1""", (MAX_PNL_REALISTIC,))
+            ORDER BY r.oos_pnl DESC LIMIT 1""")
         best_row = c.fetchone()
-        is_validated = False  # No pasó validación profesional
+        is_validated = False
 
     best_strategy = _build_best_strategy(best_row, is_validated) if best_row else None
     
@@ -1668,13 +1639,13 @@ def api_dashboard_stats():
     v2_avg_pnl = v2_row[1] or 0
     v2_max_pnl = v2_row[2] or 0
 
-    # Best V2 result (full details for Objetivo 5% section)
-    c.execute("""SELECT r.pnl, r.trades, r.win_rate, r.sharpe_ratio, r.max_drawdown,
-                        r.work_unit_id, r.id as result_id, w.strategy_params
+    # Best V2 result (full details for Objetivo 5% section) — OOS-validated only
+    c.execute("""SELECT r.pnl, r.oos_pnl, r.trades, r.win_rate, r.sharpe_ratio, r.max_drawdown,
+                        r.work_unit_id, r.id as result_id, r.robustness_score, w.strategy_params
                  FROM results r
                  JOIN work_units w ON r.work_unit_id = w.id
-                 WHERE r.work_unit_id >= ? AND r.pnl > 0 AND r.trades >= 5
-                 ORDER BY r.pnl DESC LIMIT 1""", (FIRST_CORRECTED_WU_ID,))
+                 WHERE r.is_overfitted = 0 AND r.oos_pnl > 0 AND r.trades >= 5
+                 ORDER BY r.oos_pnl DESC LIMIT 1""")
     v2_best_row = c.fetchone()
     v2_best = None
     if v2_best_row:
@@ -1687,13 +1658,15 @@ def api_dashboard_stats():
         except Exception:
             _v2mc, _v2cpd, _v2days = 10000, 288, 34.7
         v2_best = {
-            'pnl': v2_best_row['pnl'],
+            'pnl': v2_best_row['oos_pnl'],  # Show OOS PnL, not train PnL
+            'train_pnl': v2_best_row['pnl'],
             'trades': v2_best_row['trades'],
             'win_rate': v2_best_row['win_rate'],
             'sharpe_ratio': v2_best_row['sharpe_ratio'],
             'max_drawdown': v2_best_row['max_drawdown'],
             'work_unit_id': v2_best_row['work_unit_id'],
             'result_id': v2_best_row['result_id'],
+            'robustness_score': v2_best_row['robustness_score'],
             'max_candles': _v2mc,
             'candles_per_day': _v2cpd,
             'backtest_days': _v2days
