@@ -282,11 +282,13 @@ def execute_backtest(strategy_params, work_id=None):
         print(f"   ⚠️  SKIP: Solo {total_available:,} velas (mínimo {MIN_TOTAL_CANDLES:,})")
         return None
 
-    # ===== TRAIN/TEST SPLIT (70/30) =====
-    split_idx = int(total_available * TRAIN_RATIO)
-    df_train = df.iloc[:split_idx].copy().reset_index(drop=True)
-    df_test = df.iloc[split_idx:].copy().reset_index(drop=True)
-    print(f"   🔀 Train: {len(df_train):,} velas | Test: {len(df_test):,} velas (70/30 split)")
+    # ===== WALK-FORWARD SPLIT =====
+    # Walk-forward uses first 90% internally (5 expanding folds)
+    # Last 10% is a holdout never seen by the GA
+    holdout_idx = int(total_available * 0.90)
+    df_walkforward = df.iloc[:holdout_idx].copy().reset_index(drop=True)
+    df_holdout = df.iloc[holdout_idx:].copy().reset_index(drop=True)
+    print(f"   🔀 Walk-Forward: {len(df_walkforward):,} velas | Holdout: {len(df_holdout):,} velas (90/10 split)")
 
     # Extract market type and leverage from work unit
     market_type = strategy_params.get('market_type', 'SPOT')
@@ -313,7 +315,7 @@ def execute_backtest(strategy_params, work_id=None):
                 sg['params']['leverage'] = 1
 
     miner = StrategyMiner(
-        df=df_train,
+        df=df_walkforward,
         population_size=strategy_params.get('population_size', 30),
         generations=strategy_params.get('generations', 20),
         risk_level=strategy_params.get('risk_level', 'MEDIUM'),
@@ -322,6 +324,7 @@ def execute_backtest(strategy_params, work_id=None):
         seed_ratio=seed_ratio,
         market_type=market_type,
         max_leverage=max_leverage,
+        walk_forward_folds=5,
     )
 
     # Ejecutar búsqueda
@@ -353,15 +356,15 @@ def execute_backtest(strategy_params, work_id=None):
 
     execution_time = time.time() - start_time
 
-    # Extract real metrics from miner (TRAIN metrics)
+    # Extract metrics from miner (walk-forward OOS averages)
     train_trades = best_metrics.get('Total Trades', 0)
     train_win_rate_pct = best_metrics.get('Win Rate %', 0.0)
     train_win_rate = train_win_rate_pct / 100.0 if train_win_rate_pct > 1 else train_win_rate_pct
     train_sharpe = best_metrics.get('Sharpe Ratio', 0.0)
     train_max_dd = best_metrics.get('Max Drawdown', 0.0)
-    train_pnl = best_pnl
+    train_pnl = best_metrics.get('wf_avg_oos_pnl', best_pnl)  # Use WF OOS avg as "train" PnL
 
-    # ===== OOS EVALUATION =====
+    # ===== HOLDOUT EVALUATION (last 10% never seen by walk-forward) =====
     oos_pnl = 0.0
     oos_trades = 0
     oos_win_rate = 0.0
@@ -371,10 +374,15 @@ def execute_backtest(strategy_params, work_id=None):
     robustness_score = 0
     is_overfitted = True
 
-    if best_genome and HAS_NUMBA_BACKTESTER and len(df_test) >= 100:
+    # Walk-forward metrics from the miner
+    wf_consistency = best_metrics.get('wf_consistency', 0)
+    wf_avg_oos_pnl = best_metrics.get('wf_avg_oos_pnl', 0)
+    wf_window_pnls = best_metrics.get('wf_window_pnls', [])
+
+    if best_genome and HAS_NUMBA_BACKTESTER and len(df_holdout) >= 100:
         try:
             oos_results = numba_evaluate_population(
-                df_test, [best_genome],
+                df_holdout, [best_genome],
                 risk_level=strategy_params.get('risk_level', 'MEDIUM'),
                 market_type=market_type,
                 max_leverage=max_leverage
@@ -388,36 +396,44 @@ def execute_backtest(strategy_params, work_id=None):
                 oos_sharpe = oos_m.get('Sharpe Ratio', 0.0)
                 oos_max_dd = oos_m.get('Max Drawdown', 0.0)
 
-                # Degradation: cuánto peor es OOS vs Train
-                if train_pnl > 0:
+                # Degradation: compare holdout vs walk-forward OOS avg
+                if wf_avg_oos_pnl > 0:
+                    oos_degradation = round(1.0 - (oos_pnl / wf_avg_oos_pnl), 4)
+                elif train_pnl > 0:
                     oos_degradation = round(1.0 - (oos_pnl / train_pnl), 4)
                 else:
-                    oos_degradation = 1.0  # Train negativo = no se puede calcular
+                    oos_degradation = 1.0
 
-                # Robustness score (0-100)
+                # Robustness score (0-100) — now includes walk-forward consistency
                 score = 0
                 if oos_pnl > 0:
-                    score += 30       # OOS PnL positivo
+                    score += 20        # Holdout PnL positivo
+                if wf_consistency >= 0.6:
+                    score += 25        # Walk-forward consistent (>60% windows positive)
                 if oos_degradation < 0.35:
-                    score += 30       # Degradation < 35%
-                if oos_trades >= 15:
-                    score += 20       # Suficientes trades OOS
+                    score += 20        # Degradation < 35%
+                if oos_trades >= 10:
+                    score += 15        # Suficientes trades en holdout
                 if oos_sharpe > 0:
-                    score += 20       # Sharpe positivo en OOS
-                robustness_score = score
+                    score += 10        # Sharpe positivo en holdout
+                if wf_avg_oos_pnl > 0:
+                    score += 10        # Walk-forward OOS avg positive
+                robustness_score = min(score, 100)
 
-                is_overfitted = (oos_pnl < 0) or (oos_degradation > 0.50)
+                is_overfitted = (oos_pnl < 0) or (oos_degradation > 0.50) or (wf_consistency < 0.4)
 
-                print(f"   🔬 OOS: PnL=${oos_pnl:,.2f} | Trades={oos_trades} | "
-                      f"WR={oos_win_rate:.1%} | Degradation={oos_degradation:.1%} | "
-                      f"Robustness={robustness_score}/100 | "
+                print(f"   🔬 Holdout: PnL=${oos_pnl:,.2f} | Trades={oos_trades} | "
+                      f"WR={oos_win_rate:.1%} | Degradation={oos_degradation:.1%}")
+                print(f"   🔬 Walk-Forward: Consistency={wf_consistency:.0%} | "
+                      f"Avg OOS PnL=${wf_avg_oos_pnl:,.2f} | Windows={wf_window_pnls}")
+                print(f"   🔬 Robustness={robustness_score}/100 | "
                       f"{'❌ OVERFITTED' if is_overfitted else '✅ ROBUST'}")
         except Exception as e:
-            print(f"   ⚠️  OOS evaluation failed: {e}")
+            print(f"   ⚠️  Holdout evaluation failed: {e}")
     elif not HAS_NUMBA_BACKTESTER:
         print(f"   ⚠️  OOS skipped: numba_backtester not available")
-    elif len(df_test) < 100:
-        print(f"   ⚠️  OOS skipped: test set too small ({len(df_test)} velas)")
+    elif len(df_holdout) < 100:
+        print(f"   ⚠️  OOS skipped: holdout set too small ({len(df_holdout)} velas)")
 
     result = {
         'pnl': train_pnl,
@@ -438,8 +454,8 @@ def execute_backtest(strategy_params, work_id=None):
         'is_overfitted': is_overfitted,
         # Data quality metrics
         'actual_candles': total_available,
-        'train_candles': len(df_train),
-        'test_candles': len(df_test),
+        'train_candles': len(df_walkforward),
+        'test_candles': len(df_holdout),
     }
 
     print(f"✅ Backtest completado en {execution_time:.0f}s")

@@ -1231,16 +1231,24 @@ def api_submit_result():
         conn.commit()
         conn.close()
 
-    # Agregar a élite si el resultado es bueno (fuera del lock para no bloquear)
-    if data.get('strategy_genome') and data.get('pnl', 0) >= ELITE_MIN_PNL:
+    # Agregar a élite SOLO si OOS-validated (anti-overfitting)
+    # Requirements: not overfitted, OOS PnL > 0, robustness >= 50
+    oos_pnl = data.get('oos_pnl', 0)
+    is_overfitted = data.get('is_overfitted', True)
+    robustness = data.get('robustness_score', 0)
+    has_genome = data.get('strategy_genome')
+
+    if has_genome and not is_overfitted and oos_pnl > 0 and robustness >= 50:
         add_to_elite(
             genome_json=data['strategy_genome'],
-            pnl=data.get('pnl', 0),
+            pnl=oos_pnl,  # Use OOS PnL, not train PnL
             win_rate=data.get('win_rate', 0),
             sharpe_ratio=data.get('sharpe_ratio', 0),
-            trades=data.get('trades', 0),
+            trades=data.get('oos_trades', data.get('trades', 0)),
             data_file=data_file
         )
+    elif has_genome and data.get('pnl', 0) >= ELITE_MIN_PNL:
+        print(f"   ⚠️  Elite rejected: overfitted={is_overfitted}, oos_pnl=${oos_pnl:.2f}, robustness={robustness}")
 
     print(f"📥 Resultado recibido de worker {data['worker_id']} - " +
           f"Work {data['work_id']}: PnL=${data.get('pnl', 0):,.2f}")

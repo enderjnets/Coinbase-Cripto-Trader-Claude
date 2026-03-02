@@ -1,6 +1,7 @@
 import random
 import copy
 import json
+import numpy as np
 try:
     import ray
     HAS_RAY = True
@@ -17,7 +18,9 @@ except ImportError:
     pass
 
 try:
-    from numba_backtester import numba_evaluate_population, HAS_NUMBA, warmup_jit
+    from numba_backtester import (numba_evaluate_population, HAS_NUMBA, warmup_jit,
+                                   precompute_indicators, encode_genome, _fast_backtest,
+                                   NUM_INDICATORS, _detect_timeframe_minutes)
     if HAS_NUMBA:
         warmup_jit()
 except ImportError:
@@ -36,8 +39,10 @@ class StrategyMiner:
     def __init__(self, df, population_size=100, generations=20, risk_level="LOW",
                  force_local=False, ray_address="auto", ml_enhanced=False,
                  seed_genomes=None, seed_ratio=0.5,
-                 market_type="SPOT", max_leverage=1):
-        self.df = df
+                 market_type="SPOT", max_leverage=1,
+                 walk_forward_folds=5):
+        self.df_full = df  # Full dataset for walk-forward validation
+        self.df = df       # Kept for backward compat with evaluate_population/Ray
         self.pop_size = population_size
         self.generations = generations
         self.risk_level = risk_level
@@ -47,37 +52,18 @@ class StrategyMiner:
         self.seed_ratio = seed_ratio
         self.market_type = market_type
         self.max_leverage = max_leverage
+        self.wf_folds = walk_forward_folds
         ray_init = HAS_RAY and ray.is_initialized()
         
-        # === TODOS LOS INDICADORES DISPONIBLES ===
-        self.basic_indicators = ["RSI", "SMA", "EMA", "VOLSMA"]
-        self.macd_indicators = ["MACD", "MACD_Signal", "MACD_Hist"]
-        self.atr_indicators = ["ATR", "ATR_Pct"]
-        self.bb_indicators = ["BB_Upper", "BB_Lower", "BB_Width", "BB_Position"]
-        self.adx_indicators = ["ADX", "DI_Plus", "DI_Minus"]
-        self.stoch_indicators = ["STOCH_K", "STOCH_D"]
-        self.ichimoku_indicators = ["ICHIMOKU_Conv", "ICHIMOKU_Base", "ICHIMOKU_SpanA", "ICHIMOKU_SpanB"]
-        self.volume_indicators = ["OBV", "VWAP"]
-        self.momentum_indicators = ["ROC", "CCI", "WILLIAMS_R"]
-        
-        self.all_indicators = (self.basic_indicators + self.macd_indicators + 
-                               self.atr_indicators + self.bb_indicators + 
-                               self.adx_indicators + self.stoch_indicators +
-                               self.ichimoku_indicators + self.volume_indicators +
-                               self.momentum_indicators)
-        
-        self.operators = [">", "<", ">=", "<=", "=="]
-        self.periods = [5, 7, 9, 10, 14, 20, 25, 30, 50, 100, 200]
-        
-        # Constantes por indicador
+        # === INDICATORS ALIGNED WITH NUMBA BACKTESTER ===
+        # Only indicators that numba_backtester.py actually supports
+        # (RSI, SMA, EMA, VOLSMA with periods 10,14,20,50,100,200)
+        self.all_indicators = ["RSI", "SMA", "EMA", "VOLSMA"]
+        self.operators = [">", "<"]  # numba only supports GT and LT
+        self.periods = [10, 14, 20, 50, 100, 200]
+
+        # Constants for RSI (the only indicator that uses constant comparisons)
         self.constants_rsi = [20, 25, 30, 35, 40, 45, 55, 60, 65, 70, 75, 80]
-        self.constants_macd = [-5, -2, -1, 0, 1, 2, 5, 10]
-        self.constants_bb = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-        self.constants_adx = [15, 20, 25, 30, 35, 40, 45, 50]
-        self.constants_atr = [0.5, 1, 2, 3, 4, 5, 7, 10]
-        self.constants_stoch = [10, 20, 30, 70, 80, 90]
-        self.constants_cci = [-100, -50, 0, 50, 100]
-        self.constants_williams = [-80, -70, -50, -30, -20]
         
         # Tracking de diversidad poblacional
         self.generation_history = []
@@ -111,58 +97,39 @@ class StrategyMiner:
             }
         }
 
-        # 1 to 5 rules
-        num_rules = random.randint(1, 5)
+        # 1 to 3 rules (matches numba_backtester MAX_RULES=3)
+        num_rules = random.randint(1, 3)
         for _ in range(num_rules):
             genome["entry_rules"].append(self._random_rule())
 
         return genome
 
     def _random_rule(self):
-        """Generate a random rule with any indicator."""
+        """Generate a random rule using only numba-supported indicators."""
         ind = random.choice(self.all_indicators)
         period = random.choice(self.periods)
         op = random.choice(self.operators)
-        
-        left = {"indicator": ind, "period": period}
-        
-        # Choose right side value based on indicator type
+
         if ind == "RSI":
+            left = {"indicator": ind, "period": period}
             right = {"value": random.choice(self.constants_rsi)}
         elif ind in ["SMA", "EMA"]:
             if random.random() < 0.3:
+                # Cross: short MA vs long MA
                 period2 = random.choice([p for p in self.periods if p != period])
                 left = {"indicator": ind, "period": min(period, period2)}
                 right = {"indicator": ind, "period": max(period, period2)}
             else:
+                # Price vs MA
                 left = {"field": "close"}
                 right = {"indicator": ind, "period": period}
         elif ind == "VOLSMA":
             left = {"field": "volume"}
             right = {"indicator": ind, "period": period}
-        elif ind in ["MACD", "MACD_Signal", "MACD_Hist"]:
-            right = {"value": random.choice(self.constants_macd)}
-        elif ind in ["BB_Upper", "BB_Lower", "BB_Width"]:
-            right = {"value": random.choice(self.constants_bb)}
-        elif ind == "BB_Position":
-            right = {"value": random.choice([10, 20, 30, 40, 50, 60, 70, 80, 90])}
-        elif ind == "ATR":
-            right = {"value": random.choice(self.constants_atr)}
-        elif ind == "ATR_Pct":
-            right = {"value": random.choice([0.5, 1, 1.5, 2, 2.5, 3, 4, 5])}
-        elif ind in ["ADX", "DI_Plus", "DI_Minus"]:
-            right = {"value": random.choice(self.constants_adx)}
-        elif ind in ["STOCH_K", "STOCH_D"]:
-            right = {"value": random.choice(self.constants_stoch)}
-        elif ind == "CCI":
-            right = {"value": random.choice(self.constants_cci)}
-        elif ind == "WILLIAMS_R":
-            right = {"value": random.choice(self.constants_williams)}
-        elif ind in ["ROC"]:
-            right = {"value": random.choice([-10, -5, -2, -1, 0, 1, 2, 5, 10])}
         else:
-            right = {"value": 50}
-            
+            left = {"field": "close"}
+            right = {"indicator": ind, "period": period}
+
         return {"left": left, "op": op, "right": right}
         
     def mutate(self, genome, generation=0, diversity_score=0.5):
@@ -209,10 +176,10 @@ class StrategyMiner:
                 idx = random.randint(0, len(mutated["entry_rules"]) - 1)
                 mutated["entry_rules"][idx] = self._random_rule()
         else:
-            # Add new rule
+            # Add new rule (cap at MAX_RULES=3)
             mutated["entry_rules"].append(self._random_rule())
-            if len(mutated["entry_rules"]) > 5:
-                mutated["entry_rules"] = mutated["entry_rules"][:5]
+            if len(mutated["entry_rules"]) > 3:
+                mutated["entry_rules"] = mutated["entry_rules"][:3]
 
         return mutated
         
@@ -249,6 +216,10 @@ class StrategyMiner:
         if not child["entry_rules"]:
             child["entry_rules"] = rules1 if rules1 else [self._random_rule()]
 
+        # Cap rules to MAX_RULES=3
+        if len(child["entry_rules"]) > 3:
+            child["entry_rules"] = child["entry_rules"][:3]
+
         return child
 
     def calculate_diversity(self, population):
@@ -266,43 +237,191 @@ class StrategyMiner:
         unique = len(set(patterns))
         return unique / len(population)
 
+    def evaluate_walk_forward(self, population, progress_cb=None, cancel_event=None):
+        """
+        Walk-forward validation: evaluate each genome across multiple
+        anchored expanding windows. Returns OOS-based fitness scores.
+
+        5 anchored walk-forward folds:
+          Fold 1: [TRAIN 50%][OOS 10%]
+          Fold 2: [TRAIN 60%     ][OOS 10%]
+          Fold 3: [TRAIN 70%          ][OOS 10%]
+          Fold 4: [TRAIN 80%               ][OOS 10%]
+          Fold 5: [TRAIN 90%                    ][OOS 10%]
+        """
+        if not HAS_NUMBA:
+            # Fallback: use old evaluate_population if numba not available
+            return self.evaluate_population(population, progress_cb, cancel_event)
+
+        n_total = len(self.df_full)
+        folds = self.wf_folds
+
+        # Pre-compute indicators for the FULL dataset once
+        indicators_full, close_full, high_full, low_full = precompute_indicators(self.df_full)
+
+        # Determine fee rate and funding
+        try:
+            from config import Config
+            if self.market_type == "FUTURES":
+                fee_rate = getattr(Config, 'FUTURES_FEE_TAKER', 0.06) / 100.0
+                funding_rate = getattr(Config, 'FUTURES_FUNDING_RATE', 0.01) / 100.0
+            else:
+                fee_rate = getattr(Config, 'SPOT_FEE_MAKER', 0.4) / 100.0
+                funding_rate = 0.0
+        except ImportError:
+            if self.market_type == "FUTURES":
+                fee_rate = 0.0006
+                funding_rate = 0.0001
+            else:
+                fee_rate = 0.004
+                funding_rate = 0.0
+
+        funding_interval = 0
+        if funding_rate > 0.0:
+            tf_minutes = _detect_timeframe_minutes(self.df_full)
+            funding_interval = max(1, 480 // tf_minutes)
+
+        # Build fold boundaries
+        oos_size = int(n_total * 0.10)  # 10% OOS per fold
+        fold_windows = []
+        for f in range(folds):
+            train_end = int(n_total * (0.50 + f * 0.10))
+            oos_start = train_end
+            oos_end = min(train_end + oos_size, n_total)
+            if oos_end > oos_start + 50:  # Need at least 50 candles for OOS
+                fold_windows.append((oos_start, oos_end))
+
+        if not fold_windows:
+            # Dataset too small for walk-forward, fallback
+            return self.evaluate_population(population, progress_cb, cancel_event)
+
+        # Encode all genomes once
+        genomes_encoded = np.array([encode_genome(g) for g in population], dtype=np.float64)
+
+        total_evals = len(population) * len(fold_windows)
+        completed = 0
+        results = []
+
+        for i, genome in enumerate(population):
+            if cancel_event and cancel_event.is_set():
+                return []
+
+            encoded = genomes_encoded[i]
+            window_pnls = []
+            window_trades = []
+            window_sharpes = []
+            window_dds = []
+
+            for (oos_start, oos_end) in fold_windows:
+                # Slice indicator arrays for OOS window
+                close_oos = close_full[oos_start:oos_end].copy()
+                high_oos = high_full[oos_start:oos_end].copy()
+                low_oos = low_full[oos_start:oos_end].copy()
+                indicators_oos = indicators_full[:, oos_start:oos_end].copy()
+
+                pnl, trades, wins, max_dd, sharpe = _fast_backtest(
+                    close_oos, high_oos, low_oos, indicators_oos, encoded,
+                    fee_rate, funding_rate, np.int64(funding_interval)
+                )
+
+                window_pnls.append(pnl)
+                window_trades.append(trades)
+                window_sharpes.append(sharpe)
+                window_dds.append(max_dd)
+
+                completed += 1
+
+            if progress_cb:
+                progress_cb(completed / total_evals)
+
+            # Aggregate walk-forward metrics
+            total_oos_trades = sum(window_trades)
+            avg_oos_pnl = np.mean(window_pnls) if window_pnls else -9999
+            avg_sharpe = np.mean(window_sharpes) if window_sharpes else 0
+            max_dd_worst = max(window_dds) if window_dds else 1.0
+
+            # Consistency: fraction of windows with positive PnL
+            positive_windows = sum(1 for p in window_pnls if p > 0)
+            consistency = positive_windows / len(window_pnls) if window_pnls else 0
+
+            # Variance of PnL across windows (coefficient of variation)
+            if len(window_pnls) > 1 and avg_oos_pnl != 0:
+                pnl_std = np.std(window_pnls)
+                cv = abs(pnl_std / avg_oos_pnl) if abs(avg_oos_pnl) > 1e-6 else 10.0
+            else:
+                cv = 0.0
+
+            wf_metrics = {
+                'Total PnL': round(avg_oos_pnl, 2),
+                'Total Trades': total_oos_trades,
+                'Win Rate %': 0,  # Not tracked per-window
+                'Sharpe Ratio': round(avg_sharpe, 4),
+                'Max Drawdown': round(max_dd_worst, 4),
+                # Walk-forward specific
+                'wf_avg_oos_pnl': round(avg_oos_pnl, 2),
+                'wf_consistency': round(consistency, 2),
+                'wf_cv': round(cv, 4),
+                'wf_window_pnls': [round(p, 2) for p in window_pnls],
+                'wf_folds': len(fold_windows),
+            }
+
+            results.append((genome, avg_oos_pnl, wf_metrics))
+
+        return results
+
     def calculate_fitness(self, item):
-        """ML-enhanced fitness function."""
+        """
+        OOS-based multi-objective fitness function.
+        All metrics come from walk-forward OOS windows, not train data.
+        """
         genome, pnl, metrics = item
         num_trades = metrics.get('Total Trades', 0)
-        win_rate = metrics.get('Win Rate %', 0)
         sharpe = metrics.get('Sharpe Ratio', 0)
         max_dd = metrics.get('Max Drawdown', 0)
-        
-        # Base PnL
-        fitness = pnl
-        
-        # Trade count bonus (needs minimum trades)
-        trade_bonus = min(num_trades * 10, 150) if num_trades >= 5 else 0
-        fitness += trade_bonus
-        
-        # Win rate bonus (>50%)
-        winrate_bonus = (win_rate - 50) * 3 if win_rate > 50 else 0
-        fitness += winrate_bonus
-        
-        # Sharpe bonus
-        sharpe_bonus = sharpe * 25 if sharpe > 0 else 0
-        fitness += sharpe_bonus
-        
-        # Drawdown penalty (low drawdown is good)
-        dd_penalty = max_dd * 200 if max_dd > 0.02 else 0
-        fitness -= dd_penalty
-        
-        # Penalty for too many trades (overfitting risk)
-        if num_trades > 100:
-            fitness -= (num_trades - 100) * 2
-        
-        # Reward for risk management settings
-        if genome.get("params", {}).get("trailing_stop_pct", 0) > 0:
-            fitness += 10
-        if genome.get("params", {}).get("breakeven_after", 0) > 0:
-            fitness += 10
-            
+        num_rules = len(genome.get('entry_rules', []))
+
+        # Walk-forward specific metrics
+        avg_oos_pnl = metrics.get('wf_avg_oos_pnl', pnl)
+        consistency = metrics.get('wf_consistency', 0)
+        cv = metrics.get('wf_cv', 10.0)
+
+        # === BASE: Average OOS PnL across walk-forward windows ===
+        fitness = avg_oos_pnl
+
+        # === CONSISTENCY BONUS/PENALTY ===
+        # +100 if >60% of windows are profitable, -200 if not
+        if consistency > 0.6:
+            fitness += 100
+        else:
+            fitness -= 200
+
+        # === VARIANCE PENALTY ===
+        # Penalize high coefficient of variation between windows
+        fitness -= 50 * min(cv, 5.0)
+
+        # === SHARPE BONUS (corrected) ===
+        if sharpe > 0 and num_trades > 0:
+            sharpe_corrected = sharpe * min(1.0, (num_trades / 252) ** 0.5)
+            fitness += 30 * sharpe_corrected
+
+        # === COMPLEXITY PENALTY ===
+        # Each rule costs -15 fitness (favor simpler strategies)
+        fitness -= 15 * num_rules
+
+        # === DRAWDOWN PENALTY ===
+        if max_dd > 0.02:
+            fitness -= 200 * max_dd
+
+        # === TRADE COUNT ===
+        # Require minimum 10 trades, bonus up to 100, penalty over 100
+        if num_trades < 10:
+            fitness -= 300  # Heavy penalty for too few trades
+        else:
+            trade_bonus = min(num_trades, 100) * 5
+            fitness += trade_bonus
+            if num_trades > 100:
+                fitness -= (num_trades - 100) * 2
+
         return fitness
 
     def evaluate_population(self, population, progress_cb=None, cancel_event=None):
@@ -455,13 +574,13 @@ class StrategyMiner:
         return fitness_scores
 
     def run(self, progress_callback=None, cancel_event=None, return_metrics=False):
-        """Main Evolution Loop with adaptive optimization and elite seeding."""
+        """Main Evolution Loop with walk-forward validation and anti-overfitting."""
 
         def debug_log(msg):
             with open("miner_debug.log", "a") as f:
                 f.write(f"{datetime.now()} - {msg}\n")
 
-        debug_log("Strategy Miner RUN started with ML-enhanced fitness.")
+        debug_log("Strategy Miner RUN started with walk-forward OOS fitness.")
 
         # Initialize Population with elite seeding support
         debug_log(f"Generating initial population ({self.pop_size})...")
@@ -475,7 +594,7 @@ class StrategyMiner:
         # Build population: first from seeds, rest random
         population = []
 
-        # Add seed genomes (élite from previous best results)
+        # Add seed genomes (elite from previous best results)
         for i in range(num_from_seeds):
             seed = self.seed_genomes[i]
             if isinstance(seed, dict):
@@ -484,7 +603,6 @@ class StrategyMiner:
                     population.append(seed)
                     debug_log(f"Added elite seed genome {i+1}")
                 else:
-                    # Invalid seed, generate random
                     population.append(self.generate_random_genome())
             else:
                 population.append(self.generate_random_genome())
@@ -499,79 +617,105 @@ class StrategyMiner:
         best_genome = None
         best_pnl = -float('inf')
         best_metrics = {}
-        
+        gens_without_improvement = 0  # Early stopping counter
+        EARLY_STOP_GENS = 20
+
         for gen in range(self.generations):
             if cancel_event and cancel_event.is_set():
                 debug_log("Cancelled by user.")
                 break
-            
-            debug_log(f"Starting Generation {gen}...")    
+
+            debug_log(f"Starting Generation {gen}...")
             if progress_callback:
                 progress_callback("START_GEN", gen)
-                
+
             # Calculate diversity for this generation
             diversity = self.calculate_diversity(population)
             self.generation_history.append(diversity)
-            
+
             def eval_cb(batch_pct):
                 if progress_callback:
                     global_pct = (gen + batch_pct) / self.generations
                     progress_callback("BATCH_PROGRESS", global_pct)
-                    
-            scored_pop = self.evaluate_population(population, progress_cb=eval_cb, cancel_event=cancel_event)
-            
+
+            # === WALK-FORWARD EVALUATION (OOS-based) ===
+            scored_pop = self.evaluate_walk_forward(population, progress_cb=eval_cb, cancel_event=cancel_event)
+
             if not scored_pop:
                 debug_log("Population Evaluation returned empty.")
                 break
-            
+
             # Calculate fitness for all individuals
-            scored_pop = [(g, self.calculate_fitness((g, p, m)), m) 
+            scored_pop = [(g, self.calculate_fitness((g, p, m)), m)
                          for g, p, m in scored_pop]
-            
+
             scored_pop.sort(key=lambda x: x[1], reverse=True)
 
             current_best = scored_pop[0]
-            debug_log(f"Gen {gen} Best PnL: {current_best[1]}")
+            current_best_metrics = current_best[2] if len(current_best) > 2 else {}
+            wf_pnls = current_best_metrics.get('wf_window_pnls', [])
+            wf_consistency = current_best_metrics.get('wf_consistency', 0)
 
+            debug_log(f"Gen {gen} Best Fitness: {current_best[1]:.1f} | "
+                      f"OOS PnL: ${current_best_metrics.get('wf_avg_oos_pnl', 0):.2f} | "
+                      f"Consistency: {wf_consistency:.0%} | "
+                      f"WF Folds: {wf_pnls}")
+
+            # Track best genome
             if current_best[1] > best_pnl:
                 best_pnl = current_best[1]
                 best_genome = current_best[0]
-                best_metrics = current_best[2] if len(current_best) > 2 else {}
+                best_metrics = current_best_metrics
+                gens_without_improvement = 0
+            else:
+                gens_without_improvement += 1
 
             if progress_callback:
-                best_metrics = current_best[2] if len(current_best) > 2 else {}
                 progress_callback("BEST_GEN", {
                     'gen': gen,
                     'pnl': current_best[1],
-                    'num_trades': best_metrics.get('Total Trades', 0),
-                    'win_rate': best_metrics.get('Win Rate %', 0) / 100,
-                    'sharpe': best_metrics.get('Sharpe Ratio', 0),
+                    'num_trades': current_best_metrics.get('Total Trades', 0),
+                    'win_rate': current_best_metrics.get('Win Rate %', 0) / 100,
+                    'sharpe': current_best_metrics.get('Sharpe Ratio', 0),
                     'diversity': diversity,
                     'genome': current_best[0]
                 })
 
-            # Selection (Top 20%)
-            survivors = [x[0] for x in scored_pop[:int(self.pop_size * 0.2)]]
-            
-            # Elitism: Keep top 5% unchanged
-            elite_count = int(self.pop_size * 0.05)
-            next_pop = [scored_pop[i][0] for i in range(elite_count)]
-            
-            # Generate offspring
+            # === EARLY STOPPING ===
+            if gens_without_improvement >= EARLY_STOP_GENS:
+                debug_log(f"Early stopping: no improvement for {EARLY_STOP_GENS} generations.")
+                break
+
+            # === SELECTION: Top 30% survive ===
+            survivors = [x[0] for x in scored_pop[:max(2, int(self.pop_size * 0.30))]]
+
+            # === ELITISM: Keep top 10% unchanged ===
+            elite_count = max(1, int(self.pop_size * 0.10))
+            next_pop = [copy.deepcopy(scored_pop[i][0]) for i in range(min(elite_count, len(scored_pop)))]
+
+            # === DIVERSITY INJECTION ===
+            # If diversity drops below 0.2, replace bottom 20% with fresh random genomes
+            if diversity < 0.2:
+                inject_count = int(self.pop_size * 0.20)
+                debug_log(f"Low diversity ({diversity:.2f}), injecting {inject_count} random genomes")
+                for _ in range(inject_count):
+                    next_pop.append(self.generate_random_genome())
+
+            # Generate offspring via crossover + mutation
             while len(next_pop) < self.pop_size:
                 # Tournament selection
                 tournament_size = 3
-                p1 = max(random.sample(survivors, min(tournament_size, len(survivors))), 
+                p1 = max(random.sample(survivors, min(tournament_size, len(survivors))),
                         key=lambda x: self._get_fitness_estimate(x, scored_pop))
-                p2 = max(random.sample(survivors, min(tournament_size, len(survivors))), 
+                p2 = max(random.sample(survivors, min(tournament_size, len(survivors))),
                         key=lambda x: self._get_fitness_estimate(x, scored_pop))
-                
+
                 child = self.crossover(p1, p2)
                 child = self.mutate(child, generation=gen, diversity_score=diversity)
                 next_pop.append(child)
-                
+
             population = next_pop
-            
+
         debug_log("Mining Complete.")
         if return_metrics:
             return best_genome, best_pnl, best_metrics
