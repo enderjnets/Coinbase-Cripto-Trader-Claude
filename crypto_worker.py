@@ -30,19 +30,6 @@ except ImportError:
     HAS_RAY = False
 from strategy_miner import StrategyMiner
 
-# Detect market type from data file path
-def detect_market_type(data_file):
-    """Detect if this is futures data based on file path."""
-    if not data_file:
-        return "SPOT", False
-    data_lower = data_file.lower()
-    if "futures" in data_lower or "data_futures" in data_lower:
-        # Check if it's a perpetual contract
-        is_perpetual = "perp" in data_lower or "p-" in data_lower or data_lower.endswith("-p_") or \
-                       any(x in data_lower for x in ["bip-", "etp-", "slp-", "xpp-", "adp-", "dop-", "lnp-", "avp-", "xlp-", "hep-", "lcp-"])
-        return "FUTURES", is_perpetual
-    return "SPOT", False
-
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
@@ -102,8 +89,8 @@ def load_checkpoint():
     """Carga checkpoint si existe"""
     if os.path.exists(CHECKPOINT_FILE):
         try:
-            with open(f, 'r') as f:
-                return json.load(f)
+            with open(CHECKPOINT_FILE, 'r') as fh:
+                return json.load(fh)
         except:
             return None
     return None
@@ -143,9 +130,9 @@ def get_work():
         print(f"❌ Error contactando coordinator: {e}")
         return None
 
-def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time, strategy_genome=None, oos_metrics=None, cv_metrics=None):
+def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time, strategy_genome=None):
     """
-    Envía resultado al coordinator (incluye el genoma, OOS metrics y CV metrics)
+    Envía resultado al coordinator (incluye el genoma de la estrategia)
 
     Returns:
         True si se envió exitosamente, False en caso contrario
@@ -165,21 +152,6 @@ def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, ex
         # Incluir genoma si está disponible
         if strategy_genome:
             payload['strategy_genome'] = json.dumps(strategy_genome)
-
-        # Incluir OOS metrics (Phase 3A)
-        if oos_metrics:
-            payload['oos_pnl'] = oos_metrics.get('oos_pnl', 0)
-            payload['oos_trades'] = oos_metrics.get('oos_trades', 0)
-            payload['oos_degradation'] = oos_metrics.get('oos_degradation', 0)
-            payload['robustness_score'] = oos_metrics.get('robustness_score', 0)
-            payload['is_overfitted'] = oos_metrics.get('is_overfitted', False)
-
-        # Incluir CV metrics (FASE 3D)
-        if cv_metrics:
-            payload['cv_folds'] = cv_metrics.get('cv_folds', 0)
-            payload['cv_avg_pnl'] = cv_metrics.get('cv_avg_pnl', 0)
-            payload['cv_consistency'] = cv_metrics.get('cv_consistency', 0)
-            payload['cv_is_consistent'] = cv_metrics.get('cv_is_consistent', False)
 
         response = requests.post(
             f"{COORDINATOR_URL}/api/submit_result",
@@ -225,13 +197,36 @@ def execute_backtest(strategy_params, work_id=None):
         os.path.join("data_futures", data_file_name),
         os.path.join("data_coingecko", data_file_name),
         data_file_name,  # Ruta absoluta
+        os.path.expanduser("~/trader_data/data/" + data_file_name),
+        os.path.expanduser("~/trader_data/data_futures/" + data_file_name),
+        os.path.expanduser("~/crypto_worker/data/" + data_file_name),
     ])
 
     data_file_path = None
+    
+    # First check if any path contains Google Drive (macOS security blocks this)
+    # and try local alternatives first
     for path in possible_paths:
-        if os.path.exists(path):
-            data_file_path = path
-            break
+        if 'GoogleDrive' in path or 'Google Drive' in path:
+            filename = os.path.basename(path)
+            local_paths = [
+                os.path.expanduser(f"~/trader_data/data_futures/{filename}"),
+                os.path.expanduser(f"~/trader_data/data/{filename}"),
+                os.path.expanduser(f"~/crypto_worker/data/{filename}"),
+            ]
+            for lp in local_paths:
+                if os.path.exists(lp):
+                    data_file_path = lp
+                    break
+            if data_file_path:
+                break
+    
+    # If no local alternative found, try original paths
+    if not data_file_path:
+        for path in possible_paths:
+            if os.path.exists(path):
+                data_file_path = path
+                break
 
     if not data_file_path:
         print(f"❌ Error: Archivo de datos no encontrado: {data_file_name}")
@@ -251,10 +246,14 @@ def execute_backtest(strategy_params, work_id=None):
     total_available = len(df)
     print(f"   📊 Usando {total_available:,} velas" + (f" (cap: {max_candles:,})" if max_candles > 0 else " (todas)"))
 
-    # Detect market type from data file
-    market_type, is_perpetual = detect_market_type(data_file_path)
-    if market_type == "FUTURES":
-        print(f"   📈 FUTURES mode detected (perpetual: {is_perpetual})")
+    # Extract market type and leverage from work unit
+    market_type = strategy_params.get('market_type', 'SPOT')
+    max_leverage = strategy_params.get('max_leverage', 1)
+    leverage = strategy_params.get('leverage', 1)
+    if max_leverage < leverage:
+        max_leverage = leverage
+
+    print(f"   Market Type: {market_type}" + (f" (leverage: {max_leverage}x)" if max_leverage > 1 else ""))
 
     # Crear miner con soporte para seed_genomes (élite global)
     # IMPORTANTE: force_local=False permite que Ray paralelice usando los 9 cores
@@ -263,6 +262,13 @@ def execute_backtest(strategy_params, work_id=None):
 
     if seed_genomes:
         print(f"   🌱 Usando {len(seed_genomes)} genomas élite como semilla ({seed_ratio*100:.0f}% de población)")
+
+    # Force LONG for spot (no short selling in spot market)
+    if market_type == "SPOT":
+        for sg in seed_genomes:
+            if isinstance(sg, dict) and 'params' in sg:
+                sg['params']['direction'] = 'LONG'
+                sg['params']['leverage'] = 1
 
     miner = StrategyMiner(
         df=df,
@@ -273,9 +279,7 @@ def execute_backtest(strategy_params, work_id=None):
         seed_genomes=seed_genomes,
         seed_ratio=seed_ratio,
         market_type=market_type,
-        max_leverage=strategy_params.get('max_leverage', 10),
-        is_perpetual=is_perpetual,
-        walk_forward=True  # Phase 3A: Walk-Forward Validation always enabled
+        max_leverage=max_leverage,
     )
 
     # Ejecutar búsqueda
@@ -313,7 +317,6 @@ def execute_backtest(strategy_params, work_id=None):
     win_rate = win_rate_pct / 100.0 if win_rate_pct > 1 else win_rate_pct
     sharpe_ratio = best_metrics.get('Sharpe Ratio', 0.0)
     max_drawdown = best_metrics.get('Max Drawdown', 0.0)
-    liquidations = best_metrics.get('Liquidations', 0)  # Futures only
 
     result = {
         'pnl': best_pnl,
@@ -322,46 +325,12 @@ def execute_backtest(strategy_params, work_id=None):
         'sharpe_ratio': round(sharpe_ratio, 4),
         'max_drawdown': round(max_drawdown, 4),
         'execution_time': execution_time,
-        'genome': best_genome,  # Incluir el mejor genoma encontrado
-        'market_type': market_type  # SPOT or FUTURES
+        'genome': best_genome  # Incluir el mejor genoma encontrado
     }
-
-    # Add liquidations for futures
-    if market_type == "FUTURES":
-        result['liquidations'] = liquidations
-
-    # Add Out-of-Sample metrics (Phase 3A)
-    if 'OOS_PnL' in best_metrics:
-        result['oos_pnl'] = best_metrics['OOS_PnL']
-        result['oos_trades'] = best_metrics.get('OOS_Trades', 0)
-        result['oos_winrate'] = best_metrics.get('OOS_WinRate', 0)
-        result['oos_degradation'] = best_metrics.get('Degradation_Pct', 0)
-        result['is_overfitted'] = best_metrics.get('Is_Overfitted', True)
-        result['robustness_score'] = best_metrics.get('Robustness_Score', 0)
-
-    # Add Cross-Validation metrics (FASE 3D)
-    if 'CV_Folds' in best_metrics:
-        result['cv_folds'] = best_metrics.get('CV_Folds', 0)
-        result['cv_avg_pnl'] = best_metrics.get('CV_AvgPnL', 0)
-        result['cv_consistency'] = best_metrics.get('CV_Consistency', 0)
-        result['cv_is_consistent'] = best_metrics.get('CV_IsConsistent', False)
 
     print(f"✅ Backtest completado en {execution_time:.0f}s")
     print(f"   PnL: ${best_pnl:,.2f}")
-    if market_type == "FUTURES" and liquidations > 0:
-        print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%} | Liqs: {liquidations}")
-    else:
-        print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
-
-    # Show OOS metrics if available (Phase 3A)
-    if 'oos_pnl' in result:
-        oos_status = "🟢" if not result['is_overfitted'] else "🔴"
-        print(f"   {oos_status} OOS: ${result['oos_pnl']:.2f} | Degradation: {result['oos_degradation']:.1f}% | Robustness: {result['robustness_score']:.0f}/100")
-
-    # Show CV metrics if available (FASE 3D)
-    if 'cv_folds' in result and result['cv_folds'] > 0:
-        cv_status = "🟢" if result.get('cv_is_consistent', False) else "🟡"
-        print(f"   {cv_status} CV: {result['cv_folds']} folds | Avg PnL: ${result['cv_avg_pnl']:.2f} | Consistency: {result['cv_consistency']*100:.0f}%")
+    print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
 
     return result
 
@@ -433,27 +402,6 @@ def main():
                     # Enviar resultado
                     print(f"\n📤 Enviando resultado al coordinator...")
 
-                    # Prepare OOS metrics (Phase 3A)
-                    oos_metrics = None
-                    if 'oos_pnl' in result:
-                        oos_metrics = {
-                            'oos_pnl': result.get('oos_pnl', 0),
-                            'oos_trades': result.get('oos_trades', 0),
-                            'oos_degradation': result.get('oos_degradation', 0),
-                            'robustness_score': result.get('robustness_score', 0),
-                            'is_overfitted': result.get('is_overfitted', False)
-                        }
-
-                    # Prepare CV metrics (FASE 3D)
-                    cv_metrics = None
-                    if 'cv_folds' in result and result['cv_folds'] > 0:
-                        cv_metrics = {
-                            'cv_folds': result.get('cv_folds', 0),
-                            'cv_avg_pnl': result.get('cv_avg_pnl', 0),
-                            'cv_consistency': result.get('cv_consistency', 0),
-                            'cv_is_consistent': result.get('cv_is_consistent', False)
-                        }
-
                     success = submit_result(
                         work_id=work_id,
                         pnl=result['pnl'],
@@ -462,9 +410,7 @@ def main():
                         sharpe_ratio=result['sharpe_ratio'],
                         max_drawdown=result['max_drawdown'],
                         execution_time=result['execution_time'],
-                        strategy_genome=result.get('genome'),  # Enviar genoma para élite global
-                        oos_metrics=oos_metrics,  # Phase 3A: OOS metrics
-                        cv_metrics=cv_metrics  # FASE 3D: CV metrics
+                        strategy_genome=result.get('genome')  # Enviar genoma para élite global
                     )
 
                     if success:

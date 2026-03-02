@@ -1,0 +1,50 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKERS v6.0 - Instaladores
+       Soporte Futures: SHORT / Leverage / Funding Rates
+════════════════════════════════════════════════════════════
+
+NOVEDADES v6.0 (Marzo 2026)
+─────────────────────────────
+El backtester ahora soporta estrategias de Futures:
+  - SHORT: venta en corto (ademas de LONG)
+  - Leverage: 1x a 10x con simulacion de liquidacion
+  - Funding rates: costo cada 8 horas (realista)
+  - Fees separados: Spot 0.40% / Futures 0.06%
+  - GENOME_SIZE: 22 genes (era 20)
+
+CARPETAS
+─────────
+  v6.0_macOS/    → Para Mac (Apple Silicon e Intel)
+  v6.0_Linux/    → Para Ubuntu, Debian, Fedora, Arch
+  v6.0_Windows/  → Para Windows 10/11
+
+COMO INSTALAR
+──────────────
+  macOS   : Doble clic en INSTALAR.command
+  Linux   : bash instalar.sh
+  Windows : Doble clic en INSTALAR.bat
+
+Cada instalador:
+  1. Detecta tu red automaticamente (LAN o Tailscale)
+  2. Descarga el codigo mas reciente desde GitHub
+  3. Instala Python y dependencias
+  4. Detecta CPUs y lanza el numero optimo de workers
+  5. Configura inicio automatico
+  6. Inicia los workers inmediatamente
+
+ARCHIVOS QUE SE DESCARGAN
+──────────────────────────
+  crypto_worker.py      - Worker principal
+  numba_backtester.py   - Backtester JIT (4000x speedup)
+  backtester.py         - Backtester Python (fallback)
+  dynamic_strategy.py   - Interprete de genomas (SHORT support)
+  strategy_miner.py     - Algoritmo genetico (market_type, leverage)
+  config.py             - Fees Spot/Futures, funding rates [NUEVO]
+
+COORDINADOR
+─────────────
+  LAN       : http://10.0.0.232:5001
+  Tailscale : http://100.77.179.14:5001
+  Dashboard : http://100.77.179.14:8501
+
+════════════════════════════════════════════════════════════

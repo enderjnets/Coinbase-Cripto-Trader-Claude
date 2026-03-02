@@ -1,0 +1,67 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v6.0 - macOS
+       Instalador Automatico (Un Clic)
+       + Soporte Futures (SHORT / Leverage / Funding)
+════════════════════════════════════════════════════════════
+
+NOVEDADES v6.0
+───────────────
+✓ Soporte completo de Futures:
+  - Estrategias SHORT (venta en corto)
+  - Leverage 1x a 10x con simulacion de liquidacion
+  - Funding rates cada 8 horas (costo realista de mantener posicion)
+  - Fees separados: Spot (0.40%) y Futures (0.06%)
+✓ Nuevo archivo config.py con parametros de fees y funding
+✓ GENOME_SIZE ampliado de 20 a 22 (direction + leverage)
+✓ Re-deteccion automatica de red en cada inicio (LAN vs Tailscale)
+
+¿QUE HACE ESTE INSTALADOR?
+───────────────────────────
+✓ Detecta automaticamente si estas en casa (LAN) o fuera (Tailscale)
+✓ Descarga los ultimos archivos desde GitHub automaticamente
+✓ Instala Python y todas las dependencias (incluido Numba JIT)
+✓ Detecta cuantos CPUs tiene tu Mac y lanza el numero optimo de workers
+✓ Configura inicio automatico al encender el Mac (LaunchAgent)
+✓ Inicia los workers inmediatamente
+
+COMO INSTALAR
+──────────────
+1. Abre esta carpeta en Finder
+2. Haz DOBLE CLIC en "INSTALAR.command"
+3. Si macOS pregunta si abrir terminal, haz clic en "Abrir"
+4. La instalacion es completamente automatica (~3-5 minutos)
+
+NOTA: Si macOS bloquea el archivo, haz clic derecho → Abrir → Abrir.
+
+COMANDOS UTILES (despues de instalar)
+───────────────────────────────────────
+  cd ~/crypto_worker
+
+  Ver estado       : ./status.sh
+  Detener workers  : ./stop_workers.sh
+  Iniciar workers  : ./start_workers.sh
+  Actualizar       : ./update.sh
+  Ver logs (W1)    : tail -f logs/worker_1.log
+
+REQUISITOS MINIMOS
+───────────────────
+  macOS 11 Big Sur o superior
+  4 GB de RAM (8+ recomendado)
+  Conexion a internet (solo para instalacion y workers remotos)
+  Apple Silicon (M1/M2/M3) o Intel — ambos compatibles
+
+COORDINADOR (donde se envian los resultados)
+─────────────────────────────────────────────
+  Red local  : http://10.0.0.232:5001   (auto)
+  Tailscale  : http://100.77.179.14:5001 (auto desde cualquier lugar)
+  Dashboard  : http://100.77.179.14:8501
+
+SOLUCION DE PROBLEMAS
+──────────────────────
+  Workers no conectan  → ./status.sh para ver la URL en uso
+  Error de Python      → brew install python@3.11
+  Sin permisos         → chmod +x ~/crypto_worker/*.sh
+  Desinstalar          → launchctl unload ~/Library/LaunchAgents/com.bittrader.workers.plist
+                         rm -rf ~/crypto_worker ~/Library/LaunchAgents/com.bittrader.workers.plist
+
+════════════════════════════════════════════════════════════

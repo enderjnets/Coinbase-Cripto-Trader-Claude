@@ -99,7 +99,7 @@ MAX_TRADE_RETURN = 1.0          # 100% max return per trade
 MIN_PRICE = 0.00001             # Minimum valid price (prevent division by zero)
 MAX_PRICE = 1_000_000.0         # Maximum valid price (sanity check)
 
-# Genome encoding: 20 floats per genome
+# Genome encoding: 22 floats per genome
 # [0] sl_pct
 # [1] tp_pct
 # [2] size_pct        (% of balance per trade, 0.05-0.95)
@@ -107,7 +107,9 @@ MAX_PRICE = 1_000_000.0         # Maximum valid price (sanity check)
 # [4] num_rules
 # For each rule r (0-2), base = 5 + r*5:
 # [base+0] left_id, [base+1] left_const, [base+2] right_id, [base+3] right_const, [base+4] op
-GENOME_SIZE = 20
+# [20] direction      (0=LONG, 1=SHORT)
+# [21] leverage       (1.0 for spot, 1-10 for futures)
+GENOME_SIZE = 22
 
 # Mapping from (indicator_name, period) to matrix index
 INDICATOR_MAP = {
@@ -232,7 +234,7 @@ def encode_genome(genome):
     """
     Convert a genome dict to a fixed-size numpy array for Numba.
 
-    Layout (20 floats):
+    Layout (22 floats):
     [0] sl_pct
     [1] tp_pct
     [2] size_pct        (% of balance per trade, 0.05-0.95)
@@ -244,6 +246,8 @@ def encode_genome(genome):
     [base+2] right_id
     [base+3] right_const
     [base+4] op          (0 = >, 1 = <)
+    [20] direction       (0=LONG, 1=SHORT)
+    [21] leverage        (1.0 for spot, 1-10 for futures)
     """
     encoded = np.zeros(GENOME_SIZE, dtype=np.float64)
     encoded[0] = genome.get('params', {}).get('sl_pct', 0.05)
@@ -268,6 +272,11 @@ def encode_genome(genome):
         # Operator
         op = rule.get('op', '>')
         encoded[base + 4] = OP_GT if op == '>' else OP_LT
+
+    # Direction and leverage (futures support)
+    direction = genome.get('params', {}).get('direction', 'LONG')
+    encoded[20] = 1.0 if direction == "SHORT" else 0.0
+    encoded[21] = float(genome.get('params', {}).get('leverage', 1.0))
 
     return encoded
 
@@ -344,24 +353,30 @@ if HAS_NUMBA:
         return price * slippage_pct
 
     @njit(cache=False)
-    def _fast_backtest(close, high, low, indicators, genome_encoded, fee_rate):
+    def _fast_backtest(close, high, low, indicators, genome_encoded, fee_rate,
+                       funding_rate, funding_interval):
         """
         JIT-compiled backtest loop for a single genome.
-        V2.0: Slippage 0.2%, MAX_PNL=$2K, max_positions=2, size_pct<=30%, trade_return_cap=100%
+        V3.0: SHORT support, leverage, liquidation, funding rates.
 
         Multi-position + percentage sizing + compounding:
         - Up to 2 simultaneous positions
         - Position size = balance * size_pct (compounding, max 30%)
         - Trailing stop per position
         - Minimum $10 per trade to avoid dust
+        - SHORT: inverted SL/TP, inverted PnL
+        - Leverage: margin-based sizing, liquidation checks
+        - Funding rates: periodic cost for leveraged positions
 
         Args:
             close: float64[n] - close prices
             high: float64[n] - high prices
             low: float64[n] - low prices
             indicators: float64[NUM_IND, n] - pre-computed indicator matrix
-            genome_encoded: float64[20] - encoded genome
+            genome_encoded: float64[22] - encoded genome
             fee_rate: float64 - trading fee rate (e.g. 0.004 for 0.4%)
+            funding_rate: float64 - funding rate per period (0.0 for spot)
+            funding_interval: int64 - candles between funding (0 = disabled)
 
         Returns:
             total_pnl: float64
@@ -376,6 +391,8 @@ if HAS_NUMBA:
         size_pct = genome_encoded[2]
         max_positions = int(genome_encoded[3])
         num_rules = int(genome_encoded[4])
+        is_short = genome_encoded[20] > 0.5
+        leverage = genome_encoded[21]
 
         # Clamp parameters
         if size_pct < 0.05:
@@ -386,6 +403,10 @@ if HAS_NUMBA:
             max_positions = 1
         if max_positions > 2:
             max_positions = 2
+        if leverage < 1.0:
+            leverage = 1.0
+        if leverage > 10.0:
+            leverage = 10.0
 
         balance = 500.0
 
@@ -393,11 +414,13 @@ if HAS_NUMBA:
         pos_active = np.zeros(2, dtype=np.int64)      # 0 or 1
         pos_entry_price = np.zeros(2, dtype=np.float64)
         pos_size = np.zeros(2, dtype=np.float64)       # quantity (coins)
-        pos_cost_basis = np.zeros(2, dtype=np.float64)  # USD spent
+        pos_cost_basis = np.zeros(2, dtype=np.float64)  # USD spent (margin for futures)
         pos_entry_fee = np.zeros(2, dtype=np.float64)
         pos_sl = np.zeros(2, dtype=np.float64)
         pos_tp = np.zeros(2, dtype=np.float64)
         pos_trail = np.zeros(2, dtype=np.float64)
+        pos_notional = np.zeros(2, dtype=np.float64)   # Notional value (margin * leverage)
+        pos_margin = np.zeros(2, dtype=np.float64)      # Margin deposited
 
         total_pnl = 0.0
         num_trades = 0
@@ -413,19 +436,81 @@ if HAS_NUMBA:
             candle_high = high[i]
             candle_low = low[i]
 
+            # === FUNDING RATES: deduct periodically for leveraged positions ===
+            if funding_rate > 0.0 and funding_interval > 0 and i % funding_interval == 0:
+                for s in range(2):
+                    if pos_active[s] == 1:
+                        funding_cost = pos_notional[s] * funding_rate
+                        balance -= funding_cost
+                        total_pnl -= funding_cost
+                        if balance <= 0.0:
+                            # Bankrupt from funding - close position
+                            pos_active[s] = 0
+                            num_trades += 1
+                            balance = 0.0
+
             # === EXIT LOOP: check all positions ===
             for s in range(2):
                 if pos_active[s] == 0:
                     continue
 
-                # Trailing stop: move SL up if price moved favorably
-                new_sl = price - pos_trail[s]
-                if new_sl > pos_sl[s]:
-                    pos_sl[s] = new_sl
+                # === LIQUIDATION CHECK (leveraged positions only) ===
+                if leverage > 1.0:
+                    if is_short:
+                        liq_price = pos_entry_price[s] * (1.0 + 0.9 / leverage)
+                        if candle_high >= liq_price:
+                            # LIQUIDATED - lose all margin minus liquidation fee
+                            balance -= pos_margin[s] * 0.1
+                            if balance < 0.0:
+                                balance = 0.0
+                            pos_active[s] = 0
+                            num_trades += 1
+                            total_pnl -= pos_margin[s]
+                            if pos_margin[s] > 0.0:
+                                ret = -1.0
+                                sum_ret += ret
+                                sum_ret_sq += ret * ret
+                            if peak_balance > 0.0:
+                                dd = (peak_balance - balance) / peak_balance
+                                if dd > max_drawdown:
+                                    max_drawdown = dd
+                            continue
+                    else:
+                        liq_price = pos_entry_price[s] * (1.0 - 0.9 / leverage)
+                        if candle_low <= liq_price:
+                            balance -= pos_margin[s] * 0.1
+                            if balance < 0.0:
+                                balance = 0.0
+                            pos_active[s] = 0
+                            num_trades += 1
+                            total_pnl -= pos_margin[s]
+                            if pos_margin[s] > 0.0:
+                                ret = -1.0
+                                sum_ret += ret
+                                sum_ret_sq += ret * ret
+                            if peak_balance > 0.0:
+                                dd = (peak_balance - balance) / peak_balance
+                                if dd > max_drawdown:
+                                    max_drawdown = dd
+                            continue
 
-                # Check exit conditions
-                sl_hit = candle_low <= pos_sl[s]
-                tp_hit = candle_high >= pos_tp[s]
+                # Trailing stop + exit conditions depend on direction
+                if is_short:
+                    # SHORT: trailing stop moves DOWN, SL is above entry, TP below
+                    new_sl = price + pos_trail[s]
+                    if new_sl < pos_sl[s]:
+                        pos_sl[s] = new_sl
+
+                    sl_hit = candle_high >= pos_sl[s]
+                    tp_hit = candle_low <= pos_tp[s]
+                else:
+                    # LONG: trailing stop moves UP (original behavior)
+                    new_sl = price - pos_trail[s]
+                    if new_sl > pos_sl[s]:
+                        pos_sl[s] = new_sl
+
+                    sl_hit = candle_low <= pos_sl[s]
+                    tp_hit = candle_high >= pos_tp[s]
 
                 if sl_hit or tp_hit:
                     if sl_hit:
@@ -433,30 +518,42 @@ if HAS_NUMBA:
                     else:
                         exit_price = pos_tp[s]
 
-                    # Apply slippage to exit (worse price)
-                    exit_slippage = _calculate_slippage(exit_price, pos_cost_basis[s], i)
-                    exit_price -= exit_slippage  # Sells lower due to slippage
+                    # Apply slippage to exit (worse price for the trader)
+                    exit_slippage = _calculate_slippage(exit_price, pos_notional[s], i)
+                    if is_short:
+                        exit_price += exit_slippage  # Short: buys higher (worse)
+                    else:
+                        exit_price -= exit_slippage  # Long: sells lower (worse)
 
-                    # Close position
-                    exit_val_gross = pos_size[s] * exit_price
-                    exit_fee = exit_val_gross * fee_rate
-                    exit_val_net = exit_val_gross - exit_fee
+                    # Calculate PnL based on direction
+                    exit_fee = pos_notional[s] * fee_rate
 
-                    balance += exit_val_net
+                    if is_short:
+                        price_diff = pos_entry_price[s] - exit_price
+                    else:
+                        price_diff = exit_price - pos_entry_price[s]
+
+                    if pos_entry_price[s] > 0.0:
+                        trade_pnl = (price_diff / pos_entry_price[s]) * pos_notional[s] - exit_fee - pos_entry_fee[s]
+                    else:
+                        trade_pnl = 0.0
+
+                    # Return margin + PnL to balance
+                    balance += pos_margin[s] + trade_pnl
 
                     # === SAFETY CAP: Prevent absurd balance growth ===
                     if balance > MAX_BALANCE:
                         balance = MAX_BALANCE
-
-                    trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+                    if balance < 0.0:
+                        balance = 0.0
 
                     # === PER-TRADE RETURN CAP ===
-                    if pos_cost_basis[s] > 0.0:
-                        pnl_pct = trade_pnl / pos_cost_basis[s]
+                    if pos_margin[s] > 0.0:
+                        pnl_pct = trade_pnl / pos_margin[s]
                         if pnl_pct > MAX_TRADE_RETURN:
-                            trade_pnl = pos_cost_basis[s] * MAX_TRADE_RETURN
+                            trade_pnl = pos_margin[s] * MAX_TRADE_RETURN
                         elif pnl_pct < -MAX_TRADE_RETURN:
-                            trade_pnl = -pos_cost_basis[s] * MAX_TRADE_RETURN
+                            trade_pnl = -pos_margin[s] * MAX_TRADE_RETURN
 
                     # === SAFETY CAP: Limit individual trade PnL ===
                     if trade_pnl > MAX_POSITION_VALUE:
@@ -469,8 +566,8 @@ if HAS_NUMBA:
                         wins += 1
 
                     # Track metrics
-                    if pos_cost_basis[s] > 0.0:
-                        ret = trade_pnl / pos_cost_basis[s]
+                    if pos_margin[s] > 0.0:
+                        ret = trade_pnl / pos_margin[s]
                         sum_ret += ret
                         sum_ret_sq += ret * ret
                     if balance > peak_balance:
@@ -488,7 +585,7 @@ if HAS_NUMBA:
             for s in range(2):
                 num_open += pos_active[s]
 
-            if num_open < max_positions:
+            if num_open < max_positions and balance > 0.0:
                 # Evaluate entry rules
                 all_rules_pass = True
 
@@ -544,12 +641,24 @@ if HAS_NUMBA:
                         size_usd = 0.0  # Skip dust trades
 
                     if size_usd >= 10.0:
-                        # Apply slippage to entry (buy higher)
-                        entry_slippage = _calculate_slippage(price, size_usd, i)
-                        entry_price = price + entry_slippage
+                        # Calculate margin and notional based on leverage
+                        if leverage > 1.0:
+                            margin_required = size_usd
+                            notional_value = margin_required * leverage
+                        else:
+                            margin_required = size_usd
+                            notional_value = size_usd
 
-                        entry_fee_val = size_usd * fee_rate
-                        cost_deduct = size_usd + entry_fee_val
+                        # Fees on notional value
+                        entry_fee_val = notional_value * fee_rate
+                        cost_deduct = margin_required + entry_fee_val
+
+                        # Apply slippage to entry
+                        entry_slippage = _calculate_slippage(price, notional_value, i)
+                        if is_short:
+                            entry_price = price - entry_slippage  # Short: sells lower entry
+                        else:
+                            entry_price = price + entry_slippage  # Long: buys higher
 
                         if balance >= cost_deduct:
                             # Find free slot
@@ -563,37 +672,59 @@ if HAS_NUMBA:
                                 balance -= cost_deduct
                                 pos_active[slot] = 1
                                 pos_entry_price[slot] = entry_price
-                                pos_size[slot] = size_usd / entry_price
+                                pos_size[slot] = notional_value / entry_price
                                 pos_cost_basis[slot] = size_usd
                                 pos_entry_fee[slot] = entry_fee_val
-                                pos_sl[slot] = entry_price * (1.0 - sl_pct)
-                                pos_tp[slot] = entry_price * (1.0 + tp_pct)
-                                pos_trail[slot] = (entry_price - pos_sl[slot]) * 0.8
+                                pos_notional[slot] = notional_value
+                                pos_margin[slot] = margin_required
+
+                                if is_short:
+                                    pos_sl[slot] = entry_price * (1.0 + sl_pct)
+                                    pos_tp[slot] = entry_price * (1.0 - tp_pct)
+                                    pos_trail[slot] = (pos_sl[slot] - entry_price) * 0.8
+                                else:
+                                    pos_sl[slot] = entry_price * (1.0 - sl_pct)
+                                    pos_tp[slot] = entry_price * (1.0 + tp_pct)
+                                    pos_trail[slot] = (entry_price - pos_sl[slot]) * 0.8
 
         # === CLOSE ALL OPEN POSITIONS AT END ===
         final_price = close[n - 1]
         for s in range(2):
             if pos_active[s] == 1:
                 # Apply slippage to final exit
-                final_slippage = _calculate_slippage(final_price, pos_cost_basis[s], n - 1)
-                adj_final_price = final_price - final_slippage
+                final_slippage = _calculate_slippage(final_price, pos_notional[s], n - 1)
+                if is_short:
+                    adj_final_price = final_price + final_slippage
+                else:
+                    adj_final_price = final_price - final_slippage
 
-                exit_val_gross = pos_size[s] * adj_final_price
-                exit_fee = exit_val_gross * fee_rate
-                exit_val_net = exit_val_gross - exit_fee
-                balance += exit_val_net
+                exit_fee = pos_notional[s] * fee_rate
+
+                if is_short:
+                    price_diff = pos_entry_price[s] - adj_final_price
+                else:
+                    price_diff = adj_final_price - pos_entry_price[s]
+
+                if pos_entry_price[s] > 0.0:
+                    trade_pnl = (price_diff / pos_entry_price[s]) * pos_notional[s] - exit_fee - pos_entry_fee[s]
+                else:
+                    trade_pnl = 0.0
+
+                balance += pos_margin[s] + trade_pnl
+
                 # === SAFETY CAP: Prevent absurd balance ===
                 if balance > MAX_BALANCE:
                     balance = MAX_BALANCE
-                trade_pnl = exit_val_net - (pos_cost_basis[s] + pos_entry_fee[s])
+                if balance < 0.0:
+                    balance = 0.0
 
                 # === PER-TRADE RETURN CAP ===
-                if pos_cost_basis[s] > 0.0:
-                    pnl_pct = trade_pnl / pos_cost_basis[s]
+                if pos_margin[s] > 0.0:
+                    pnl_pct = trade_pnl / pos_margin[s]
                     if pnl_pct > MAX_TRADE_RETURN:
-                        trade_pnl = pos_cost_basis[s] * MAX_TRADE_RETURN
+                        trade_pnl = pos_margin[s] * MAX_TRADE_RETURN
                     elif pnl_pct < -MAX_TRADE_RETURN:
-                        trade_pnl = -pos_cost_basis[s] * MAX_TRADE_RETURN
+                        trade_pnl = -pos_margin[s] * MAX_TRADE_RETURN
 
                 # === SAFETY CAP: Limit individual trade PnL ===
                 if trade_pnl > MAX_POSITION_VALUE:
@@ -605,8 +736,8 @@ if HAS_NUMBA:
                 if trade_pnl > 0.0:
                     wins += 1
 
-                if pos_cost_basis[s] > 0.0:
-                    ret = trade_pnl / pos_cost_basis[s]
+                if pos_margin[s] > 0.0:
+                    ret = trade_pnl / pos_margin[s]
                     sum_ret += ret
                     sum_ret_sq += ret * ret
                 if balance > peak_balance:
@@ -656,7 +787,33 @@ if HAS_NUMBA:
 # PUBLIC API
 # ============================================================================
 
-def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None, cancel_event=None):
+def _detect_timeframe_minutes(df):
+    """Detect candle timeframe in minutes from DataFrame timestamps."""
+    if 'timestamp' in df.columns:
+        ts = pd.to_datetime(df['timestamp'])
+    elif 'time' in df.columns:
+        ts = pd.to_datetime(df['time'])
+    elif 'date' in df.columns:
+        ts = pd.to_datetime(df['date'])
+    else:
+        return 1  # Default to 1 minute
+
+    if len(ts) < 2:
+        return 1
+
+    # Sample a few consecutive diffs to determine interval
+    diffs = ts.diff().dropna().head(10)
+    median_seconds = diffs.dt.total_seconds().median()
+
+    if median_seconds <= 0:
+        return 1
+
+    return max(1, int(round(median_seconds / 60.0)))
+
+
+def numba_evaluate_population(df, population, risk_level="LOW",
+                               market_type="SPOT", max_leverage=1,
+                               progress_cb=None, cancel_event=None):
     """
     Evaluate an entire population of genomes using Numba JIT acceleration.
 
@@ -666,6 +823,8 @@ def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None
         df: pandas DataFrame with OHLCV data
         population: list of genome dicts
         risk_level: unused (kept for API compatibility)
+        market_type: "SPOT" or "FUTURES"
+        max_leverage: max leverage for futures (1 for spot)
         progress_cb: callback(float) for progress updates
         cancel_event: threading.Event to cancel evaluation
 
@@ -685,16 +844,35 @@ def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None
     # Step 2: Encode all genomes
     genomes_encoded = np.array([encode_genome(g) for g in population], dtype=np.float64)
 
-    # Step 3: Fee rate (matches backtester.py logic)
+    # Step 3: Fee rate and funding based on market type
     try:
         from config import Config
-        fee_rate = getattr(Config, 'TRADING_FEE_MAKER', 0.4) / 100.0
+        if market_type == "FUTURES":
+            fee_rate = getattr(Config, 'FUTURES_FEE_TAKER', 0.06) / 100.0
+            funding_rate = getattr(Config, 'FUTURES_FUNDING_RATE', 0.01) / 100.0
+        else:
+            fee_rate = getattr(Config, 'SPOT_FEE_MAKER', 0.4) / 100.0
+            funding_rate = 0.0
     except ImportError:
-        fee_rate = 0.004  # Default 0.4%
+        if market_type == "FUTURES":
+            fee_rate = 0.0006   # 0.06%
+            funding_rate = 0.0001  # 0.01%
+        else:
+            fee_rate = 0.004    # 0.4%
+            funding_rate = 0.0
+
+    # Step 3b: Calculate funding interval based on data timeframe
+    if funding_rate > 0.0:
+        tf_minutes = _detect_timeframe_minutes(df)
+        # 8 hours = 480 minutes
+        funding_interval = max(1, 480 // tf_minutes)
+    else:
+        funding_interval = 0
 
     # Step 4: Warmup JIT on first call (compile once, cached after)
     t_warmup = time.time()
-    _fast_backtest(close, high, low, indicators, genomes_encoded[0], fee_rate)
+    _fast_backtest(close, high, low, indicators, genomes_encoded[0], fee_rate,
+                   funding_rate, np.int64(funding_interval))
     t_warmup = time.time() - t_warmup
 
     # Step 5: Run all backtests
@@ -706,7 +884,8 @@ def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None
             return []
 
         total_pnl, num_trades, num_wins, max_dd, sharpe = _fast_backtest(
-            close, high, low, indicators, genomes_encoded[i], fee_rate
+            close, high, low, indicators, genomes_encoded[i], fee_rate,
+            funding_rate, np.int64(funding_interval)
         )
 
         win_rate = (num_wins / num_trades * 100.0) if num_trades > 0 else 0.0
@@ -732,7 +911,8 @@ def numba_evaluate_population(df, population, risk_level="LOW", progress_cb=None
 
     # Log performance
     total_time = t_indicators + t_warmup + t_run
-    print(f"   [Numba] Indicators: {t_indicators:.2f}s | JIT warmup: {t_warmup:.2f}s | "
+    mtype_str = f"[{market_type}]" if market_type == "FUTURES" else ""
+    print(f"   [Numba]{mtype_str} Indicators: {t_indicators:.2f}s | JIT warmup: {t_warmup:.2f}s | "
           f"{total} backtests: {t_run:.2f}s | Total: {total_time:.2f}s")
 
     return results
@@ -762,8 +942,10 @@ def warmup_jit():
     genome[7] = IND_CONSTANT  # right: constant
     genome[8] = 30.0          # value: 30
     genome[9] = OP_LT         # RSI_14 < 30
+    genome[20] = 0.0   # direction: LONG
+    genome[21] = 1.0   # leverage: 1x
 
-    _fast_backtest(close, high, low, indicators, genome, 0.004)
+    _fast_backtest(close, high, low, indicators, genome, 0.004, 0.0, np.int64(0))
 
 
 # ============================================================================
@@ -809,7 +991,7 @@ def validate_against_original(df, genome, verbose=True):
     except ImportError:
         fee_rate = 0.004
 
-    numba_pnl, numba_trades, numba_wins, _, _ = _fast_backtest(close, high, low, indicators, encoded, fee_rate)
+    numba_pnl, numba_trades, numba_wins, _, _ = _fast_backtest(close, high, low, indicators, encoded, fee_rate, 0.0, np.int64(0))
     t_numba = time.time() - t0
 
     numba_pnl = round(numba_pnl, 2)

@@ -84,9 +84,64 @@ ELITE_SEED_RATIO = 0.5            # 50% de población inicial desde élite
 
 # Datos disponibles para backtests
 SPOT_DATA_FILES = [
+    # BTC
     {"file": "BTC-USD_ONE_MINUTE.csv", "asset": "BTC", "dir": "data"},
     {"file": "BTC-USD_FIVE_MINUTE.csv", "asset": "BTC", "dir": "data"},
     {"file": "BTC-USD_FIFTEEN_MINUTE.csv", "asset": "BTC", "dir": "data"},
+    # ETH
+    {"file": "ETH-USD_FIVE_MINUTE.csv", "asset": "ETH", "dir": "data"},
+    {"file": "ETH-USD_FIFTEEN_MINUTE.csv", "asset": "ETH", "dir": "data"},
+    # SOL
+    {"file": "SOL-USD_FIVE_MINUTE.csv", "asset": "SOL", "dir": "data"},
+    {"file": "SOL-USD_FIFTEEN_MINUTE.csv", "asset": "SOL", "dir": "data"},
+    # XRP
+    {"file": "XRP-USD_FIVE_MINUTE.csv", "asset": "XRP", "dir": "data"},
+    {"file": "XRP-USD_FIFTEEN_MINUTE.csv", "asset": "XRP", "dir": "data"},
+    # AVAX
+    {"file": "AVAX-USD_FIVE_MINUTE.csv", "asset": "AVAX", "dir": "data"},
+    {"file": "AVAX-USD_FIFTEEN_MINUTE.csv", "asset": "AVAX", "dir": "data"},
+    # DOGE
+    {"file": "DOGE-USD_FIVE_MINUTE.csv", "asset": "DOGE", "dir": "data"},
+    {"file": "DOGE-USD_FIFTEEN_MINUTE.csv", "asset": "DOGE", "dir": "data"},
+    # DOT
+    {"file": "DOT-USD_FIVE_MINUTE.csv", "asset": "DOT", "dir": "data"},
+    {"file": "DOT-USD_FIFTEEN_MINUTE.csv", "asset": "DOT", "dir": "data"},
+    # LINK
+    {"file": "LINK-USD_FIVE_MINUTE.csv", "asset": "LINK", "dir": "data"},
+    {"file": "LINK-USD_FIFTEEN_MINUTE.csv", "asset": "LINK", "dir": "data"},
+    # LTC
+    {"file": "LTC-USD_FIVE_MINUTE.csv", "asset": "LTC", "dir": "data"},
+    {"file": "LTC-USD_FIFTEEN_MINUTE.csv", "asset": "LTC", "dir": "data"},
+    # ADA
+    {"file": "ADA-USD_FIVE_MINUTE.csv", "asset": "ADA", "dir": "data"},
+    {"file": "ADA-USD_FIFTEEN_MINUTE.csv", "asset": "ADA", "dir": "data"},
+    # UNI
+    {"file": "UNI-USD_FIVE_MINUTE.csv", "asset": "UNI", "dir": "data"},
+    {"file": "UNI-USD_FIFTEEN_MINUTE.csv", "asset": "UNI", "dir": "data"},
+    # NEAR
+    {"file": "NEAR-USD_FIVE_MINUTE.csv", "asset": "NEAR", "dir": "data"},
+    {"file": "NEAR-USD_FIFTEEN_MINUTE.csv", "asset": "NEAR", "dir": "data"},
+    # OP
+    {"file": "OP-USD_FIVE_MINUTE.csv", "asset": "OP", "dir": "data"},
+    {"file": "OP-USD_FIFTEEN_MINUTE.csv", "asset": "OP", "dir": "data"},
+    # ATOM
+    {"file": "ATOM-USD_FIVE_MINUTE.csv", "asset": "ATOM", "dir": "data"},
+    {"file": "ATOM-USD_FIFTEEN_MINUTE.csv", "asset": "ATOM", "dir": "data"},
+    # ARB
+    {"file": "ARB-USD_FIVE_MINUTE.csv", "asset": "ARB", "dir": "data"},
+    {"file": "ARB-USD_FIFTEEN_MINUTE.csv", "asset": "ARB", "dir": "data"},
+    # SAND
+    {"file": "SAND-USD_FIVE_MINUTE.csv", "asset": "SAND", "dir": "data"},
+    {"file": "SAND-USD_FIFTEEN_MINUTE.csv", "asset": "SAND", "dir": "data"},
+    # MANA
+    {"file": "MANA-USD_FIVE_MINUTE.csv", "asset": "MANA", "dir": "data"},
+    {"file": "MANA-USD_FIFTEEN_MINUTE.csv", "asset": "MANA", "dir": "data"},
+    # AXS
+    {"file": "AXS-USD_FIVE_MINUTE.csv", "asset": "AXS", "dir": "data"},
+    {"file": "AXS-USD_FIFTEEN_MINUTE.csv", "asset": "AXS", "dir": "data"},
+    # APE
+    {"file": "APE-USD_FIVE_MINUTE.csv", "asset": "APE", "dir": "data"},
+    {"file": "APE-USD_FIFTEEN_MINUTE.csv", "asset": "APE", "dir": "data"},
 ]
 
 # FUTURES DATA FILES - Comprehensive list (Updated Feb 2026)
@@ -196,7 +251,7 @@ CANDLE_CONFIGS = [50000, 75000, 100000, 200000, 300000]  # Fallback genérico (m
 def generate_random_work_unit():
     """Genera un work unit con configuración aleatoria diversa, usando élite como semilla"""
     # Elegir tipo de datos (spot o futures)
-    use_futures = False  # Solo SPOT hasta validar backtester V2 (antes: random.random() > 0.3)
+    use_futures = random.random() < 0.3  # 30% futures, 70% spot
 
     if use_futures and FUTURES_DATA_FILES:
         data_info = random.choice(FUTURES_DATA_FILES)
@@ -672,8 +727,8 @@ def validate_work_unit(work_id):
                          if r['pnl'] is not None
                          and r['pnl'] < PNL_MAX
                          and (r['trades'] or 0) >= MIN_TRADES
-                         and ((r.get('oos_trades') or 0) == 0 or (r.get('oos_pnl') or 0) >= MIN_OOS_PNL)
-                         and ((r.get('oos_trades') or 0) == 0 or (r.get('oos_degradation') or 1) <= MAX_OOS_DEGRADATION)]
+                         and ((r['oos_trades'] or 0) == 0 or (r['oos_pnl'] or 0) >= MIN_OOS_PNL)
+                         and ((r['oos_trades'] or 0) == 0 or (r['oos_degradation'] or 1) <= MAX_OOS_DEGRADATION)]
 
         if valid_results:
             best_result = valid_results[0]  # Ya ordenado por pnl DESC
@@ -1480,35 +1535,50 @@ def api_dashboard_stats():
     for row in c.fetchall():
         data_file = row[0] or 'Unknown'
         # Extraer nombre del activo del archivo
-        if 'BTC' in data_file:
+        # Detect category from filename pattern: XXX-USD = Spot, otherwise Futures
+        category = 'Spot' if '-USD' in data_file else 'Futures'
+        # Extract asset: for spot "BTC-USD_*.csv" -> "BTC", for futures use mapping
+        if '-USD' in data_file:
+            asset = data_file.split('-USD')[0]
+        elif 'BTC' in data_file or 'BIP' in data_file or 'BIT' in data_file:
             asset = 'BTC'
-            category = 'Spot' if 'USD' in data_file else 'Futures'
-        elif 'ETH' in data_file or 'ETP' in data_file or data_file.startswith('ET'):
+        elif 'ETH' in data_file or 'ETP' in data_file or data_file.startswith('ET-'):
             asset = 'ETH'
-            category = 'Futures'
         elif 'SOL' in data_file or 'SLP' in data_file:
             asset = 'SOL'
-            category = 'Futures'
         elif 'XRP' in data_file or 'XPP' in data_file:
             asset = 'XRP'
-            category = 'Futures'
-        elif 'GOL' in data_file:
-            asset = 'GOLD'
-            category = 'Futures'
-        elif 'MC' in data_file:
-            asset = 'SP500'
-            category = 'Futures'
+        elif 'ADP' in data_file or 'ADA' in data_file:
+            asset = 'ADA'
+        elif 'AVP' in data_file or 'AVA' in data_file:
+            asset = 'AVAX'
+        elif 'DOP' in data_file or 'DOT' in data_file:
+            asset = 'DOT'
+        elif 'LNP' in data_file or 'LNK' in data_file:
+            asset = 'LINK'
+        elif 'LCP' in data_file or data_file.startswith('LC-'):
+            asset = 'LTC'
         elif 'DOG' in data_file:
             asset = 'DOGE'
-            category = 'Futures'
         elif 'SHB' in data_file:
             asset = 'SHIB'
-            category = 'Futures'
+        elif 'XLP' in data_file or 'XLM' in data_file:
+            asset = 'XLM'
+        elif 'HEP' in data_file or 'HED' in data_file:
+            asset = 'HED'
+        elif 'SUI' in data_file:
+            asset = 'SUI'
+        elif 'BCH' in data_file:
+            asset = 'BCH'
+        elif 'SLR' in data_file:
+            asset = 'SLR'
+        elif 'GOL' in data_file:
+            asset = 'GOLD'
+        elif 'MC' in data_file:
+            asset = 'SP500'
         else:
-            # Intentar extraer del nombre del archivo
             parts = data_file.replace('.csv', '').split('_')[0].split('-')[0]
             asset = parts[:4] if len(parts) > 4 else parts
-            category = 'Futures' if '-' in data_file else 'Spot'
 
         asset_stats.append({
             'data_file': data_file,

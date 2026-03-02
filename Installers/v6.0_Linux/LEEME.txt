@@ -1,0 +1,50 @@
+════════════════════════════════════════════════════════════
+       BITTRADER WORKER v6.0 - Linux
+       Instalador Automatico
+       + Soporte Futures (SHORT / Leverage / Funding)
+════════════════════════════════════════════════════════════
+
+NOVEDADES v6.0
+───────────────
+✓ Soporte completo de Futures:
+  - Estrategias SHORT (venta en corto)
+  - Leverage 1x a 10x con simulacion de liquidacion
+  - Funding rates cada 8 horas (costo realista de mantener posicion)
+  - Fees separados: Spot (0.40%) y Futures (0.06%)
+✓ Nuevo archivo config.py con parametros de fees y funding
+✓ GENOME_SIZE ampliado de 20 a 22 (direction + leverage)
+✓ Re-deteccion automatica de red en cada inicio (LAN vs Tailscale)
+✓ Servicio systemd con auto-inicio
+
+COMO INSTALAR
+──────────────
+  bash instalar.sh
+
+La instalacion es completamente automatica (~3-5 minutos).
+Compatible con Ubuntu, Debian, Fedora, Arch y derivados.
+
+COMANDOS UTILES (despues de instalar)
+───────────────────────────────────────
+  cd ~/crypto_worker
+
+  Ver estado       : ./status.sh
+  Detener workers  : ./stop_workers.sh
+  Iniciar workers  : ./start_workers.sh
+  Actualizar       : ./update.sh
+  Servicio systemd : systemctl --user status bittrader-workers
+  Ver logs (W1)    : tail -f logs/worker_1.log
+
+REQUISITOS MINIMOS
+───────────────────
+  Linux con kernel 4.x+ (Ubuntu 20.04+, Debian 11+, Fedora 35+)
+  4 GB de RAM (8+ recomendado)
+  Python 3.8+ (se instala automaticamente)
+  Conexion a internet
+
+COORDINADOR
+─────────────────────────────────────────────
+  Red local  : http://10.0.0.232:5001   (auto)
+  Tailscale  : http://100.77.179.14:5001 (auto)
+  Dashboard  : http://100.77.179.14:8501
+
+════════════════════════════════════════════════════════════
