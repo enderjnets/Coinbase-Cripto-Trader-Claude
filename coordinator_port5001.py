@@ -80,6 +80,13 @@ MIN_OOS_PNL = 0                   # OOS PnL debe ser >= 0 (positivo o break-even
 MAX_OOS_DEGRADATION = 0.35        # Máximo 35% degradación Train→OOS
 MIN_ROBUSTNESS_SCORE = 50         # Robustness score mínimo (0-100)
 
+# OOS Enforcement: WUs con ID > este valor REQUIEREN OOS válido
+# WUs viejos (legacy) mantienen lógica permisiva (oos_trades=0 pasa)
+OOS_REQUIRED_AFTER_WU_ID = 35264  # Primer WU después del deploy de OOS real
+
+# Mínimo de velas para datos útiles (excluir archivos pequeños)
+MIN_DATA_CANDLES = 1000
+
 
 
 # ============================================================================
@@ -255,13 +262,68 @@ CANDLE_CONFIGS_BY_TIMEFRAME = {
 CANDLE_CONFIGS = [50000, 75000, 100000, 200000, 300000]  # Fallback genérico (mín 6 meses 5-min)
 
 
+# Cache de archivos de datos válidos (>= MIN_DATA_CANDLES)
+_valid_data_files_cache = {}
+_valid_data_files_scanned = False
+
+def _scan_data_files():
+    """Escanea archivos de datos y filtra los que tienen suficientes velas"""
+    global _valid_data_files_cache, _valid_data_files_scanned
+    import csv
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    skipped = []
+
+    for file_list, subdir in [(SPOT_DATA_FILES, None), (FUTURES_DATA_FILES, None)]:
+        for info in file_list:
+            data_dir = info.get("dir", "data")
+            fname = info["file"]
+            path = os.path.join(base_dir, data_dir, fname)
+
+            # Try local worker paths too
+            if not os.path.exists(path):
+                for alt_dir in [os.path.expanduser(f"~/trader_data/{data_dir}"),
+                                os.path.expanduser(f"~/crypto_worker/{data_dir}")]:
+                    alt = os.path.join(alt_dir, fname)
+                    if os.path.exists(alt):
+                        path = alt
+                        break
+
+            if os.path.exists(path):
+                try:
+                    with open(path, 'r') as f:
+                        reader = csv.reader(f)
+                        row_count = sum(1 for _ in reader) - 1  # minus header
+                    if row_count >= MIN_DATA_CANDLES:
+                        _valid_data_files_cache[fname] = row_count
+                    else:
+                        skipped.append(f"{fname} ({row_count} candles)")
+                except Exception:
+                    pass
+
+    _valid_data_files_scanned = True
+    if skipped:
+        print(f"   ⚠️  Data files skipped (< {MIN_DATA_CANDLES} candles): {', '.join(skipped[:10])}")
+    print(f"   ✅ {len(_valid_data_files_cache)} data files válidos para work units")
+
+
 def generate_random_work_unit():
     """Genera un work unit con configuración aleatoria diversa, usando élite como semilla"""
+    global _valid_data_files_scanned
+
+    # Escanear archivos la primera vez
+    if not _valid_data_files_scanned:
+        _scan_data_files()
+
     # Elegir tipo de datos (spot o futures)
     use_futures = random.random() < 0.3  # 30% futures, 70% spot
 
-    if use_futures and FUTURES_DATA_FILES:
-        data_info = random.choice(FUTURES_DATA_FILES)
+    # Filtrar listas por archivos con suficientes velas
+    valid_futures = [f for f in FUTURES_DATA_FILES if f["file"] in _valid_data_files_cache] if _valid_data_files_cache else FUTURES_DATA_FILES
+    valid_spot = [f for f in SPOT_DATA_FILES if f["file"] in _valid_data_files_cache] if _valid_data_files_cache else SPOT_DATA_FILES
+
+    if use_futures and valid_futures:
+        data_info = random.choice(valid_futures)
         data_dir = data_info["dir"]
         data_file = data_info["file"]
         asset = data_info["asset"]
@@ -274,7 +336,7 @@ def generate_random_work_unit():
         # Futures-specific parameters
         max_leverage = random.choice([3, 5, 7, 10])  # Coinbase max 10x
     else:
-        data_info = random.choice(SPOT_DATA_FILES)
+        data_info = random.choice(valid_spot if valid_spot else SPOT_DATA_FILES)
         data_dir = data_info["dir"]
         data_file = data_info["file"]
         asset = data_info["asset"]
@@ -459,6 +521,17 @@ def init_db():
     )''')
 
     conn.commit()
+
+    # Migración: agregar columna actual_candles si no existe
+    try:
+        c.execute("SELECT actual_candles FROM results LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE results ADD COLUMN actual_candles INTEGER DEFAULT 0")
+        c.execute("ALTER TABLE results ADD COLUMN train_candles INTEGER DEFAULT 0")
+        c.execute("ALTER TABLE results ADD COLUMN test_candles INTEGER DEFAULT 0")
+        conn.commit()
+        print("   📦 Migración: columnas actual_candles, train_candles, test_candles agregadas")
+
     conn.close()
 
     print("✅ Base de datos inicializada")
@@ -730,12 +803,26 @@ def validate_work_unit(work_id):
         # PNL_MAX escala con leverage: $1000 base * leverage
         PNL_MAX = 1000 * leverage
         MIN_TRADES = 5
-        valid_results = [r for r in results
-                         if r['pnl'] is not None
-                         and r['pnl'] < PNL_MAX
-                         and (r['trades'] or 0) >= MIN_TRADES
-                         and ((r['oos_trades'] or 0) == 0 or (r['oos_pnl'] or 0) >= MIN_OOS_PNL)
-                         and ((r['oos_trades'] or 0) == 0 or (r['oos_degradation'] or 1) <= MAX_OOS_DEGRADATION)]
+        is_new_wu = int(work_id) > OOS_REQUIRED_AFTER_WU_ID
+
+        if is_new_wu:
+            # WUs nuevos: REQUIEREN OOS válido
+            valid_results = [r for r in results
+                             if r['pnl'] is not None
+                             and r['pnl'] < PNL_MAX
+                             and (r['trades'] or 0) >= MIN_TRADES
+                             and (r['oos_trades'] or 0) >= MIN_OOS_TRADES
+                             and (r['oos_pnl'] or 0) >= MIN_OOS_PNL
+                             and (r['oos_degradation'] or 1) <= MAX_OOS_DEGRADATION
+                             and not r['is_overfitted']]
+        else:
+            # WUs legacy: OOS opcional (oos_trades=0 pasa)
+            valid_results = [r for r in results
+                             if r['pnl'] is not None
+                             and r['pnl'] < PNL_MAX
+                             and (r['trades'] or 0) >= MIN_TRADES
+                             and ((r['oos_trades'] or 0) == 0 or (r['oos_pnl'] or 0) >= MIN_OOS_PNL)
+                             and ((r['oos_trades'] or 0) == 0 or (r['oos_degradation'] or 1) <= MAX_OOS_DEGRADATION)]
 
         if valid_results:
             best_result = valid_results[0]  # Ya ordenado por pnl DESC
@@ -812,7 +899,10 @@ def _build_best_strategy(best_row, is_validated):
             break
     _cpd_map = {'1m': 1440, '5m': 288, '15m': 96, '1h': 24, '6h': 4, '1d': 1}
     _cpd = _cpd_map.get(_timeframe, 1440)
-    _backtest_days = round(_max_candles / _cpd, 1) if _cpd > 0 else 0
+    # Usar actual_candles del worker si disponible (velas reales post-warmup)
+    _actual_candles = best_row['actual_candles'] if 'actual_candles' in best_row.keys() and best_row['actual_candles'] else 0
+    _candles_for_days = _actual_candles if _actual_candles > 0 else _max_candles
+    _backtest_days = round(_candles_for_days / _cpd, 1) if _cpd > 0 else 0
 
     _wid = best_row['worker_id'] or ''
     _wshort = _wid.rsplit('_W', 1)[0] if '_W' in _wid else _wid
@@ -843,6 +933,7 @@ def _build_best_strategy(best_row, is_validated):
         'result_id': best_row['id'],
         'worker_short': _worker_short,
         'max_candles': _max_candles,
+        'actual_candles': _actual_candles,
         'candles_per_day': _cpd,
         'oos_pnl': best_row['oos_pnl'] if 'oos_pnl' in best_row.keys() else 0,
         'oos_trades': best_row['oos_trades'] if 'oos_trades' in best_row.keys() else 0,
@@ -1102,13 +1193,14 @@ def api_submit_result():
             except:
                 pass
 
-        # Insertar resultado con genoma + OOS metrics + CV metrics (Phase 3A + FASE 3D)
+        # Insertar resultado con genoma + OOS metrics + CV metrics + data quality
         c.execute("""INSERT INTO results
             (work_unit_id, worker_id, pnl, trades, win_rate,
              sharpe_ratio, max_drawdown, execution_time, strategy_genome,
              oos_pnl, oos_trades, oos_degradation, robustness_score, is_overfitted,
-             cv_folds, cv_avg_pnl, cv_consistency, cv_is_consistent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             cv_folds, cv_avg_pnl, cv_consistency, cv_is_consistent,
+             actual_candles, train_candles, test_candles)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data['work_id'], data['worker_id'],
              data.get('pnl', 0), data.get('trades', 0),
              data.get('win_rate', 0), data.get('sharpe_ratio', 0),
@@ -1119,7 +1211,9 @@ def api_submit_result():
              1 if data.get('is_overfitted', False) else 0,
              data.get('cv_folds', 0), data.get('cv_avg_pnl', 0),
              data.get('cv_consistency', 0),
-             1 if data.get('cv_is_consistent', False) else 0))
+             1 if data.get('cv_is_consistent', False) else 0,
+             data.get('actual_candles', 0), data.get('train_candles', 0),
+             data.get('test_candles', 0)))
 
         # Incrementar contador de réplicas completadas
         c.execute("""UPDATE work_units

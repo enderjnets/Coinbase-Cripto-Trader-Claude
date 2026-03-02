@@ -29,6 +29,11 @@ try:
 except ImportError:
     HAS_RAY = False
 from strategy_miner import StrategyMiner
+try:
+    from numba_backtester import numba_evaluate_population
+    HAS_NUMBA_BACKTESTER = True
+except ImportError:
+    HAS_NUMBA_BACKTESTER = False
 
 # ============================================================================
 # CONFIGURACIÓN
@@ -51,6 +56,12 @@ CHECKPOINT_FILE = f"worker_checkpoint_{WORKER_ID}.json"
 
 # Directorio de datos
 DATA_FILE = "data/BTC-USD_ONE_MINUTE.csv"
+
+# Mínimo de velas para backtest confiable (train+test)
+MIN_TOTAL_CANDLES = 1000
+
+# Train/Test split ratio (70% train, 30% test)
+TRAIN_RATIO = 0.70
 
 # CPUs a reservar (ajustado para múltiples workers)
 # Si hay N workers, cada uno usa total_cpus/N
@@ -136,9 +147,13 @@ def get_work():
         print(f"❌ Error contactando coordinator: {e}")
         return None
 
-def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, execution_time, strategy_genome=None):
+def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown,
+                   execution_time, strategy_genome=None,
+                   oos_pnl=0, oos_trades=0, oos_degradation=0,
+                   robustness_score=0, is_overfitted=False,
+                   actual_candles=0, train_candles=0, test_candles=0):
     """
-    Envía resultado al coordinator (incluye el genoma de la estrategia)
+    Envía resultado al coordinator (incluye genoma y métricas OOS)
 
     Returns:
         True si se envió exitosamente, False en caso contrario
@@ -152,7 +167,17 @@ def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown, ex
             'win_rate': win_rate,
             'sharpe_ratio': sharpe_ratio,
             'max_drawdown': max_drawdown,
-            'execution_time': execution_time
+            'execution_time': execution_time,
+            # OOS metrics
+            'oos_pnl': oos_pnl,
+            'oos_trades': oos_trades,
+            'oos_degradation': oos_degradation,
+            'robustness_score': robustness_score,
+            'is_overfitted': is_overfitted,
+            # Data quality
+            'actual_candles': actual_candles,
+            'train_candles': train_candles,
+            'test_candles': test_candles,
         }
 
         # Incluir genoma si está disponible
@@ -252,6 +277,17 @@ def execute_backtest(strategy_params, work_id=None):
     total_available = len(df)
     print(f"   📊 Usando {total_available:,} velas" + (f" (cap: {max_candles:,})" if max_candles > 0 else " (todas)"))
 
+    # Pre-check de calidad: mínimo de velas
+    if total_available < MIN_TOTAL_CANDLES:
+        print(f"   ⚠️  SKIP: Solo {total_available:,} velas (mínimo {MIN_TOTAL_CANDLES:,})")
+        return None
+
+    # ===== TRAIN/TEST SPLIT (70/30) =====
+    split_idx = int(total_available * TRAIN_RATIO)
+    df_train = df.iloc[:split_idx].copy().reset_index(drop=True)
+    df_test = df.iloc[split_idx:].copy().reset_index(drop=True)
+    print(f"   🔀 Train: {len(df_train):,} velas | Test: {len(df_test):,} velas (70/30 split)")
+
     # Extract market type and leverage from work unit
     market_type = strategy_params.get('market_type', 'SPOT')
     max_leverage = strategy_params.get('max_leverage', 1)
@@ -277,7 +313,7 @@ def execute_backtest(strategy_params, work_id=None):
                 sg['params']['leverage'] = 1
 
     miner = StrategyMiner(
-        df=df,
+        df=df_train,
         population_size=strategy_params.get('population_size', 30),
         generations=strategy_params.get('generations', 20),
         risk_level=strategy_params.get('risk_level', 'MEDIUM'),
@@ -317,26 +353,98 @@ def execute_backtest(strategy_params, work_id=None):
 
     execution_time = time.time() - start_time
 
-    # Extract real metrics from miner
-    trades = best_metrics.get('Total Trades', 0)
-    win_rate_pct = best_metrics.get('Win Rate %', 0.0)
-    win_rate = win_rate_pct / 100.0 if win_rate_pct > 1 else win_rate_pct
-    sharpe_ratio = best_metrics.get('Sharpe Ratio', 0.0)
-    max_drawdown = best_metrics.get('Max Drawdown', 0.0)
+    # Extract real metrics from miner (TRAIN metrics)
+    train_trades = best_metrics.get('Total Trades', 0)
+    train_win_rate_pct = best_metrics.get('Win Rate %', 0.0)
+    train_win_rate = train_win_rate_pct / 100.0 if train_win_rate_pct > 1 else train_win_rate_pct
+    train_sharpe = best_metrics.get('Sharpe Ratio', 0.0)
+    train_max_dd = best_metrics.get('Max Drawdown', 0.0)
+    train_pnl = best_pnl
+
+    # ===== OOS EVALUATION =====
+    oos_pnl = 0.0
+    oos_trades = 0
+    oos_win_rate = 0.0
+    oos_sharpe = 0.0
+    oos_max_dd = 0.0
+    oos_degradation = 1.0
+    robustness_score = 0
+    is_overfitted = True
+
+    if best_genome and HAS_NUMBA_BACKTESTER and len(df_test) >= 100:
+        try:
+            oos_results = numba_evaluate_population(
+                df_test, [best_genome],
+                risk_level=strategy_params.get('risk_level', 'MEDIUM'),
+                market_type=market_type,
+                max_leverage=max_leverage
+            )
+            if oos_results and len(oos_results) > 0:
+                oos_m = oos_results[0].get('metrics', {})
+                oos_pnl = oos_m.get('Total PnL', 0.0)
+                oos_trades = oos_m.get('Total Trades', 0)
+                oos_wr_pct = oos_m.get('Win Rate %', 0.0)
+                oos_win_rate = oos_wr_pct / 100.0 if oos_wr_pct > 1 else oos_wr_pct
+                oos_sharpe = oos_m.get('Sharpe Ratio', 0.0)
+                oos_max_dd = oos_m.get('Max Drawdown', 0.0)
+
+                # Degradation: cuánto peor es OOS vs Train
+                if train_pnl > 0:
+                    oos_degradation = round(1.0 - (oos_pnl / train_pnl), 4)
+                else:
+                    oos_degradation = 1.0  # Train negativo = no se puede calcular
+
+                # Robustness score (0-100)
+                score = 0
+                if oos_pnl > 0:
+                    score += 30       # OOS PnL positivo
+                if oos_degradation < 0.35:
+                    score += 30       # Degradation < 35%
+                if oos_trades >= 15:
+                    score += 20       # Suficientes trades OOS
+                if oos_sharpe > 0:
+                    score += 20       # Sharpe positivo en OOS
+                robustness_score = score
+
+                is_overfitted = (oos_pnl < 0) or (oos_degradation > 0.50)
+
+                print(f"   🔬 OOS: PnL=${oos_pnl:,.2f} | Trades={oos_trades} | "
+                      f"WR={oos_win_rate:.1%} | Degradation={oos_degradation:.1%} | "
+                      f"Robustness={robustness_score}/100 | "
+                      f"{'❌ OVERFITTED' if is_overfitted else '✅ ROBUST'}")
+        except Exception as e:
+            print(f"   ⚠️  OOS evaluation failed: {e}")
+    elif not HAS_NUMBA_BACKTESTER:
+        print(f"   ⚠️  OOS skipped: numba_backtester not available")
+    elif len(df_test) < 100:
+        print(f"   ⚠️  OOS skipped: test set too small ({len(df_test)} velas)")
 
     result = {
-        'pnl': best_pnl,
-        'trades': trades,
-        'win_rate': round(win_rate, 4),
-        'sharpe_ratio': round(sharpe_ratio, 4),
-        'max_drawdown': round(max_drawdown, 4),
+        'pnl': train_pnl,
+        'trades': train_trades,
+        'win_rate': round(train_win_rate, 4),
+        'sharpe_ratio': round(train_sharpe, 4),
+        'max_drawdown': round(train_max_dd, 4),
         'execution_time': execution_time,
-        'genome': best_genome  # Incluir el mejor genoma encontrado
+        'genome': best_genome,
+        # OOS metrics
+        'oos_pnl': round(oos_pnl, 2),
+        'oos_trades': oos_trades,
+        'oos_win_rate': round(oos_win_rate, 4),
+        'oos_sharpe': round(oos_sharpe, 4),
+        'oos_max_dd': round(oos_max_dd, 4),
+        'oos_degradation': round(oos_degradation, 4),
+        'robustness_score': robustness_score,
+        'is_overfitted': is_overfitted,
+        # Data quality metrics
+        'actual_candles': total_available,
+        'train_candles': len(df_train),
+        'test_candles': len(df_test),
     }
 
     print(f"✅ Backtest completado en {execution_time:.0f}s")
-    print(f"   PnL: ${best_pnl:,.2f}")
-    print(f"   Trades: {trades} | Win Rate: {win_rate:.1%} | Sharpe: {sharpe_ratio:.2f} | Max DD: {max_drawdown:.2%}")
+    print(f"   Train PnL: ${train_pnl:,.2f} | OOS PnL: ${oos_pnl:,.2f}")
+    print(f"   Trades: {train_trades} | Win Rate: {train_win_rate:.1%} | Sharpe: {train_sharpe:.2f} | Max DD: {train_max_dd:.2%}")
 
     return result
 
@@ -416,7 +524,17 @@ def main():
                         sharpe_ratio=result['sharpe_ratio'],
                         max_drawdown=result['max_drawdown'],
                         execution_time=result['execution_time'],
-                        strategy_genome=result.get('genome')  # Enviar genoma para élite global
+                        strategy_genome=result.get('genome'),
+                        # OOS metrics
+                        oos_pnl=result.get('oos_pnl', 0),
+                        oos_trades=result.get('oos_trades', 0),
+                        oos_degradation=result.get('oos_degradation', 0),
+                        robustness_score=result.get('robustness_score', 0),
+                        is_overfitted=result.get('is_overfitted', False),
+                        # Data quality
+                        actual_candles=result.get('actual_candles', 0),
+                        train_candles=result.get('train_candles', 0),
+                        test_candles=result.get('test_candles', 0),
                     )
 
                     if success:

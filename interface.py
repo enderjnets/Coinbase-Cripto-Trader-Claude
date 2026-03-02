@@ -2941,7 +2941,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                         st.metric("Motor", "Python", delta="Sin aceleracion")
 
                 # ===== OOS VALIDATION METRICS (Phase 3A) =====
-                if best and best.get('oos_pnl', 0) != 0:
+                if best and best.get('oos_trades', 0) > 0:
                     st.divider()
                     st.markdown("#### 🔬 Out-of-Sample Validation")
 
@@ -2957,20 +2957,23 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                     with oos_col2:
                         oos_degradation = best.get('oos_degradation', 0)
-                        deg_color = "normal" if oos_degradation < 35 else "inverse"
-                        st.metric("Degradación", f"{oos_degradation:.1f}%",
-                                  delta="<35% aceptable" if oos_degradation < 35 else ">35% overfitted",
+                        deg_color = "normal" if oos_degradation < 0.35 else "inverse"
+                        st.metric("Degradation", f"{oos_degradation:.1%}",
+                                  delta="<35% OK" if oos_degradation < 0.35 else ">35% overfitted",
                                   delta_color=deg_color)
 
                     with oos_col3:
                         robustness = best.get('robustness_score', 0)
                         st.metric("Robustness", f"{robustness:.0f}/100",
-                                  delta="✅ Robusto" if robustness >= 50 else "⚠️ Frágil")
+                                  delta="Robusto" if robustness >= 50 else "Fragil")
 
                     with oos_col4:
                         oos_trades = best.get('oos_trades', 0)
                         st.metric("OOS Trades", f"{oos_trades}",
-                                  delta="Min 10 requerido" if oos_trades < 10 else "✅ Suficiente")
+                                  delta="Min 15 requerido" if oos_trades < 15 else "Suficiente")
+                elif best and best.get('oos_trades', 0) == 0:
+                    st.divider()
+                    st.warning("Sin validacion OOS. Resultados pueden ser overfitted. Esperando workers actualizados.")
 
                 # ===== OBJETIVO 5% DIARIO =====
                 # numba_backtester.py usa balance = 500.0 como capital inicial
@@ -3000,9 +3003,12 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                     st.markdown(f"#### 🎯 Objetivo: 5% Diario &nbsp; {status_icon} **{daily_ret_pct:.2f}%** actual vs **5.00%** objetivo")
                     st.progress(min(progress_pct / 100, 1.0))
+                    actual_candles_display = best.get('actual_candles', 0) or 0
                     max_candles_display = best.get('max_candles', 0) or 0
+                    candles_display = actual_candles_display if actual_candles_display > 0 else max_candles_display
                     timeframe_display = best.get('timeframe', '?')
-                    st.caption(f"{status_msg} &nbsp;·&nbsp; Capital: **${BACKTEST_CAPITAL:,}** &nbsp;·&nbsp; Período: **{BACKTEST_DAYS:.1f} días** ({max_candles_display:,} candles {timeframe_display})")
+                    candle_label = "actual" if actual_candles_display > 0 else "max"
+                    st.caption(f"{status_msg} &nbsp;·&nbsp; Capital: **${BACKTEST_CAPITAL:,}** &nbsp;·&nbsp; Período: **{BACKTEST_DAYS:.1f} días** ({candles_display:,} candles {candle_label} {timeframe_display})")
 
                     gc1, gc2, gc3, gc4, gc5, gc6 = st.columns(6)
                     with gc1: st.metric("Retorno Diario", f"{daily_ret_pct:.2f}%",    delta="obj: 5.00%",          delta_color="normal")
