@@ -36,6 +36,13 @@ DATABASE = 'coordinator.db'
 REDUNDANCY_FACTOR = 2  # Cada work unit se envía a 2 workers
 BACKTEST_CAPITAL = 500.0  # Capital inicial del backtester (numba_backtester.py)
 
+# Workers marcados para shutdown remoto (set de worker_ids)
+shutdown_workers = set()
+
+# Límite de workers activos por hostname (ej: {"yonathan": 4})
+# Workers que excedan el límite no reciben trabajo
+worker_limits = {}
+
 # ============================================================================
 # AUTO-CREACIÓN DE WORK UNITS
 # ============================================================================
@@ -992,6 +999,26 @@ def api_get_work():
     if not worker_id:
         return jsonify({'error': 'worker_id required'}), 400
 
+    # Verificar si este worker debe apagarse
+    if worker_id in shutdown_workers:
+        shutdown_workers.discard(worker_id)
+        print(f"🛑 Shutdown signal enviado a {worker_id}")
+        return jsonify({'work_id': None, 'shutdown': True, 'message': 'Shutdown requested by coordinator'})
+
+    # Verificar límite de workers por máquina
+    wid_lower = worker_id.lower()
+    for hostname_key, max_w in worker_limits.items():
+        if hostname_key in wid_lower:
+            # Extraer número de instancia (W1, W2, etc.)
+            try:
+                w_num = int(worker_id.rsplit('_W', 1)[1])
+            except (IndexError, ValueError):
+                w_num = 1
+            if w_num > max_w:
+                return jsonify({'work_id': None, 'shutdown': True,
+                                'message': f'Worker limit ({max_w}) exceeded for this machine'})
+            break
+
     # Registrar/actualizar worker
     with db_lock:
         conn = get_db_connection()
@@ -1164,6 +1191,84 @@ def api_workers():
     conn.close()
 
     return jsonify({'workers': workers})
+
+@app.route('/api/shutdown_worker', methods=['POST'])
+def api_shutdown_worker():
+    """
+    Marca workers para shutdown remoto.
+    Los workers se detendrán la próxima vez que pidan trabajo.
+
+    JSON body:
+        worker_ids: Lista de worker IDs a apagar
+        OR
+        hostname: Apagar todos los workers de esta máquina
+        keep: (opcional) Cuántos workers conservar de ese hostname (default 0)
+    """
+    data = request.json or {}
+
+    if 'worker_ids' in data:
+        ids = data['worker_ids']
+        shutdown_workers.update(ids)
+        print(f"🛑 Shutdown programado para {len(ids)} workers: {ids}")
+        return jsonify({'status': 'ok', 'queued': len(ids), 'worker_ids': ids})
+
+    elif 'hostname' in data:
+        hostname_filter = data['hostname'].lower()
+        keep = int(data.get('keep', 0))
+
+        # Persistir límite para que aplique en cada poll (workers viejos no mueren pero no reciben trabajo)
+        if keep > 0:
+            worker_limits[hostname_filter] = keep
+            print(f"📋 Worker limit configurado: '{hostname_filter}' → máximo {keep} workers")
+
+        conn = get_db_connection()
+        c = conn.cursor()
+        now_unix = time.time()
+        c.execute("SELECT id, last_seen FROM workers WHERE status='active' ORDER BY id")
+        matching = []
+        for row in c.fetchall():
+            ls = row['last_seen'] or 0
+            if 0 < ls < 2500000:
+                ls = (ls - 2440587.5) * 86400
+            if (now_unix - ls) / 60.0 < 5:
+                if hostname_filter in row['id'].lower():
+                    matching.append(row['id'])
+        conn.close()
+
+        if keep > 0 and keep < len(matching):
+            to_kill = sorted(matching)[keep:]
+        else:
+            to_kill = matching
+
+        shutdown_workers.update(to_kill)
+        print(f"🛑 Shutdown programado para {len(to_kill)} workers de '{hostname_filter}' (keep={keep}): {to_kill}")
+        return jsonify({'status': 'ok', 'queued': len(to_kill), 'kept': keep, 'worker_ids': to_kill})
+
+    return jsonify({'error': 'Provide worker_ids or hostname'}), 400
+
+@app.route('/api/worker_limits', methods=['GET', 'POST', 'DELETE'])
+def api_worker_limits():
+    """Ver, configurar o eliminar límites de workers por máquina."""
+    if request.method == 'GET':
+        return jsonify({'limits': worker_limits})
+
+    elif request.method == 'POST':
+        data = request.json or {}
+        hostname = data.get('hostname', '').lower()
+        max_workers = int(data.get('max_workers', 0))
+        if hostname and max_workers > 0:
+            worker_limits[hostname] = max_workers
+            print(f"📋 Worker limit: '{hostname}' → {max_workers}")
+            return jsonify({'status': 'ok', 'hostname': hostname, 'max_workers': max_workers})
+        return jsonify({'error': 'hostname and max_workers required'}), 400
+
+    elif request.method == 'DELETE':
+        data = request.json or {}
+        hostname = data.get('hostname', '').lower()
+        if hostname in worker_limits:
+            del worker_limits[hostname]
+            return jsonify({'status': 'ok', 'removed': hostname})
+        return jsonify({'error': 'hostname not found in limits'}), 404
 
 @app.route('/api/results', methods=['GET'])
 def api_results():

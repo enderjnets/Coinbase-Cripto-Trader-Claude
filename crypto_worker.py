@@ -121,6 +121,12 @@ def get_work():
         if response.status_code == 200:
             data = response.json()
 
+            # Shutdown remoto desde coordinator
+            if data.get('shutdown'):
+                print(f"\n🛑 SHUTDOWN solicitado por el coordinator. Deteniendo worker...")
+                import sys
+                sys.exit(0)
+
             if data.get('work_id'):
                 return data
 

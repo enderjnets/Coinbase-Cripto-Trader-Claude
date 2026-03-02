@@ -3223,11 +3223,15 @@ elif nav_mode == "🌐 Sistema Distribuido":
                 # Machine locations - spread slightly for visual clarity on globe
                 MACHINE_LOCATIONS = {
                     "MacBook Pro": {"lat": 39.76, "lon": -104.88, "city": "Denver, CO",
-                                    "role": "Coordinator + Workers"},
+                                    "role": "Coordinator + 7 Workers"},
                     "Linux ROG": {"lat": 39.55, "lon": -105.15, "city": "Denver, CO",
-                                  "role": "Workers"},
+                                  "role": "5 Workers"},
                     "MacBook Air": {"lat": 40.02, "lon": -104.55, "city": "Denver, CO",
-                                    "role": "Workers (Optional)"},
+                                    "role": "4 Workers"},
+                    "Asus Dorada": {"lat": 39.65, "lon": -104.70, "city": "Denver, CO",
+                                    "role": "3 Workers"},
+                    "Yony MacPro M5": {"lat": 39.85, "lon": -105.05, "city": "Denver, CO",
+                                       "role": "8 Workers"},
                     "Otro": {"lat": 39.40, "lon": -104.70, "city": "Denver, CO",
                              "role": "Workers"},
                 }
@@ -3625,7 +3629,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                             wu_id = best.get('work_unit_id', 'N/A')
                             # Extract short worker name
                             short_worker = worker_id.split('_')[-1] if '_' in worker_id else worker_id
-                            machine = "MacBook Pro" if "MacBook" in worker_id else ("Linux ROG" if "rog" in worker_id.lower() or "Linux" in worker_id else "Otro")
+                            machine = "MacBook Pro" if "MacBook-Pro" in worker_id else ("MacBook Air" if "MacBook-Air" in worker_id else ("Linux ROG" if "rog" in worker_id.lower() else ("Yony MacPro M5" if "Yonathan" in worker_id else ("Asus Dorada" if "enderj_Linux" in worker_id else "Otro"))))
                             st.code(f"ID: {short_worker}\nMaquina: {machine}\nWork Unit: {wu_id}")
 
                     # Trading rules (genome)
@@ -3672,10 +3676,11 @@ elif nav_mode == "🌐 Sistema Distribuido":
                 st.markdown("#### Recursos del Cluster")
 
                 MACHINE_SPECS = {
-                    "MacBook Pro": {"total_cpus": 12, "cpus_per_worker": 4, "power_w": 30, "gpu": "M-series Metal", "numba": True},
+                    "MacBook Pro": {"total_cpus": 12, "cpus_per_worker": 1.7, "power_w": 30, "gpu": "M-series Metal", "numba": True},
                     "Linux ROG": {"total_cpus": 16, "cpus_per_worker": 3.2, "power_w": 65, "gpu": "NVIDIA CUDA", "numba": True},
-                    "MacBook Air": {"total_cpus": 8, "cpus_per_worker": 4, "power_w": 15, "gpu": "M-series Metal", "numba": True},
+                    "MacBook Air": {"total_cpus": 8, "cpus_per_worker": 2, "power_w": 15, "gpu": "M-series Metal", "numba": True},
                     "Asus Dorada": {"total_cpus": 16, "cpus_per_worker": 5, "power_w": 45, "gpu": "AMD/NVIDIA", "numba": True},
+                    "Yony MacPro M5": {"total_cpus": 10, "cpus_per_worker": 1.25, "power_w": 25, "gpu": "M-series Metal", "numba": True},
                     "Otro": {"total_cpus": 8, "cpus_per_worker": 4, "power_w": 20, "gpu": "N/A", "numba": False},
                 }
 
@@ -3841,14 +3846,24 @@ elif nav_mode == "🌐 Sistema Distribuido":
                 def get_machine_from_id(worker_id):
                     """Extrae el nombre de la máquina del worker ID"""
                     wid = worker_id.lower()
-                    if "macbook-pro" in wid:
+                    hostname = ""
+                    # Check hostname field if available
+                    for w in workers:
+                        if w.get('id') == worker_id:
+                            hostname = w.get('hostname', '').lower()
+                            break
+                    if "yonathan" in wid or "yonathan" in hostname:
+                        return "Yony MacPro M5"
+                    elif "macbook-pro" in wid or "enders-macbook-pro" in hostname:
                         return "MacBook Pro"
-                    elif "macbook-air" in wid:
+                    elif "macbook-air" in wid or "enders-macbook-air" in hostname:
                         return "MacBook Air"
+                    elif "rog" in wid or "ender-rog" in hostname:
+                        return "Linux ROG"
+                    elif hostname == "enderj" or ("enderj_linux" in wid):
+                        return "Asus Dorada"
                     elif "macbook" in wid:
                         return "MacBook"
-                    elif "rog" in wid or "linux" in wid:
-                        return "Linux ROG"
                     elif "linux" in wid:
                         return "Linux"
                     return "Unknown"
@@ -3900,7 +3915,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
                 with col_filter1:
                     filter_machine = st.multiselect(
                         "🔍 Filtrar por máquina",
-                        options=["MacBook Pro", "MacBook Air", "Linux ROG", "Linux", "Unknown"],
+                        options=["MacBook Pro", "MacBook Air", "Linux ROG", "Asus Dorada", "Yony MacPro M5", "Unknown"],
                         default=[],
                         key="worker_machine_filter"
                     )
