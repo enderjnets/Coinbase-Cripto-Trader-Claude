@@ -2740,7 +2740,7 @@ elif nav_mode == "🌐 Sistema Distribuido":
     """)
 
     # Configuration
-    COORDINATOR_URL = "http://localhost:5001"
+    COORDINATOR_URL = os.getenv("COORDINATOR_URL", "http://localhost:5001")
 
     # Helper function to check coordinator status
     def check_coordinator_status():
@@ -2973,20 +2973,17 @@ elif nav_mode == "🌐 Sistema Distribuido":
                                   delta="Min 10 requerido" if oos_trades < 10 else "✅ Suficiente")
 
                 # ===== OBJETIVO 5% DIARIO =====
-                # El backtester corre con $10,000 fijo (numba_backtester.py balance=10000)
-                # El % de retorno se calcula sobre esa base. REAL_CAPITAL ($500) es
-                # solo para mostrar cuánto ganarías con tu cuenta real.
-                BACKTEST_CAPITAL = 10000
+                # numba_backtester.py usa balance = 500.0 como capital inicial
+                BACKTEST_CAPITAL = 500
                 REAL_CAPITAL     = 500
                 TARGET_DAILY_PCT = 5.0
-                MAX_CANDLES      = 80000
-                CANDLES_PER_DAY  = 1440
-                BACKTEST_DAYS    = MAX_CANDLES / CANDLES_PER_DAY
 
                 if best:
                     best_pnl      = best.get('pnl', 0) or 0
+                    # Usar días reales del backtest (no hardcoded)
+                    BACKTEST_DAYS = best.get('backtest_days', 0) or 55.6
                     total_ret     = best_pnl / BACKTEST_CAPITAL * 100
-                    daily_ret_pct = total_ret / BACKTEST_DAYS
+                    daily_ret_pct = total_ret / BACKTEST_DAYS if BACKTEST_DAYS > 0 else 0
                     daily_pnl     = REAL_CAPITAL * (daily_ret_pct / 100)
                     target_total  = REAL_CAPITAL * (TARGET_DAILY_PCT / 100) * BACKTEST_DAYS
                     progress_pct  = min(daily_ret_pct / TARGET_DAILY_PCT * 100, 100)
@@ -3003,7 +3000,9 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                     st.markdown(f"#### 🎯 Objetivo: 5% Diario &nbsp; {status_icon} **{daily_ret_pct:.2f}%** actual vs **5.00%** objetivo")
                     st.progress(min(progress_pct / 100, 1.0))
-                    st.caption(f"{status_msg} &nbsp;·&nbsp; Capital: **$500** &nbsp;·&nbsp; Período: **{BACKTEST_DAYS:.1f} días** ({MAX_CANDLES:,} candles 1min)")
+                    max_candles_display = best.get('max_candles', 0) or 0
+                    timeframe_display = best.get('timeframe', '?')
+                    st.caption(f"{status_msg} &nbsp;·&nbsp; Capital: **${BACKTEST_CAPITAL:,}** &nbsp;·&nbsp; Período: **{BACKTEST_DAYS:.1f} días** ({max_candles_display:,} candles {timeframe_display})")
 
                     gc1, gc2, gc3, gc4, gc5, gc6 = st.columns(6)
                     with gc1: st.metric("Retorno Diario", f"{daily_ret_pct:.2f}%",    delta="obj: 5.00%",          delta_color="normal")
@@ -3521,17 +3520,17 @@ elif nav_mode == "🌐 Sistema Distribuido":
                     # Main metrics row
                     bs_col1, bs_col2, bs_col3, bs_col4 = st.columns(4)
 
-                    initial_cap = best.get('initial_capital', 10000)
+                    initial_cap = best.get('initial_capital', 500)
                     pnl_val = best.get('pnl', 0)
                     roi_pct = (pnl_val / initial_cap * 100) if initial_cap > 0 else 0
 
                     with bs_col1:
-                        st.markdown("""
+                        st.markdown(f"""
                         <div style="background: linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%);
                                     padding: 20px; border-radius: 12px; text-align: center;
                                     border: 1px solid rgba(0,255,136,0.3);">
                             <div style="color: #888; font-size: 12px; text-transform: uppercase;">Capital Inicial</div>
-                            <div style="color: #fff; font-size: 28px; font-weight: bold;">$10,000</div>
+                            <div style="color: #fff; font-size: 28px; font-weight: bold;">${initial_cap:,.0f}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -3592,8 +3591,8 @@ elif nav_mode == "🌐 Sistema Distribuido":
 
                     with pm_col3:
                         sharpe = best.get('sharpe_ratio', 0)
-                        sharpe_delta = "excelente" if sharpe >= 2 else ("bueno" if sharpe >= 1 else "bajo")
-                        st.metric("Sharpe Ratio", f"{sharpe:.2f}", delta=sharpe_delta)
+                        sharpe_delta = "excelente" if sharpe >= 5 else ("bueno" if sharpe >= 2.5 else "bajo")
+                        st.metric("Sharpe Ratio", f"{sharpe:.2f}", delta=f"{sharpe_delta} (per-trade)")
 
                     with pm_col4:
                         dd = best.get('max_drawdown', 0) * 100
@@ -3627,9 +3626,20 @@ elif nav_mode == "🌐 Sistema Distribuido":
                             st.markdown("**Worker**")
                             worker_id = best.get('worker_id', 'N/A')
                             wu_id = best.get('work_unit_id', 'N/A')
-                            # Extract short worker name
-                            short_worker = worker_id.split('_')[-1] if '_' in worker_id else worker_id
-                            machine = "MacBook Pro" if "MacBook-Pro" in worker_id else ("MacBook Air" if "MacBook-Air" in worker_id else ("Linux ROG" if "rog" in worker_id.lower() else ("Yony MacPro M5" if "Yonathan" in worker_id else ("Asus Dorada" if "enderj_Linux" in worker_id else "Otro"))))
+                            short_worker = best.get('worker_short', worker_id.split('_')[-1] if '_' in worker_id else worker_id)
+                            wid_l = worker_id.lower()
+                            if "yonathan" in wid_l:
+                                machine = "Yony MacPro M5"
+                            elif "macbook-pro" in wid_l:
+                                machine = "MacBook Pro"
+                            elif "macbook-air" in wid_l:
+                                machine = "MacBook Air"
+                            elif "rog" in wid_l:
+                                machine = "Linux ROG"
+                            elif "enderj_linux" in wid_l or "enderj" == wid_l.split("_")[0]:
+                                machine = "Asus Dorada"
+                            else:
+                                machine = "Otro"
                             st.code(f"ID: {short_worker}\nMaquina: {machine}\nWork Unit: {wu_id}")
 
                     # Trading rules (genome)
