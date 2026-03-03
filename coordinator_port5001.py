@@ -1413,6 +1413,7 @@ def api_results():
             'oos_pnl': row['oos_pnl'],
             'oos_trades': row['oos_trades'],
             'oos_degradation': row['oos_degradation'],
+            'robustness_score': row['robustness_score'],
             'strategy_params': json.loads(row['strategy_params'])
         })
 
@@ -2117,7 +2118,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <div class="card">
     <div class="card-title">🏆 Mejor Estrategia <span id="b-validated" style="font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;display:none">✓ Validada</span></div>
     <!-- Asset & Timeframe header -->
-    <div id="b-info-bar" style="display:none;padding:4px 14px 0;display:flex;gap:6px;flex-wrap:wrap">
+    <div id="b-info-bar" style="display:none;padding:4px 14px 0;gap:6px;flex-wrap:wrap">
       <span id="b-asset" style="font-size:11px;font-weight:700;background:var(--blue);color:#fff;padding:2px 8px;border-radius:4px">-</span>
       <span id="b-tf" style="font-size:11px;font-weight:600;background:var(--surface2);color:var(--text);padding:2px 8px;border-radius:4px">-</span>
       <span id="b-risk" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:none">-</span>
@@ -2133,7 +2134,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <div class="best-item"><div class="best-val" id="b-days" style="color:var(--blue)">-</div><div class="best-lbl">Backtest Días</div></div>
     </div>
     <!-- OOS row -->
-    <div id="b-oos-row" style="display:none;padding:0 12px 10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+    <div id="b-oos-row" style="display:none;padding:0 12px 10px;grid-template-columns:1fr 1fr 1fr;gap:6px">
       <div style="background:var(--surface2);border-radius:6px;padding:6px;text-align:center">
         <div style="font-size:14px;font-weight:700" id="b-oos-pnl">-</div>
         <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">OOS PnL</div>
@@ -2299,6 +2300,7 @@ async function fetchAll() {
 
     const wu = s.work_units;
     const pct = wu.total > 0 ? (wu.completed / wu.total * 100) : 0;
+    const perf = d.performance || {};
 
     // ── KPIs ──
     document.getElementById('d-workers').textContent = d.workers.active;
@@ -2587,7 +2589,6 @@ async function fetchAll() {
     }
 
     // ── Capital summary ──
-    const perf = d.performance || {};
     const totalResults = perf.total_results || 0;
     const simulatedCapital = perf.simulated_capital || (totalResults * 500);
     const totalComputeTime = perf.total_compute_time || 0;
@@ -2632,6 +2633,7 @@ DASHBOARD_HTML = """
             --blue:    #58a6ff;
             --text:    #e6edf3;
             --muted:   #8b949e;
+            --surface2:#1c2128;
             --card-r:  8px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -3121,7 +3123,7 @@ DASHBOARD_HTML = """
 
     <!-- BEST STRATEGY -->
     <div class="section-title">🏆 Mejor Estrategia Encontrada</div>
-    <div id="b-info-bar2" style="display:none;margin:0 16px 8px;display:flex;gap:6px;flex-wrap:wrap">
+    <div id="b-info-bar2" style="display:none;margin:0 16px 8px;gap:6px;flex-wrap:wrap">
         <span id="b-asset2" style="font-size:12px;font-weight:700;background:var(--blue);color:#fff;padding:3px 10px;border-radius:5px">-</span>
         <span id="b-tf2" style="font-size:12px;font-weight:600;background:rgba(255,255,255,.08);color:var(--text);padding:3px 10px;border-radius:5px">-</span>
         <span id="b-risk2" style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:5px;display:none">-</span>
@@ -3136,6 +3138,20 @@ DASHBOARD_HTML = """
         <div class="best-stat"><div class="best-stat-val" id="b-days2" style="color:var(--blue)">-</div><div class="best-stat-lbl">Backtest Días</div></div>
         <div class="best-stat"><div class="best-stat-val" id="b-worker" style="font-size:13px;word-break:break-all">-</div><div class="best-stat-lbl">Worker</div></div>
     </div>
+    <div id="b-oos-row2" style="display:none;margin:0 16px 12px;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div style="background:var(--surface2);border-radius:6px;padding:8px 12px;text-align:center">
+            <div style="font-size:11px;color:var(--muted)">OOS PnL</div>
+            <div id="b-oos-pnl2" style="font-size:16px;font-weight:700">-</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:6px;padding:8px 12px;text-align:center">
+            <div style="font-size:11px;color:var(--muted)">OOS Trades</div>
+            <div id="b-oos-trades2" style="font-size:16px;font-weight:700">-</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:6px;padding:8px 12px;text-align:center">
+            <div style="font-size:11px;color:var(--muted)">Robustness</div>
+            <div id="b-robustness2" style="font-size:16px;font-weight:700">-</div>
+        </div>
+    </div>
 
     <!-- CHARTS + WORKERS -->
     <div class="section-title">Análisis</div>
@@ -3148,9 +3164,10 @@ DASHBOARD_HTML = """
                 <canvas id="chart-pnl"></canvas>
             </div>
         </div>
+    </div>
 
-        <!-- PARALLEL WORKERS GRID -->
-        <div class="section-title">⚡ Workers en Paralelo</div>
+    <!-- PARALLEL WORKERS GRID (outside two-col) -->
+    <div class="section-title">⚡ Workers en Paralelo</div>
         <div class="parallel-section">
             <div class="parallel-header">
                 <div class="parallel-title">
@@ -3199,8 +3216,6 @@ DASHBOARD_HTML = """
             </div>
         </div>
 
-    </div>
-
     <!-- TOP RESULTS -->
     <div class="section-title">📊 Top 10 Estrategias (canónicas)</div>
     <div class="card">
@@ -3212,8 +3227,8 @@ DASHBOARD_HTML = """
                         <th>WU ID</th>
                         <th>Activo</th>
                         <th>TF</th>
-                        <th>PnL</th>
-                        <th>Ret/día</th>
+                        <th>OOS PnL</th>
+                        <th>Robustness</th>
                         <th>Trades</th>
                         <th>Win Rate</th>
                         <th>Sharpe</th>
@@ -3457,6 +3472,20 @@ async function updateDashboard() {
                     riskEl2.style.color = best.risk_level === 'MEDIUM' ? '#000' : '#fff';
                 }
             }
+
+            // OOS metrics row
+            const oosRow2 = document.getElementById('b-oos-row2');
+            if (best.oos_pnl || best.oos_trades) {
+                oosRow2.style.display = 'grid';
+                const op2 = best.oos_pnl || 0;
+                document.getElementById('b-oos-pnl2').textContent = '$' + fmt(op2, 2);
+                document.getElementById('b-oos-pnl2').style.color = op2 >= 0 ? 'var(--green)' : 'var(--red)';
+                document.getElementById('b-oos-trades2').textContent = best.oos_trades || 0;
+                const rob2 = best.robustness_score || 0;
+                const robEl2 = document.getElementById('b-robustness2');
+                robEl2.textContent = rob2 + '/100';
+                robEl2.style.color = rob2 >= 80 ? 'var(--green)' : rob2 >= 50 ? 'var(--yellow)' : 'var(--red)';
+            }
         }
 
         // ── Objetivo 5% Diario ──
@@ -3620,12 +3649,14 @@ async function updateDashboard() {
             const src = df || (Array.isArray(contracts) ? contracts[0] : String(contracts));
             const ticker = src.split(/[-_]/)[0].toUpperCase();
             const nameMap = {
-                'ET':'ETH', 'ETP':'ETH⊥', 'BIT':'BTC', 'LC':'LTC', 'SLP':'SOL⊥',
-                'LCP':'LCP', 'MC':'SP500', 'NGS':'NGS', 'HED':'HED', 'AVP':'AVAX',
-                'AVA':'AVAX⊥', 'XLP':'XLM', 'DOP':'DOGE', 'ADP':'ADA', 'HEP':'HEP',
-                'LNP':'LNP', 'PT':'PT', 'BTC':'BTC', 'ETH':'ETH', 'SOL':'SOL',
+                'ET':'ETH', 'ETP':'ETH', 'BIT':'BTC', 'BIP':'BTC', 'LC':'LTC', 'SLP':'SOL',
+                'LCP':'LTC', 'MC':'SP500', 'NGS':'NGS', 'HED':'HBAR', 'AVP':'AVAX',
+                'AVA':'AVAX', 'XLP':'XLM', 'DOP':'DOT', 'ADP':'ADA', 'HEP':'HBAR',
+                'LNP':'LINK', 'DOG':'DOGE', 'SHB':'SHIB', 'PT':'PLAT', 'GOL':'GOLD', 'NOL':'NKL',
+                'CU':'CU', 'SLR':'SOL', 'BTC':'BTC', 'ETH':'ETH', 'SOL':'SOL',
                 'XRP':'XRP', 'ADA':'ADA', 'DOGE':'DOGE', 'AVAX':'AVAX', 'DOT':'DOT',
-                'LINK':'LINK', 'LTC':'LTC', 'ATOM':'ATOM', 'SUI':'SUI'
+                'LINK':'LINK', 'LTC':'LTC', 'ATOM':'ATOM', 'SUI':'SUI', 'XLM':'XLM',
+                'BCH':'BCH'
             };
             const isFutures = src.includes('-CDE') || src.includes('contracts');
             const name = nameMap[ticker] || ticker;
@@ -3649,7 +3680,7 @@ async function updateDashboard() {
                 const bDays = maxCandles / cpd;
                 const dailyRetPct = bDays > 0 ? (r.pnl / 500 * 100) / bDays : 999;
                 const tradesOk  = r.trades >= 20;
-                const wrOk      = r.win_rate >= 0.4 && r.win_rate <= 0.75;
+                const wrOk      = r.win_rate === 0 || (r.win_rate >= 0.4 && r.win_rate <= 0.75);
                 const sharpeOk  = r.sharpe_ratio >= 1.5 && r.sharpe_ratio <= 20.0;
                 const ddOk      = dd != null && dd <= 50;
                 const retOk     = dailyRetPct <= 10.0;
@@ -3660,7 +3691,7 @@ async function updateDashboard() {
                     : (() => {
                         const fails = [];
                         if (!tradesOk)  fails.push('trades<20');
-                        if (!wrOk)      fails.push('WR fuera rango 40-75%');
+                        if (!wrOk)      fails.push('WR fuera rango 40-75% (' + (r.win_rate*100).toFixed(0) + '%)');
                         if (!sharpeOk)  fails.push('Sharpe fuera rango 1.5-20');
                         if (!ddOk)      fails.push('DD>50%');
                         if (!retOk)     fails.push('Retorno>' + dailyRetPct.toFixed(1) + '%/día');
@@ -3675,13 +3706,17 @@ async function updateDashboard() {
                 const tfLabel = Object.entries(tfMap).find(([k]) => df.includes(k));
                 const tf = tfLabel ? tfLabel[1] : '?';
                 const retColor = dailyRetPct <= 5 ? 'var(--green)' : dailyRetPct <= 10 ? 'var(--yellow)' : 'var(--red)';
+                const oosP = r.oos_pnl || 0;
+                const oosColor = oosP > 0 ? 'var(--green)' : oosP < 0 ? 'var(--red)' : 'var(--muted)';
+                const rob = r.robustness_score || 0;
+                const robColor = rob >= 80 ? 'var(--green)' : rob >= 50 ? 'var(--yellow)' : 'var(--red)';
                 return `<tr>
                     <td style="color:var(--muted)">${medal}${i+1}</td>
                     <td style="color:var(--blue)">#${r.work_id}</td>
                     <td>${assetBadge}</td>
                     <td style="font-size:11px;color:var(--muted)">${tf}</td>
-                    <td style="color:${pnlColor};font-weight:600">$${fmt(r.pnl, 2)}</td>
-                    <td style="color:${retColor};font-size:11px">${fmt(dailyRetPct,1)}%</td>
+                    <td style="color:${oosColor};font-weight:600">$${fmt(oosP, 2)}</td>
+                    <td style="color:${robColor};font-weight:600">${rob}/100</td>
                     <td style="color:${tradesOk?'var(--green)':'var(--red)'}">${r.trades}</td>
                     <td style="color:${r.win_rate > 0 ? (wrOk?'var(--green)':'var(--red)') : 'var(--muted)'}">${r.win_rate > 0 ? (r.win_rate * 100).toFixed(1)+'%' : 'N/A'}</td>
                     <td style="color:${sharpeOk?'var(--green)':'var(--red)'}">${r.sharpe_ratio ? fmt(r.sharpe_ratio, 2) : '-'}</td>
@@ -4071,6 +4106,9 @@ def api_parallel_activity():
         elif 'enderj' in _wid_l and 'linux' in _wid_l:
             machine = 'Asus Dorada'
             machine_color = '#f59e0b'  # amber
+        elif 'yonathan' in _wid_l:
+            machine = 'MBP Yonathan'
+            machine_color = '#10b981'  # emerald
         else:
             machine = 'Other'
             machine_color = '#6b7280'  # gray
