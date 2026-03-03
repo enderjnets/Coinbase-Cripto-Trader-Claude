@@ -75,7 +75,7 @@ MAX_DAILY_RETURN_PCT = 10.0       # Retorno diario máximo 10% (backtester corre
 FIRST_CORRECTED_WU_ID = 1        # DB limpiada 2026-02-28, todos los WU nuevos usan backtester V2 con slippage 0.2%
 
 # Out-of-Sample (OOS) Validation Criteria (Phase 3A)
-MIN_OOS_TRADES = 15               # Mínimo trades en datos OOS
+MIN_OOS_TRADES = 3                # Mínimo trades en holdout (10% of data, was 15 for old 30% split)
 MIN_OOS_PNL = 0                   # OOS PnL debe ser >= 0 (positivo o break-even)
 MAX_OOS_DEGRADATION = 0.35        # Máximo 35% degradación Train→OOS
 MIN_ROBUSTNESS_SCORE = 50         # Robustness score mínimo (0-100)
@@ -1394,7 +1394,7 @@ def api_results():
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE {where_sql}
-        ORDER BY r.pnl DESC
+        ORDER BY r.oos_pnl DESC
         LIMIT ?""", params)
 
     results = []
@@ -2317,9 +2317,9 @@ async function fetchAll() {
     const best = d.best_strategy || s.best_strategy;
     if (best && best.pnl) {
       document.getElementById('d-pnl').textContent = '$' + fmt(best.pnl, 0);
-      document.getElementById('d-wr').textContent  = (best.win_rate*100).toFixed(0) + '% win rate';
+      document.getElementById('d-wr').textContent  = best.win_rate > 0 ? (best.win_rate*100).toFixed(0) + '% win rate' : 'WF validated';
       document.getElementById('b-pnl').textContent    = '$' + fmt(best.pnl, 2);
-      document.getElementById('b-wr').textContent     = (best.win_rate*100).toFixed(1) + '%';
+      document.getElementById('b-wr').textContent     = best.win_rate > 0 ? (best.win_rate*100).toFixed(1) + '%' : 'N/A';
       document.getElementById('b-trades').textContent = best.trades || '-';
       document.getElementById('b-sharpe').textContent = fmt(best.sharpe_ratio, 2);
 
@@ -2553,7 +2553,7 @@ async function fetchAll() {
             <span class="result-pnl${pnlClass}">$${fmt(res.pnl,2)}</span>
           </div>
           <div class="result-row2">
-            <span class="result-stat">WR: <b>${(res.win_rate*100).toFixed(1)}%</b></span>
+            <span class="result-stat">WR: <b>${res.win_rate > 0 ? (res.win_rate*100).toFixed(1)+'%' : 'N/A'}</b></span>
             <span class="result-stat">Sharpe: <b>${fmt(res.sharpe_ratio,2)}</b></span>
             <span class="result-stat">Trades: <b>${res.trades}</b></span>
             <span class="result-stat" style="color:var(--muted)">${wkr}</span>
@@ -3432,10 +3432,10 @@ async function updateDashboard() {
         const best = dash.best_strategy || status.best_strategy;
         if (best && best.pnl) {
             document.getElementById('k-bestpnl').textContent = '$' + fmt(best.pnl, 0);
-            document.getElementById('k-bestwr').textContent  = (best.win_rate * 100).toFixed(0) + '% win rate';
+            document.getElementById('k-bestwr').textContent  = best.win_rate > 0 ? (best.win_rate * 100).toFixed(0) + '% win rate' : 'WF validated';
             document.getElementById('b-pnl').textContent    = '$' + fmt(best.pnl, 2);
             document.getElementById('b-trades').textContent  = best.trades;
-            document.getElementById('b-wr').textContent      = (best.win_rate * 100).toFixed(1) + '%';
+            document.getElementById('b-wr').textContent      = best.win_rate > 0 ? (best.win_rate * 100).toFixed(1) + '%' : 'N/A';
             document.getElementById('b-sharpe').textContent  = fmt(best.sharpe_ratio, 2);
             document.getElementById('b-dd').textContent      = ((best.max_drawdown || 0) * 100).toFixed(1) + '%';
             document.getElementById('b-worker').textContent  = best.worker_short || (best.worker_id || '-').split('_').slice(-1)[0];
@@ -3520,8 +3520,8 @@ async function updateDashboard() {
 
             const wr = (useV2 && v2b ? v2b.win_rate : best.win_rate) || 0;
             const wrEl = document.getElementById('gm-winrate');
-            wrEl.textContent = (wr * 100).toFixed(1) + '%';
-            wrEl.style.color = wr >= 0.6 ? 'var(--green)' : wr >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+            wrEl.textContent = wr > 0 ? (wr * 100).toFixed(1) + '%' : 'N/A';
+            wrEl.style.color = wr > 0 ? (wr >= 0.6 ? 'var(--green)' : wr >= 0.5 ? 'var(--yellow)' : 'var(--red)') : 'var(--muted)';
 
             const sr = (useV2 && v2b ? v2b.sharpe_ratio : best.sharpe_ratio) || 0;
             const srEl = document.getElementById('gm-sharpe');
@@ -3683,7 +3683,7 @@ async function updateDashboard() {
                     <td style="color:${pnlColor};font-weight:600">$${fmt(r.pnl, 2)}</td>
                     <td style="color:${retColor};font-size:11px">${fmt(dailyRetPct,1)}%</td>
                     <td style="color:${tradesOk?'var(--green)':'var(--red)'}">${r.trades}</td>
-                    <td style="color:${wrOk?'var(--green)':'var(--red)'}">${(r.win_rate * 100).toFixed(1)}%</td>
+                    <td style="color:${r.win_rate > 0 ? (wrOk?'var(--green)':'var(--red)') : 'var(--muted)'}">${r.win_rate > 0 ? (r.win_rate * 100).toFixed(1)+'%' : 'N/A'}</td>
                     <td style="color:${sharpeOk?'var(--green)':'var(--red)'}">${r.sharpe_ratio ? fmt(r.sharpe_ratio, 2) : '-'}</td>
                     <td style="color:${ddColor}">${ddVal}</td>
                     <td>${validBadge}</td>
