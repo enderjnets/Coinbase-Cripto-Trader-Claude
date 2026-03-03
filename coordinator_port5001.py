@@ -1004,6 +1004,7 @@ def api_status():
     active_workers = c.fetchone()['active']
 
     # Mejor estrategia (OOS-validated, robustness >= 50)
+    # win_rate filter relaxed: WF-validated results may have win_rate=0 (tracking bug pre-fix)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
@@ -1011,8 +1012,8 @@ def api_status():
         AND r.robustness_score >= 50
         AND r.oos_pnl > 0
         AND r.trades >= ?
-        AND r.win_rate >= ?
-        AND r.win_rate <= ?
+        AND (r.win_rate >= ? OR r.win_rate = 0)
+        AND (r.win_rate <= ? OR r.win_rate = 0)
         AND r.max_drawdown <= ?
         AND r.pnl <= ?
         ORDER BY r.oos_pnl DESC
@@ -1522,6 +1523,7 @@ def api_dashboard_stats():
     completion_timeline = [{'hour_unix': (row[1] - 2440587.5) * 86400, 'count': row[0]} for row in c.fetchall()]
     
     # Best strategy (OOS-validated, robustness >= 50)
+    # win_rate filter relaxed: WF-validated results may have win_rate=0 (tracking bug pre-fix)
     c.execute("""SELECT r.*, w.strategy_params
         FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
@@ -1529,8 +1531,8 @@ def api_dashboard_stats():
         AND r.robustness_score >= 50
         AND r.oos_pnl > 0
         AND r.trades >= ?
-        AND r.win_rate >= ?
-        AND r.win_rate <= ?
+        AND (r.win_rate >= ? OR r.win_rate = 0)
+        AND (r.win_rate <= ? OR r.win_rate = 0)
         AND r.max_drawdown <= ?
         AND r.pnl <= ?
         ORDER BY r.oos_pnl DESC
@@ -1680,7 +1682,7 @@ def api_dashboard_stats():
     c.execute("""SELECT COUNT(*) FROM results r
         JOIN work_units w ON r.work_unit_id = w.id
         WHERE r.is_canonical = 1 AND r.is_overfitted = 0
-        AND r.trades >= ? AND r.win_rate >= ? AND r.win_rate <= ?
+        AND r.trades >= ? AND (r.win_rate >= ? OR r.win_rate = 0) AND (r.win_rate <= ? OR r.win_rate = 0)
         AND r.sharpe_ratio >= ? AND r.sharpe_ratio <= ?
         AND r.max_drawdown <= ? AND r.pnl <= ?""",
         (MIN_TRADES_REQUIRED, MIN_WIN_RATE, MAX_WIN_RATE,
