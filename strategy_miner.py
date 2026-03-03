@@ -309,6 +309,7 @@ class StrategyMiner:
             encoded = genomes_encoded[i]
             window_pnls = []
             window_trades = []
+            window_wins = []
             window_sharpes = []
             window_dds = []
 
@@ -326,6 +327,7 @@ class StrategyMiner:
 
                 window_pnls.append(pnl)
                 window_trades.append(trades)
+                window_wins.append(wins)
                 window_sharpes.append(sharpe)
                 window_dds.append(max_dd)
 
@@ -336,6 +338,7 @@ class StrategyMiner:
 
             # Aggregate walk-forward metrics
             total_oos_trades = sum(window_trades)
+            total_oos_wins = sum(window_wins)
             avg_oos_pnl = np.mean(window_pnls) if window_pnls else -9999
             avg_sharpe = np.mean(window_sharpes) if window_sharpes else 0
             max_dd_worst = max(window_dds) if window_dds else 1.0
@@ -354,7 +357,7 @@ class StrategyMiner:
             wf_metrics = {
                 'Total PnL': round(avg_oos_pnl, 2),
                 'Total Trades': total_oos_trades,
-                'Win Rate %': 0,  # Not tracked per-window
+                'Win Rate %': round((total_oos_wins / total_oos_trades * 100) if total_oos_trades > 0 else 0, 2),
                 'Sharpe Ratio': round(avg_sharpe, 4),
                 'Max Drawdown': round(max_dd_worst, 4),
                 # Walk-forward specific
