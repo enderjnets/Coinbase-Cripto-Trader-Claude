@@ -979,6 +979,16 @@ def api_status():
             AND replicas_assigned > 0
             AND replicas_completed = 0
         """)
+        # Resetear WUs in_progress con réplicas huérfanas (asignadas pero no completadas
+        # después de 30 minutos). Los workers que murieron dejaron estos WUs bloqueados.
+        c_cleanup.execute("""
+            UPDATE work_units
+            SET status = 'pending', replicas_assigned = replicas_completed
+            WHERE status = 'in_progress'
+            AND replicas_assigned > replicas_completed
+            AND replicas_completed < replicas_needed
+            AND (julianday('now') - created_at) > (30.0 / 1440.0)
+        """)
         conn_cleanup.commit()
         conn_cleanup.close()
 
