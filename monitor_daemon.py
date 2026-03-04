@@ -340,6 +340,77 @@ class SystemMonitor:
             self.log(f"Error reiniciando Telegram bot: {e}", "ERROR")
             return False
 
+    def check_paper_trading(self) -> Tuple[bool, Dict]:
+        """Check if paper trading processes are running."""
+        details = {}
+
+        # Check live_paper_trader.py
+        result = subprocess.run(
+            ["pgrep", "-f", "live_paper_trader"],
+            capture_output=True
+        )
+        details['live_paper_trader'] = {
+            'running': result.returncode == 0,
+            'status': 'running' if result.returncode == 0 else 'not_running'
+        }
+
+        # Check paper_trading_pipeline.py
+        result = subprocess.run(
+            ["pgrep", "-f", "paper_trading_pipeline"],
+            capture_output=True
+        )
+        details['paper_trading_pipeline'] = {
+            'running': result.returncode == 0,
+            'status': 'running' if result.returncode == 0 else 'not_running'
+        }
+
+        any_running = (details['live_paper_trader']['running'] or
+                       details['paper_trading_pipeline']['running'])
+
+        return any_running, details
+
+    def restart_paper_trader(self) -> bool:
+        """Restart the paper trading process."""
+        self.log("Reiniciando paper trader...")
+
+        try:
+            subprocess.run(["pkill", "-f", "live_paper_trader"], capture_output=True)
+            time.sleep(2)
+
+            venv_python = os.path.expanduser("~/coinbase_trader_venv/bin/python")
+            cmd = f"cd '{self.base_dir}' && {venv_python} -u live_paper_trader.py > /tmp/paper_trader.log 2>&1 &"
+
+            subprocess.run(cmd, shell=True, executable="/bin/bash")
+            time.sleep(3)
+
+            self.log("Paper trader reiniciado", "SUCCESS")
+            return True
+
+        except Exception as e:
+            self.log(f"Error reiniciando paper trader: {e}", "ERROR")
+            return False
+
+    def restart_paper_pipeline(self) -> bool:
+        """Restart the paper trading pipeline."""
+        self.log("Reiniciando paper trading pipeline...")
+
+        try:
+            subprocess.run(["pkill", "-f", "paper_trading_pipeline"], capture_output=True)
+            time.sleep(2)
+
+            venv_python = os.path.expanduser("~/coinbase_trader_venv/bin/python")
+            cmd = f"cd '{self.base_dir}' && {venv_python} -u paper_trading_pipeline.py --loop > /tmp/paper_pipeline.log 2>&1 &"
+
+            subprocess.run(cmd, shell=True, executable="/bin/bash")
+            time.sleep(3)
+
+            self.log("Paper trading pipeline reiniciado", "SUCCESS")
+            return True
+
+        except Exception as e:
+            self.log(f"Error reiniciando paper pipeline: {e}", "ERROR")
+            return False
+
     def check_all(self) -> Dict:
         """
         Ejecuta todas las verificaciones y retorna estado completo.
@@ -385,6 +456,13 @@ class SystemMonitor:
             'status': 'running' if result.returncode == 0 else 'not_running'
         }
 
+        # Paper trading
+        pt_healthy, pt_details = self.check_paper_trading()
+        status['components']['paper_trading'] = {
+            'healthy': pt_healthy,
+            **pt_details
+        }
+
         return status
 
     def run_auto_recovery(self) -> Dict:
@@ -423,6 +501,15 @@ class SystemMonitor:
             self.restart_telegram_bot()
             actions.append('telegram_bot_restarted')
 
+        # Check paper trading (auto-restart if it was previously running)
+        pt_healthy, pt_details = self.check_paper_trading()
+        if pt_details.get('live_paper_trader', {}).get('running') is False:
+            # Only restart if there's a state file (meaning it was running before)
+            if os.path.exists("/tmp/paper_trading_state.json"):
+                self.log("Paper trader died - reiniciando", "WARNING")
+                self.restart_paper_trader()
+                actions.append('paper_trader_restarted')
+
         return {'actions': actions}
 
     def run_monitoring_loop(self, interval: int = MONITOR_INTERVAL):
@@ -447,12 +534,14 @@ class SystemMonitor:
                 workers_alive = status['components']['workers']['alive_count']
                 db_healthy = status['components']['database']['healthy']
                 tg_healthy = status['components']['telegram_bot']['healthy']
+                pt_healthy = status['components'].get('paper_trading', {}).get('healthy', False)
 
                 self.log(
                     f"Status: Coordinator={'OK' if coord_healthy else 'FAIL'} | "
                     f"Workers={workers_alive} | "
                     f"DB={'OK' if db_healthy else 'FAIL'} | "
-                    f"Telegram={'OK' if tg_healthy else 'FAIL'}"
+                    f"Telegram={'OK' if tg_healthy else 'FAIL'} | "
+                    f"PaperTrading={'OK' if pt_healthy else 'OFF'}"
                 )
 
                 # Auto-recovery if needed

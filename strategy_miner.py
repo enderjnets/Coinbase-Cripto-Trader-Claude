@@ -357,6 +357,7 @@ class StrategyMiner:
             wf_metrics = {
                 'Total PnL': round(avg_oos_pnl, 2),
                 'Total Trades': total_oos_trades,
+                'Total Wins': total_oos_wins,
                 'Win Rate %': round((total_oos_wins / total_oos_trades * 100) if total_oos_trades > 0 else 0, 2),
                 'Sharpe Ratio': round(avg_sharpe, 4),
                 'Max Drawdown': round(max_dd_worst, 4),
@@ -365,6 +366,8 @@ class StrategyMiner:
                 'wf_consistency': round(consistency, 2),
                 'wf_cv': round(cv, 4),
                 'wf_window_pnls': [round(p, 2) for p in window_pnls],
+                'wf_window_trades': window_trades,
+                'wf_window_wins': window_wins,
                 'wf_folds': len(fold_windows),
             }
 

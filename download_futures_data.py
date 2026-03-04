@@ -34,22 +34,17 @@ TIME_GRANULARITIES = ["ONE_MINUTE", "FIVE_MINUTE", "FIFTEEN_MINUTE", "ONE_HOUR",
 
 # Contratos por activo
 CONTRACTS_CONFIG = {
-    "BTC": ["BIT-27FEB26-CDE", "BIT-27MAR26-CDE", "BIT-24APR26-CDE", "BIT-22MAY26-CDE", "BIP-20DEC30-CDE"],
-    "ETH": ["ET-27FEB26-CDE", "ET-27MAR26-CDE", "ET-24APR26-CDE", "ETP-20DEC30-CDE"],
-    "SOL": ["SOL-27FEB26-CDE", "SOL-27MAR26-CDE", "SOL-24APR26-CDE", "SLP-20DEC30-CDE", "SLR-25FEB26-CDE"],
-    "XRP": ["XRP-27FEB26-CDE", "XPP-20DEC30-CDE"],
-    "ADA": ["ADA-27FEB26-CDE", "ADP-20DEC30-CDE"],
-    "DOGE": ["DOG-27FEB26-CDE", "DOP-20DEC30-CDE"],
+    "BTC": ["BIT-27MAR26-CDE", "BIT-24APR26-CDE", "BIT-22MAY26-CDE", "BIP-20DEC30-CDE"],
+    "ETH": ["ET-27MAR26-CDE", "ET-24APR26-CDE", "ETP-20DEC30-CDE"],
+    "SOL": ["SOL-27MAR26-CDE", "SOL-24APR26-CDE", "SLP-20DEC30-CDE"],
+    "XRP": ["XPP-20DEC30-CDE"],
+    "ADA": ["ADP-20DEC30-CDE"],
+    "DOGE": ["DOP-20DEC30-CDE"],
     "AVAX": ["AVP-20DEC30-CDE"],
-    "DOT": ["DOP-20DEC30-CDE"],
     "LINK": ["LNP-20DEC30-CDE"],
-    "MATIC": ["MAP-20DEC30-CDE"],
     "GOL": ["GOL-27MAR26-CDE"],
-    "NOL": ["NOL-19MAR26-CDE"],
-    "NGS": ["NGS-24FEB26-CDE"],
-    "CU": ["CU-25FEB26-CDE"],
     "PT": ["PT-27MAR26-CDE"],
-    "MC": ["MC-19MAR26-CDE", "MC-18JUN26-CDE"],
+    "MC": ["MC-18JUN26-CDE"],
 }
 
 # API endpoints para datos históricos
@@ -172,6 +167,7 @@ class FuturesDataDownloader:
 
         # Usar endpoint público de Coinbase Exchange para datos de futuros
         url = f"https://api.exchange.coinbase.com/products/{product_id}/candles"
+        headers = {"User-Agent": "CryptoTrader/1.0", "Accept": "application/json"}
 
         end_time = int(time.time())
         start_time = int(end_time - (days * 86400))
@@ -188,7 +184,7 @@ class FuturesDataDownloader:
             }
 
             try:
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, params=params, headers=headers, timeout=30)
 
                 if response.status_code == 404:
                     # Intentar con endpoint alternativo de CDE
@@ -233,20 +229,46 @@ class FuturesDataDownloader:
         """Endpoint alternativo para contratos CDE de futuros."""
         url = f"{API_URL}/api/v3/brokerage/market/products/{product_id}/candles"
 
+        # CDE API requires string granularity names, not integer seconds
+        gran_to_str = {
+            60: "ONE_MINUTE",
+            300: "FIVE_MINUTE",
+            900: "FIFTEEN_MINUTE",
+            3600: "ONE_HOUR",
+            86400: "ONE_DAY",
+        }
+        gran_str = gran_to_str.get(granularity, granularity)
+        if isinstance(gran_str, int):
+            gran_str = "FIVE_MINUTE"  # Default fallback
+
+        # User-Agent required by Coinbase API
+        headers = {"User-Agent": "CryptoTrader/1.0", "Accept": "application/json"}
+
         end_time = int(time.time())
         start_time = int(end_time - (days * 86400))
+
+        # CDE API returns max ~300 candles per request and requires both start+end
+        # Granularity in seconds for window calculation
+        gran_seconds = granularity if isinstance(granularity, int) else {
+            "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
+            "ONE_HOUR": 3600, "ONE_DAY": 86400
+        }.get(granularity, 300)
+        # Request window: ~300 candles worth of time
+        window_size = gran_seconds * 300
 
         all_candles = []
         current_end = end_time
 
-        for _ in range(50):
+        for _ in range(500):  # More iterations for 1-min data over many days
+            current_start = max(current_end - window_size, start_time)
             params = {
-                "granularity": granularity,
-                "end": str(current_end)
+                "granularity": gran_str,
+                "start": str(current_start),
+                "end": str(current_end),
             }
 
             try:
-                response = requests.get(url, params=params, timeout=30)
+                response = requests.get(url, params=params, headers=headers, timeout=30)
                 if response.status_code != 200:
                     break
 
@@ -258,10 +280,15 @@ class FuturesDataDownloader:
 
                 all_candles.extend(candles)
                 oldest_ts = min(int(c.get("start", c.get("timestamp", 0))) for c in candles)
-                current_end = oldest_ts - granularity
+                if oldest_ts <= start_time:
+                    break
+                current_end = oldest_ts - 1
 
-                time.sleep(0.3)
-            except:
+                if len(all_candles) % 500 == 0:
+                    print(f"   {len(all_candles):,} candles...", end="\r")
+
+                time.sleep(0.2)
+            except Exception:
                 break
 
         if not all_candles:
@@ -424,14 +451,43 @@ class FuturesDataDownloader:
             else:
                 contracts = CONTRACTS_CONFIG
         else:
-            # Usar productos de la API
+            # Usar productos de la API, filtrar por assets si se especificó
+            # Map asset names to their contract prefixes
+            asset_prefix_map = {
+                "BTC": ["BIT", "BIP"],
+                "ETH": ["ET", "ETP"],
+                "SOL": ["SOL", "SLP", "SLR"],
+                "XRP": ["XRP", "XPP"],
+                "ADA": ["ADA", "ADP"],
+                "DOGE": ["DOG", "DOP"],
+                "AVAX": ["AVA", "AVP", "AVE"],
+                "LINK": ["LNK", "LNP"],
+                "DOT": ["DOT"],
+                "BCH": ["BCH", "BCP"],
+                "LTC": ["LC", "LCP"],
+                "GOLD": ["GOL"],
+                "PLAT": ["PT"],
+            }
+            assets_upper = [a.upper() for a in assets] if assets else None
+            # Build set of allowed prefixes
+            allowed_prefixes = None
+            if assets_upper:
+                allowed_prefixes = set()
+                for a in assets_upper:
+                    if a in asset_prefix_map:
+                        allowed_prefixes.update(asset_prefix_map[a])
+                    else:
+                        allowed_prefixes.add(a)  # Use asset name as prefix directly
+
             contracts = {}
             for p in api_products:
                 pid = p.get("product_id", "")
-                base = p.get("base_currency_id", pid.split("-")[0] if "-" in pid else "")
-                if base not in contracts:
-                    contracts[base] = []
-                contracts[base].append(pid)
+                prefix = pid.split("-")[0] if "-" in pid else pid
+                if allowed_prefixes and prefix not in allowed_prefixes:
+                    continue
+                if prefix not in contracts:
+                    contracts[prefix] = []
+                contracts[prefix].append(pid)
 
         # Verificar archivos existentes
         existing = set()

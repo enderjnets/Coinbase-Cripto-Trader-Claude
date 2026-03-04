@@ -44,12 +44,15 @@ class ProductionReadinessChecklist:
     MIN_WIN_RATE = 0.40           # Win rate mínimo 40%
     MAX_WIN_RATE = 0.65           # Win rate máximo 65% (evitar overfitting)
     MIN_SHARPE = 1.0              # Sharpe ratio mínimo 1.0
+    MAX_SHARPE = 30.0             # Sharpe > 30 = likely artifact or overfitting
     MIN_SORTINO = 1.5             # Sortino ratio mínimo 1.5
     MAX_DRAWDOWN = 0.20           # Máximo drawdown 20%
     MAX_OVERFIT_SCORE = 0.30      # Máximo 30% degradación OOS
     MIN_REGIME_CONSISTENCY = 0.50 # Consistencia mínima entre regímenes
     MIN_PAPER_DAYS = 30           # Mínimo 30 días de paper trading
     MIN_PAPER_TRADES = 20         # Mínimo 20 trades en paper trading
+    SUSPICIOUS_WIN_RATE = 0.80    # Win rate > 80% = flag for review
+    SUSPICIOUS_SHARPE = 30.0      # Sharpe > 30 = flag for review
 
     def __init__(
         self,
@@ -98,6 +101,7 @@ class ProductionReadinessChecklist:
         self._check_win_rate()
         self._check_sharpe_ratio()
         self._check_max_drawdown()
+        self._check_suspicious_metrics()
 
         # === OOS CHECKS ===
         if self.oos:
@@ -161,6 +165,31 @@ class ProductionReadinessChecklist:
             actual=max_dd,
             threshold=self.MAX_DRAWDOWN,
             description=f"Drawdown máximo {self.MAX_DRAWDOWN*100:.0f}% (preferiblemente < 15%)"
+        ))
+
+    def _check_suspicious_metrics(self):
+        """Flag strategies with suspiciously good metrics (likely overfitting or data artifacts)."""
+        win_rate = self.backtest.get('win_rate', 0)
+        sharpe = self.backtest.get('sharpe_ratio', 0)
+
+        # Win rate > 80% is unrealistic for most strategies
+        wr_ok = win_rate <= self.SUSPICIOUS_WIN_RATE
+        self.checks.append(CheckResult(
+            name="Win Rate Plausibility",
+            passed=wr_ok,
+            actual=win_rate,
+            threshold=self.SUSPICIOUS_WIN_RATE,
+            description=f"Win rate > {self.SUSPICIOUS_WIN_RATE*100:.0f}% is suspicious - likely overfitting or data artifact"
+        ))
+
+        # Sharpe > 30 is unrealistic (even top hedge funds rarely exceed 3-5)
+        sharpe_ok = sharpe <= self.SUSPICIOUS_SHARPE
+        self.checks.append(CheckResult(
+            name="Sharpe Plausibility",
+            passed=sharpe_ok,
+            actual=sharpe,
+            threshold=self.SUSPICIOUS_SHARPE,
+            description=f"Sharpe > {self.SUSPICIOUS_SHARPE:.0f} is unrealistic - verify on different data"
         ))
 
     def _check_overfit_score(self):

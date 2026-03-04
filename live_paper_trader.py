@@ -22,10 +22,13 @@ import json
 import time
 import os
 import sqlite3
+import logging
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import websockets
@@ -33,6 +36,18 @@ try:
 except ImportError:
     HAS_WEBSOCKETS = False
     print("WARNING: websockets not installed. Run: pip install websockets")
+
+try:
+    from risk_manager_live import RiskManager, RiskConfig, SPOT_RISK_CONFIG
+    HAS_RISK_MANAGER = True
+except ImportError:
+    HAS_RISK_MANAGER = False
+
+try:
+    from position_sizing import PositionSizer
+    HAS_POSITION_SIZER = True
+except ImportError:
+    HAS_POSITION_SIZER = False
 
 # ============================================================================
 # CONFIGURACIÓN
@@ -99,6 +114,134 @@ def calculate_volume_sma(volumes: np.ndarray, period: int) -> float:
     return float(np.mean(volumes[-period:]))
 
 # ============================================================================
+# CANDLE AGGREGATOR - Converts ticks to 1-minute OHLCV candles
+# ============================================================================
+
+class CandleAggregator:
+    """
+    Aggregates raw ticks into 1-minute OHLCV candles.
+
+    The backtester trains on 1-minute candles, so indicators must be calculated
+    on candles (not raw ticks) for signals to match backtest expectations.
+    """
+
+    def __init__(self, candle_interval_sec: int = 60, max_candles: int = 500):
+        self.candle_interval = candle_interval_sec
+        self.max_candles = max_candles
+
+        # Completed candles (OHLCV)
+        self.candles: List[Dict] = []
+
+        # Current forming candle
+        self._current_candle: Optional[Dict] = None
+        self._candle_start_time: float = 0
+
+    @property
+    def candle_count(self) -> int:
+        return len(self.candles)
+
+    def add_tick(self, price: float, volume: float, timestamp: float) -> Optional[Dict]:
+        """
+        Add a tick and return a completed candle if one closed.
+
+        Args:
+            price: Tick price
+            volume: Tick volume
+            timestamp: Unix timestamp
+
+        Returns:
+            Completed candle dict if a candle just closed, else None
+        """
+        # Determine which candle interval this tick belongs to
+        candle_slot = int(timestamp // self.candle_interval) * self.candle_interval
+
+        # If no current candle or tick is in a new slot, close current and start new
+        if self._current_candle is None:
+            self._start_new_candle(price, volume, candle_slot)
+            return None
+
+        if candle_slot > self._candle_start_time:
+            # Close current candle
+            completed = self._close_current_candle()
+
+            # Start new candle with this tick
+            self._start_new_candle(price, volume, candle_slot)
+
+            return completed
+
+        # Same candle interval - update OHLCV
+        self._current_candle['high'] = max(self._current_candle['high'], price)
+        self._current_candle['low'] = min(self._current_candle['low'], price)
+        self._current_candle['close'] = price
+        self._current_candle['volume'] += volume
+        self._current_candle['tick_count'] += 1
+
+        return None
+
+    def _start_new_candle(self, price: float, volume: float, slot_time: float):
+        """Start a new candle."""
+        self._candle_start_time = slot_time
+        self._current_candle = {
+            'timestamp': slot_time,
+            'open': price,
+            'high': price,
+            'low': price,
+            'close': price,
+            'volume': volume,
+            'tick_count': 1,
+        }
+
+    def _close_current_candle(self) -> Optional[Dict]:
+        """Close the current candle and add to history."""
+        if self._current_candle is None:
+            return None
+
+        candle = self._current_candle.copy()
+        self.candles.append(candle)
+
+        # Trim to max size
+        if len(self.candles) > self.max_candles:
+            self.candles = self.candles[-self.max_candles:]
+
+        return candle
+
+    def get_close_prices(self) -> np.ndarray:
+        """Get array of close prices from completed candles."""
+        if not self.candles:
+            return np.array([])
+        return np.array([c['close'] for c in self.candles])
+
+    def get_high_prices(self) -> np.ndarray:
+        if not self.candles:
+            return np.array([])
+        return np.array([c['high'] for c in self.candles])
+
+    def get_low_prices(self) -> np.ndarray:
+        if not self.candles:
+            return np.array([])
+        return np.array([c['low'] for c in self.candles])
+
+    def get_volumes(self) -> np.ndarray:
+        if not self.candles:
+            return np.array([])
+        return np.array([c['volume'] for c in self.candles])
+
+    def get_state(self) -> Dict:
+        """Get serializable state for persistence."""
+        return {
+            'candles': self.candles[-200:],
+            'current_candle': self._current_candle,
+            'candle_start_time': self._candle_start_time,
+        }
+
+    def load_state(self, state: Dict):
+        """Restore from saved state."""
+        self.candles = state.get('candles', [])
+        self._current_candle = state.get('current_candle')
+        self._candle_start_time = state.get('candle_start_time', 0)
+
+
+# ============================================================================
 # PAPER TRADER CLASS
 # ============================================================================
 
@@ -120,6 +263,8 @@ class LivePaperTrader:
         slippage: float = DEFAULT_SLIPPAGE,
         position_size_pct: float = 0.10,  # 10% del capital por trade
         max_position_pct: float = 0.30,   # Max 30% capital en posiciones
+        product_id: str = "BTC-USD",
+        use_risk_manager: bool = True,
     ):
         self.strategy_genome = strategy_genome
         self.initial_capital = initial_capital
@@ -128,20 +273,47 @@ class LivePaperTrader:
         self.slippage = slippage
         self.position_size_pct = position_size_pct
         self.max_position_pct = max_position_pct
+        self.product_id = product_id
 
         # Position tracking
         self.position: Optional[Dict] = None
         self.trades: List[Dict] = []
 
-        # Price history for indicators
+        # Candle aggregator: converts ticks to 1-minute candles
+        # Indicators are calculated on candles, matching backtester behavior
+        self.candle_agg = CandleAggregator(candle_interval_sec=60, max_candles=500)
+        self.min_candles_for_warmup = 200  # Need >=200 candles before trading
+
+        # Legacy price/volume history (kept for state persistence compatibility)
         self.price_history: List[float] = []
         self.volume_history: List[float] = []
-        self.max_history = 500  # Keep last 500 candles
+        self.max_history = 500
 
         # Running state
         self.running = False
         self.start_time: Optional[float] = None
         self.last_price: float = 0.0
+        self._ticks_received = 0
+        self._candles_formed = 0
+
+        # Risk Manager integration
+        self.risk_manager = None
+        if use_risk_manager and HAS_RISK_MANAGER:
+            self.risk_manager = RiskManager(
+                initial_balance=initial_capital,
+                config=SPOT_RISK_CONFIG,
+                db_path="/tmp/paper_risk_manager.db"
+            )
+            print(f"[PaperTrader] Risk Manager active (daily loss limit: {SPOT_RISK_CONFIG.max_daily_loss_pct:.0%})")
+
+        # Position Sizer integration
+        self.position_sizer = None
+        if HAS_POSITION_SIZER:
+            self.position_sizer = PositionSizer(
+                capital=initial_capital,
+                method='fixed',
+                default_fixed_pct=position_size_pct
+            )
 
         # Load previous state if exists
         self._load_state()
@@ -163,7 +335,12 @@ class LivePaperTrader:
                 self.trades = state.get('trades', [])
                 self.price_history = state.get('price_history', [])
                 self.volume_history = state.get('volume_history', [])
-                print(f"[PaperTrader] Loaded state: ${self.capital:.2f}, {len(self.trades)} trades")
+                # Restore candle aggregator state
+                candle_state = state.get('candle_aggregator')
+                if candle_state:
+                    self.candle_agg.load_state(candle_state)
+                print(f"[PaperTrader] Loaded state: ${self.capital:.2f}, {len(self.trades)} trades, "
+                      f"{self.candle_agg.candle_count} candles")
             except Exception as e:
                 print(f"[PaperTrader] Could not load state: {e}")
 
@@ -171,9 +348,10 @@ class LivePaperTrader:
         """Save current state to file."""
         state = {
             'capital': self.capital,
-            'trades': self.trades[-100:],  # Keep last 100 trades
+            'trades': self.trades[-100:],
             'price_history': self.price_history[-200:],
             'volume_history': self.volume_history[-200:],
+            'candle_aggregator': self.candle_agg.get_state(),
             'timestamp': time.time()
         }
         try:
@@ -183,18 +361,26 @@ class LivePaperTrader:
             print(f"[PaperTrader] Could not save state: {e}")
 
     def _get_indicators(self) -> Dict[str, float]:
-        """Calculate all indicators from price history."""
-        if len(self.price_history) < 10:
+        """Calculate all indicators from completed 1-minute candles.
+
+        Uses candle close prices (not raw ticks) to match backtester behavior.
+        The backtester trains on 1-minute OHLCV candles, so indicators must
+        be computed on the same timeframe for signals to be consistent.
+        """
+        candle_count = self.candle_agg.candle_count
+        if candle_count < 10:
             return {}
 
-        prices = np.array(self.price_history)
-        volumes = np.array(self.volume_history) if self.volume_history else np.ones(len(prices))
+        prices = self.candle_agg.get_close_prices()
+        highs = self.candle_agg.get_high_prices()
+        lows = self.candle_agg.get_low_prices()
+        volumes = self.candle_agg.get_volumes()
 
         indicators = {
-            'close': prices[-1],
-            'high': prices[-1] * 1.001,  # Approximate
-            'low': prices[-1] * 0.999,   # Approximate
-            'volume': volumes[-1] if len(volumes) > 0 else 0,
+            'close': float(prices[-1]),
+            'high': float(highs[-1]),
+            'low': float(lows[-1]),
+            'volume': float(volumes[-1]) if len(volumes) > 0 else 0,
         }
 
         # RSI variants
@@ -276,12 +462,34 @@ class LivePaperTrader:
         return 0.0
 
     async def _simulate_buy(self, price: float, timestamp: str) -> bool:
-        """Simulate buy with realistic costs."""
+        """Simulate buy with realistic costs and risk management."""
         # Calculate position size
-        size_usd = self.capital * self.position_size_pct
+        if self.position_sizer:
+            self.position_sizer.capital = self.capital
+            result = self.position_sizer.calculate()
+            size_usd = result.size_usd
+        else:
+            size_usd = self.capital * self.position_size_pct
 
         if size_usd < 10:
             return False  # Skip dust trades
+
+        # Risk Manager check
+        if self.risk_manager:
+            direction = self.strategy_genome.get('params', {}).get('direction', 'LONG')
+            leverage = self.strategy_genome.get('params', {}).get('leverage', 1)
+            current_positions = {self.product_id: self.position} if self.position else {}
+
+            can_open, reason = self.risk_manager.can_open_position(
+                product_id=self.product_id,
+                side=direction,
+                leverage=leverage,
+                margin_usd=size_usd,
+                current_positions=current_positions
+            )
+            if not can_open:
+                print(f"[RISK] Trade blocked: {reason}")
+                return False
 
         # Simulate latency
         await asyncio.sleep(DEFAULT_LATENCY_MS / 1000.0)
@@ -360,6 +568,21 @@ class LivePaperTrader:
         }
         self.trades.append(trade)
 
+        # Record trade in Risk Manager
+        if self.risk_manager:
+            from risk_manager_live import TradeRecord
+            self.risk_manager.record_trade(TradeRecord(
+                timestamp=time.time(),
+                product_id=self.product_id,
+                side=self.strategy_genome.get('params', {}).get('direction', 'LONG'),
+                pnl=pnl,
+                pnl_pct=pnl_pct / 100.0,
+                reason=reason,
+                leverage=self.strategy_genome.get('params', {}).get('leverage', 1),
+                margin_used=self.position['size_usd']
+            ))
+            self.risk_manager.current_balance = self.capital
+
         # Save state
         self._save_state()
 
@@ -371,52 +594,89 @@ class LivePaperTrader:
         return pnl
 
     async def _process_tick(self, data: Dict):
-        """Process incoming tick data."""
+        """Process incoming tick data.
+
+        Ticks are aggregated into 1-minute candles. Indicators and entry
+        signals are only evaluated when a candle closes (every 60 seconds),
+        matching the backtester which was trained on 1-minute OHLCV data.
+
+        Exit conditions (SL/TP) are still checked on every tick for realism.
+        """
         if data.get('type') not in ['ticker', 'match']:
             return
 
         price = float(data.get('price', 0))
         volume = float(data.get('size', data.get('volume_24h', 1)))
-        timestamp = data.get('time', datetime.utcnow().isoformat())
+        timestamp_str = data.get('time', datetime.utcnow().isoformat())
 
         if price <= 0:
             return
 
         self.last_price = price
+        self._ticks_received += 1
 
-        # Update history
-        self.price_history.append(price)
-        if volume > 0:
-            self.volume_history.append(volume)
+        # Parse timestamp to unix for candle aggregation
+        try:
+            if isinstance(timestamp_str, str):
+                # Coinbase sends ISO format: "2026-03-04T12:00:00.123456Z"
+                ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                tick_time = ts.timestamp()
+            else:
+                tick_time = float(timestamp_str)
+        except (ValueError, TypeError):
+            tick_time = time.time()
 
-        # Trim history
-        if len(self.price_history) > self.max_history:
-            self.price_history = self.price_history[-self.max_history:]
-        if len(self.volume_history) > self.max_history:
-            self.volume_history = self.volume_history[-self.max_history:]
+        # Feed tick to candle aggregator
+        completed_candle = self.candle_agg.add_tick(price, volume, tick_time)
 
-        # Check exit conditions if in position
+        # Check exit conditions on EVERY tick (SL/TP must be responsive)
         if self.position:
-            # Update trailing stop
-            new_sl = price - self.position['trailing_stop']
-            if new_sl > self.position['stop_loss']:
-                self.position['stop_loss'] = new_sl
+            direction = self.strategy_genome.get('params', {}).get('direction', 'LONG')
 
-            # Check stop loss
-            if price <= self.position['stop_loss']:
-                await self._simulate_sell(price, timestamp, "stop_loss")
-                return
+            if direction == 'SHORT':
+                # Short: SL is above entry, TP is below entry
+                new_sl = price + self.position['trailing_stop']
+                if new_sl < self.position['stop_loss']:
+                    self.position['stop_loss'] = new_sl
 
-            # Check take profit
-            if price >= self.position['take_profit']:
-                await self._simulate_sell(price, timestamp, "take_profit")
-                return
+                if price >= self.position['stop_loss']:
+                    await self._simulate_sell(price, timestamp_str, "stop_loss")
+                    return
+                if price <= self.position['take_profit']:
+                    await self._simulate_sell(price, timestamp_str, "take_profit")
+                    return
+            else:
+                # Long: original logic
+                new_sl = price - self.position['trailing_stop']
+                if new_sl > self.position['stop_loss']:
+                    self.position['stop_loss'] = new_sl
 
-        # Check entry conditions if not in position
-        else:
+                if price <= self.position['stop_loss']:
+                    await self._simulate_sell(price, timestamp_str, "stop_loss")
+                    return
+                if price >= self.position['take_profit']:
+                    await self._simulate_sell(price, timestamp_str, "take_profit")
+                    return
+
+        # Only evaluate entry signals when a candle closes
+        if completed_candle is None:
+            return
+
+        self._candles_formed += 1
+
+        # Warmup check: need enough candles for indicator calculation
+        if self.candle_agg.candle_count < self.min_candles_for_warmup:
+            if self._candles_formed % 50 == 0:
+                logger.info(f"[PaperTrader] Warmup: {self.candle_agg.candle_count}/{self.min_candles_for_warmup} candles")
+                print(f"[PaperTrader] Warmup: {self.candle_agg.candle_count}/{self.min_candles_for_warmup} candles")
+            return
+
+        # Evaluate entry on candle close (not on every tick)
+        if not self.position:
             indicators = self._get_indicators()
             if indicators and self._evaluate_entry_rules(indicators):
-                await self._simulate_buy(price, timestamp)
+                candle_close = completed_candle['close']
+                await self._simulate_buy(candle_close, timestamp_str)
 
     async def run(self, product_id: str = "BTC-USD"):
         """
@@ -441,6 +701,12 @@ class LivePaperTrader:
         print(f"Fee Rate: {self.fee_rate*100:.2f}%")
         print(f"Slippage: {self.slippage*100:.3f}%")
         print(f"Strategy: {len(self.strategy_genome.get('entry_rules', []))} entry rules")
+        print(f"Direction: {self.strategy_genome.get('params', {}).get('direction', 'LONG')}")
+        print(f"Candle Interval: 60s (1-minute candles)")
+        print(f"Warmup Candles: {self.min_candles_for_warmup}")
+        print(f"Pre-loaded Candles: {self.candle_agg.candle_count}")
+        print(f"Risk Manager: {'Active' if self.risk_manager else 'Disabled'}")
+        print(f"Position Sizer: {'Active' if self.position_sizer else 'Fixed %'}")
         print(f"{'='*60}\n")
 
         ws_url = COINBASE_WS_URL
@@ -496,6 +762,8 @@ class LivePaperTrader:
         print(f"PAPER TRADING SUMMARY")
         print(f"{'='*60}")
         print(f"Duration: {hours:.2f} hours")
+        print(f"Ticks Received: {self._ticks_received}")
+        print(f"Candles Formed: {self._candles_formed}")
         print(f"Total Trades: {len(self.trades)}")
         print(f"Win/Loss: {wins}/{losses}")
         print(f"Win Rate: {win_rate:.1f}%")
@@ -521,8 +789,11 @@ class LivePaperTrader:
             'win_rate': win_rate,
             'total_pnl': total_pnl,
             'return_pct': ((self.capital / self.initial_capital) - 1) * 100,
-            'trades': self.trades[-20:],  # Last 20 trades
-            'start_time': self.start_time
+            'trades': self.trades[-20:],
+            'start_time': self.start_time,
+            'candles_formed': self._candles_formed,
+            'ticks_received': self._ticks_received,
+            'candle_buffer_size': self.candle_agg.candle_count,
         }
 
     def get_equity_curve(self) -> List[Dict]:
@@ -688,6 +959,7 @@ async def main():
     parser.add_argument("--product", default="BTC-USD", help="Trading pair")
     parser.add_argument("--capital", type=float, default=10000, help="Initial capital")
     parser.add_argument("--size", type=float, default=0.10, help="Position size %%")
+    parser.add_argument("--dry-run", action="store_true", help="Dry run: connect and show candle formation without trading")
     args = parser.parse_args()
 
     # Get best OOS-validated strategy
@@ -715,7 +987,9 @@ async def main():
     trader = LivePaperTrader(
         strategy_genome=genome,
         initial_capital=args.capital,
-        position_size_pct=args.size
+        position_size_pct=args.size,
+        product_id=args.product,
+        use_risk_manager=True
     )
 
     try:

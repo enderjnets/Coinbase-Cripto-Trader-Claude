@@ -1,5 +1,8 @@
+import logging
 import pandas as pd
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 class DynamicStrategy:
     """
@@ -116,11 +119,11 @@ class DynamicStrategy:
         entry_signal = True
         entry_rules = self.genome.get("entry_rules", [])
 
-        # DEBUG: Log first time
+        # Log genome rules on first call (debug level only)
         if not hasattr(self, '_debug_logged'):
-            print(f"🔍 GENOME DEBUG: {len(entry_rules)} entry rules")
+            logger.debug(f"GENOME: {len(entry_rules)} entry rules")
             for i, rule in enumerate(entry_rules):
-                print(f"   Rule {i+1}: {rule}")
+                logger.debug(f"  Rule {i+1}: {rule}")
             self._debug_logged = True
 
         if not entry_rules:

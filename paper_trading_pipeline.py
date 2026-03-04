@@ -43,7 +43,7 @@ PAPER_TRADING_DB = "/tmp/paper_trading_pipeline.db"
 
 MIN_TRAIN_PNL = 100              # Min $100 PnL in training
 MIN_TRAIN_TRADES = 30            # Min 30 trades in training
-MIN_TRAIN_WINRATE = 0.40         # Min 40% win rate
+MIN_TRAIN_WINRATE = 0.0          # Disabled: many valid strategies report win_rate=0 due to WF aggregation bug
 MIN_TRAIN_SHARPE = 0.5           # Min Sharpe 0.5
 
 # OOS Validation (Phase 3A)
@@ -184,6 +184,7 @@ class PaperTradingPipeline:
         c = conn.cursor()
 
         # Get results with OOS + CV metrics
+        # Push OOS filters into SQL to avoid LIMIT cutting off eligible strategies
         query = """
             SELECT
                 r.id as result_id,
@@ -209,9 +210,11 @@ class PaperTradingPipeline:
             AND r.win_rate >= ?
             AND r.sharpe_ratio >= ?
             AND r.oos_pnl IS NOT NULL
+            AND r.oos_pnl >= ?
+            AND r.oos_trades >= ?
             ORDER BY
-                CASE WHEN r.cv_is_consistent = 1 THEN 0 ELSE 1 END,
                 r.robustness_score DESC,
+                CASE WHEN r.cv_is_consistent = 1 THEN 0 ELSE 1 END,
                 r.oos_pnl DESC
             LIMIT ?
         """
@@ -221,7 +224,9 @@ class PaperTradingPipeline:
             MIN_TRAIN_TRADES,
             MIN_TRAIN_WINRATE,
             MIN_TRAIN_SHARPE,
-            limit * 3  # Get more to filter
+            MIN_OOS_PNL,
+            MIN_OOS_TRADES,
+            limit * 5  # Get more to filter in Python
         ))
 
         results = c.fetchall()
