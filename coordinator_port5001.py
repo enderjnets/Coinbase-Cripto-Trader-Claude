@@ -1632,11 +1632,13 @@ def api_dashboard_stats():
     results_per_hour = results_last_24h / 24.0
 
     # Corrected backtester stats (V2: slippage 0.2%, margin calls, PnL caps)
-    c.execute("SELECT COUNT(*) FROM results WHERE work_unit_id >= ?", (FIRST_CORRECTED_WU_ID,))
+    c.execute("SELECT COUNT(*) FROM results WHERE work_unit_id >= ? AND is_overfitted = 0",
+              (FIRST_CORRECTED_WU_ID,))
     v2_total = c.fetchone()[0] or 0
 
-    c.execute("SELECT COUNT(*), AVG(pnl), MAX(pnl) FROM results WHERE work_unit_id >= ? AND pnl > 0",
-              (FIRST_CORRECTED_WU_ID,))
+    c.execute("""SELECT COUNT(*), AVG(pnl), MAX(pnl) FROM results
+                 WHERE work_unit_id >= ? AND pnl > 0 AND is_overfitted = 0 AND pnl <= ?""",
+              (FIRST_CORRECTED_WU_ID, MAX_PNL_REALISTIC))
     v2_row = c.fetchone()
     v2_positive = v2_row[0] or 0
     v2_avg_pnl = v2_row[1] or 0
@@ -2321,7 +2323,7 @@ async function fetchAll() {
       document.getElementById('d-pnl').textContent = '$' + fmt(best.pnl, 0);
       document.getElementById('d-wr').textContent  = best.win_rate > 0 ? (best.win_rate*100).toFixed(0) + '% win rate' : 'WF validated';
       document.getElementById('b-pnl').textContent    = '$' + fmt(best.pnl, 2);
-      document.getElementById('b-wr').textContent     = best.win_rate > 0 ? (best.win_rate*100).toFixed(1) + '%' : 'N/A';
+      document.getElementById('b-wr').textContent     = best.win_rate > 0 ? (best.win_rate*100).toFixed(1) + '%' : ((best.robustness_score || 0) > 0 ? 'WF' : 'N/A');
       document.getElementById('b-trades').textContent = best.trades || '-';
       document.getElementById('b-sharpe').textContent = fmt(best.sharpe_ratio, 2);
 
@@ -2390,7 +2392,7 @@ async function fetchAll() {
 
       // Objetivo 5% — prioriza V2 (backtester corregido)
       const CAP = 500, TARGET = 5.0;
-      const FIRST_V2 = 30819;
+      const FIRST_V2 = 1;
       const bestIsV2m = (best.work_unit_id || 0) >= FIRST_V2;
       const v2p = perf || {};
       const v2bm = v2p.v2_best;
@@ -3450,7 +3452,7 @@ async function updateDashboard() {
             document.getElementById('k-bestwr').textContent  = best.win_rate > 0 ? (best.win_rate * 100).toFixed(0) + '% win rate' : 'WF validated';
             document.getElementById('b-pnl').textContent    = '$' + fmt(best.pnl, 2);
             document.getElementById('b-trades').textContent  = best.trades;
-            document.getElementById('b-wr').textContent      = best.win_rate > 0 ? (best.win_rate * 100).toFixed(1) + '%' : 'N/A';
+            document.getElementById('b-wr').textContent      = best.win_rate > 0 ? (best.win_rate * 100).toFixed(1) + '%' : ((best.robustness_score || 0) > 0 ? 'WF' : 'N/A');
             document.getElementById('b-sharpe').textContent  = fmt(best.sharpe_ratio, 2);
             document.getElementById('b-dd').textContent      = ((best.max_drawdown || 0) * 100).toFixed(1) + '%';
             document.getElementById('b-worker').textContent  = best.worker_short || (best.worker_id || '-').split('_').slice(-1)[0];
@@ -3495,7 +3497,7 @@ async function updateDashboard() {
             const TARGET_DAILY_PCT = 5.0;
             const perfData = dash.performance || {};
             const v2b = perfData.v2_best;
-            const FIRST_V2_WU = 30819;
+            const FIRST_V2_WU = 1;
             const bestIsV2 = (best.work_unit_id || 0) >= FIRST_V2_WU;
 
             // Si hay datos V2 y best NO es V2, usar V2 como display principal
@@ -3549,7 +3551,7 @@ async function updateDashboard() {
 
             const wr = (useV2 && v2b ? v2b.win_rate : best.win_rate) || 0;
             const wrEl = document.getElementById('gm-winrate');
-            wrEl.textContent = wr > 0 ? (wr * 100).toFixed(1) + '%' : 'N/A';
+            wrEl.textContent = wr > 0 ? (wr * 100).toFixed(1) + '%' : ((best.robustness_score || 0) > 0 ? 'WF' : 'N/A');
             wrEl.style.color = wr > 0 ? (wr >= 0.6 ? 'var(--green)' : wr >= 0.5 ? 'var(--yellow)' : 'var(--red)') : 'var(--muted)';
 
             const sr = (useV2 && v2b ? v2b.sharpe_ratio : best.sharpe_ratio) || 0;
