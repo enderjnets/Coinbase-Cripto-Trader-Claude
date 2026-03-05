@@ -394,7 +394,7 @@ def generate_random_work_unit():
 
     return {
         "strategy_params": strategy_params,
-        "replicas": REDUNDANCY_FACTOR * 3  # 6 réplicas
+        "replicas": REDUNDANCY_FACTOR  # 2 réplicas (6 was bottleneck with 19 workers)
     }
 
 
