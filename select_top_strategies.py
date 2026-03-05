@@ -34,8 +34,8 @@ OUTPUT_FILE = os.path.join(PROJECT_DIR, "paper_trading_strategies.json")
 MIN_TRADES = 10
 MIN_WIN_RATE = 0.40  # 40%
 MAX_WIN_RATE = 0.80  # 80%
-MIN_SHARPE = 1.5
-MAX_SHARPE = 50.0  # Relaxed - old backtester produces high Sharpe
+MIN_SHARPE = 1.5     # t-statistic: >1.96 = 95% statistical significance
+MAX_SHARPE = 10.0    # t-stat >10 = suspicious (was 50 with old sqrt(252) bug)
 MAX_DRAWDOWN = 0.50  # 50%
 
 

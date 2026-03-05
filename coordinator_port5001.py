@@ -58,15 +58,15 @@ AUTO_CREATE_CHECK_INTERVAL = 30   # Verificar cada 30 segundos
 #   - MAX_DRAWDOWN 50%: leverage 5x puede producir DD hasta 50% en backtests cortos
 #   - MIN_TRADES 20: el algoritmo genético evoluciona estrategias de baja frecuencia
 #                    (avg 19.7 trades/estrategia); 50 era inalcanzable para el 97.5%
-#   - MIN_SHARPE 1.5 / MAX_SHARPE 20: el backtester calcula Sharpe POR TRADE (no diario)
-#                    con sqrt(252) → inflado ~2.4x vs Sharpe real; ajustado acordemente
+#   - MIN_SHARPE 1.5 / MAX_SHARPE 10: Sharpe = t-statistic (mean/std * sqrt(N))
+#                    Corregido: antes usaba sqrt(252) que inflaba 15x con pocos trades
 #   - MIN_BACKTEST_DAYS 7: futuros usan 3K-15K candles 1-min = 2-10 días; 14 era irreal
 # ============================================================================
 MIN_TRADES_REQUIRED = 20          # Mínimo 20 trades (avg real del sistema: 19.7)
 MIN_WIN_RATE = 0.40               # Win rate mínimo 40%
 MAX_WIN_RATE = 0.75               # Win rate máximo 75%
-MIN_SHARPE_RATIO = 1.5            # Sharpe mínimo 1.5 (fórmula per-trade infla Sharpe)
-MAX_SHARPE_RATIO = 20.0           # Sharpe máximo 20 (per-trade con sqrt(252) ≈ 2.4x real)
+MIN_SHARPE_RATIO = 1.5            # Sharpe mínimo 1.5 (t-statistic: >1.96 = 95% significance)
+MAX_SHARPE_RATIO = 10.0           # Sharpe máximo 10 (t-stat >10 = extremely unlikely, suspicious)
 MAX_DRAWDOWN = 0.50               # Max drawdown máximo 50% (futuros 5x leverage)
 MAX_OVERFIT_SCORE = 0.30          # Degradación train→test máxima 30%
 MIN_BACKTEST_DAYS = 7             # Mínimo 7 días (3K candles 5-min = 10.4 días → OK)
@@ -531,6 +531,16 @@ def init_db():
         c.execute("ALTER TABLE results ADD COLUMN test_candles INTEGER DEFAULT 0")
         conn.commit()
         print("   📦 Migración: columnas actual_candles, train_candles, test_candles agregadas")
+
+    # Migración: agregar columnas OOS detalladas si no existen
+    try:
+        c.execute("SELECT oos_win_rate FROM results LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE results ADD COLUMN oos_win_rate REAL DEFAULT 0")
+        c.execute("ALTER TABLE results ADD COLUMN oos_sharpe REAL DEFAULT 0")
+        c.execute("ALTER TABLE results ADD COLUMN oos_max_dd REAL DEFAULT 0")
+        conn.commit()
+        print("   📦 Migración: columnas oos_win_rate, oos_sharpe, oos_max_dd agregadas")
 
     conn.close()
 
@@ -1198,9 +1208,10 @@ def api_submit_result():
             (work_unit_id, worker_id, pnl, trades, win_rate,
              sharpe_ratio, max_drawdown, execution_time, strategy_genome,
              oos_pnl, oos_trades, oos_degradation, robustness_score, is_overfitted,
+             oos_win_rate, oos_sharpe, oos_max_dd,
              cv_folds, cv_avg_pnl, cv_consistency, cv_is_consistent,
              actual_candles, train_candles, test_candles)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data['work_id'], data['worker_id'],
              data.get('pnl', 0), data.get('trades', 0),
              data.get('win_rate', 0), data.get('sharpe_ratio', 0),
@@ -1209,6 +1220,8 @@ def api_submit_result():
              data.get('oos_pnl', 0), data.get('oos_trades', 0),
              data.get('oos_degradation', 0), data.get('robustness_score', 0),
              1 if data.get('is_overfitted', False) else 0,
+             data.get('oos_win_rate', 0), data.get('oos_sharpe', 0),
+             data.get('oos_max_dd', 0),
              data.get('cv_folds', 0), data.get('cv_avg_pnl', 0),
              data.get('cv_consistency', 0),
              1 if data.get('cv_is_consistent', False) else 0,

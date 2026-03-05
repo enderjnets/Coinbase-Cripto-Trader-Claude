@@ -749,7 +749,7 @@ if HAS_NUMBA:
 
                 pos_active[s] = 0
 
-        # Compute Sharpe Ratio
+        # Compute Sharpe Ratio (per-trade, annualized by estimated trades/year)
         sharpe_ratio = 0.0
         if num_trades > 1:
             mean_ret = sum_ret / num_trades
@@ -757,7 +757,13 @@ if HAS_NUMBA:
             if var < 1e-10:
                 var = 1e-10
             std = var ** 0.5
-            sharpe_ratio = (mean_ret / std) * (252.0 ** 0.5)
+            # Annualize using sqrt(trades_per_year) instead of sqrt(252)
+            # Estimate trades/year from num_trades relative to candles observed
+            # n candles observed, trading_minutes = n * timeframe_minutes
+            # trades_per_year = num_trades * (252 * 24 * 60) / trading_minutes
+            # For robustness, use sqrt(num_trades) as scaling factor
+            # This gives Sharpe = mean/std * sqrt(N) which is the t-statistic
+            sharpe_ratio = (mean_ret / std) * (num_trades ** 0.5)
 
         # === FINAL SANITY CHECKS ===
         # Cap total PnL

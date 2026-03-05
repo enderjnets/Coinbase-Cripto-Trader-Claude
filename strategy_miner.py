@@ -131,7 +131,117 @@ class StrategyMiner:
             right = {"indicator": ind, "period": period}
 
         return {"left": left, "op": op, "right": right}
-        
+
+    def generate_diverse_seeds(self):
+        """
+        Generate diverse seed genomes covering different strategy archetypes.
+        Prevents GA convergence to a single optimum by seeding with varied approaches.
+        """
+        seeds = []
+
+        # --- Archetype 1: SMA Crossover (trend following) ---
+        for direction in (["LONG", "SHORT"] if self.market_type == "FUTURES" else ["LONG"]):
+            seeds.append({
+                "entry_rules": [
+                    {"left": {"indicator": "SMA", "period": 20}, "op": ">", "right": {"indicator": "SMA", "period": 50}},
+                    {"left": {"indicator": "RSI", "period": 14}, "op": ">", "right": {"value": 40}},
+                ],
+                "params": {
+                    "sl_pct": 0.03, "tp_pct": 0.06, "size_pct": 0.20,
+                    "max_positions": 1, "trailing_stop_pct": 0.02, "breakeven_after": 0.01,
+                    "timeframe": "5m", "direction": direction,
+                    "leverage": min(3, self.max_leverage) if self.market_type == "FUTURES" else 1,
+                }
+            })
+
+        # --- Archetype 2: EMA Crossover (faster trend) ---
+        for direction in (["LONG", "SHORT"] if self.market_type == "FUTURES" else ["LONG"]):
+            seeds.append({
+                "entry_rules": [
+                    {"left": {"indicator": "EMA", "period": 10}, "op": ">", "right": {"indicator": "EMA", "period": 50}},
+                ],
+                "params": {
+                    "sl_pct": 0.02, "tp_pct": 0.04, "size_pct": 0.30,
+                    "max_positions": 2, "trailing_stop_pct": 0.015, "breakeven_after": 0,
+                    "timeframe": "1m", "direction": direction,
+                    "leverage": min(5, self.max_leverage) if self.market_type == "FUTURES" else 1,
+                }
+            })
+
+        # --- Archetype 3: RSI Mean Reversion (counter-trend) ---
+        seeds.append({
+            "entry_rules": [
+                {"left": {"indicator": "RSI", "period": 14}, "op": "<", "right": {"value": 30}},
+                {"left": {"field": "close"}, "op": ">", "right": {"indicator": "SMA", "period": 200}},
+            ],
+            "params": {
+                "sl_pct": 0.02, "tp_pct": 0.03, "size_pct": 0.25,
+                "max_positions": 1, "trailing_stop_pct": 0, "breakeven_after": 0.015,
+                "timeframe": "5m", "direction": "LONG",
+                "leverage": min(3, self.max_leverage) if self.market_type == "FUTURES" else 1,
+            }
+        })
+
+        # --- Archetype 4: RSI Overbought Short (futures only) ---
+        if self.market_type == "FUTURES":
+            seeds.append({
+                "entry_rules": [
+                    {"left": {"indicator": "RSI", "period": 14}, "op": ">", "right": {"value": 70}},
+                    {"left": {"field": "close"}, "op": "<", "right": {"indicator": "EMA", "period": 100}},
+                ],
+                "params": {
+                    "sl_pct": 0.02, "tp_pct": 0.03, "size_pct": 0.20,
+                    "max_positions": 1, "trailing_stop_pct": 0.015, "breakeven_after": 0,
+                    "timeframe": "5m", "direction": "SHORT",
+                    "leverage": min(5, self.max_leverage),
+                }
+            })
+
+        # --- Archetype 5: Balanced TP/SL (1:1 ratio) ---
+        seeds.append({
+            "entry_rules": [
+                {"left": {"field": "close"}, "op": ">", "right": {"indicator": "EMA", "period": 200}},
+                {"left": {"indicator": "RSI", "period": 20}, "op": ">", "right": {"value": 50}},
+            ],
+            "params": {
+                "sl_pct": 0.02, "tp_pct": 0.02, "size_pct": 0.15,
+                "max_positions": 1, "trailing_stop_pct": 0.01, "breakeven_after": 0.01,
+                "timeframe": "15m", "direction": "LONG",
+                "leverage": min(2, self.max_leverage) if self.market_type == "FUTURES" else 1,
+            }
+        })
+
+        # --- Archetype 6: Wide TP (2:1 reward:risk) ---
+        for direction in (["LONG", "SHORT"] if self.market_type == "FUTURES" else ["LONG"]):
+            seeds.append({
+                "entry_rules": [
+                    {"left": {"indicator": "RSI", "period": 50}, "op": "<" if direction == "LONG" else ">",
+                     "right": {"value": 45 if direction == "LONG" else 55}},
+                ],
+                "params": {
+                    "sl_pct": 0.02, "tp_pct": 0.04, "size_pct": 0.20,
+                    "max_positions": 1, "trailing_stop_pct": 0.02, "breakeven_after": 0,
+                    "timeframe": "5m", "direction": direction,
+                    "leverage": min(3, self.max_leverage) if self.market_type == "FUTURES" else 1,
+                }
+            })
+
+        # --- Archetype 7: Volume confirmation ---
+        seeds.append({
+            "entry_rules": [
+                {"left": {"field": "close"}, "op": ">", "right": {"indicator": "SMA", "period": 50}},
+                {"left": {"field": "volume"}, "op": ">", "right": {"indicator": "VOLSMA", "period": 20}},
+            ],
+            "params": {
+                "sl_pct": 0.025, "tp_pct": 0.05, "size_pct": 0.25,
+                "max_positions": 1, "trailing_stop_pct": 0.015, "breakeven_after": 0.01,
+                "timeframe": "5m", "direction": "LONG",
+                "leverage": min(3, self.max_leverage) if self.market_type == "FUTURES" else 1,
+            }
+        })
+
+        return seeds
+
     def mutate(self, genome, generation=0, diversity_score=0.5):
         """Adaptive mutation based on generation and diversity."""
         mutated = copy.deepcopy(genome)
@@ -282,7 +392,7 @@ class StrategyMiner:
             funding_interval = max(1, 480 // tf_minutes)
 
         # Build fold boundaries
-        oos_size = int(n_total * 0.10)  # 10% OOS per fold
+        oos_size = int(n_total * 0.15)  # 15% OOS per fold (was 10%, increased for more trades)
         fold_windows = []
         for f in range(folds):
             train_end = int(n_total * (0.50 + f * 0.10))
@@ -405,11 +515,12 @@ class StrategyMiner:
         # Penalize high coefficient of variation between windows
         fitness -= 50 * min(cv, 5.0)
 
-        # === SHARPE BONUS (corrected and capped) ===
+        # === SHARPE BONUS (now using t-statistic Sharpe, already scaled by sqrt(N)) ===
         if sharpe > 0 and num_trades > 0:
-            sharpe_corrected = sharpe * min(1.0, (num_trades / 252) ** 0.5)
-            sharpe_corrected = min(sharpe_corrected, 3.0)  # Cap at 3.0 — even elite funds rarely exceed this
-            fitness += 30 * sharpe_corrected
+            # Sharpe is now mean/std * sqrt(num_trades) = t-statistic
+            # Cap at 5.0 (very strong statistical significance)
+            sharpe_capped = min(sharpe, 5.0)
+            fitness += 30 * sharpe_capped
 
         # === COMPLEXITY PENALTY ===
         # Each rule costs -15 fitness (favor simpler strategies)
@@ -598,7 +709,7 @@ class StrategyMiner:
             num_from_seeds = min(len(self.seed_genomes), int(self.pop_size * self.seed_ratio))
             debug_log(f"Using {num_from_seeds} elite seed genomes from {len(self.seed_genomes)} available")
 
-        # Build population: first from seeds, rest random
+        # Build population: first from seeds, then diverse archetypes, rest random
         population = []
 
         # Add seed genomes (elite from previous best results)
@@ -613,6 +724,14 @@ class StrategyMiner:
                     population.append(self.generate_random_genome())
             else:
                 population.append(self.generate_random_genome())
+
+        # Add diverse archetype seeds to prevent convergence to same optimum
+        diverse_seeds = self.generate_diverse_seeds()
+        num_diverse = min(len(diverse_seeds), max(0, self.pop_size - len(population) - 5))  # Leave room for random
+        for i in range(num_diverse):
+            population.append(diverse_seeds[i])
+        if num_diverse > 0:
+            debug_log(f"Added {num_diverse} diverse archetype seeds")
 
         # Fill rest with random genomes
         remaining = self.pop_size - len(population)
@@ -777,12 +896,12 @@ class StrategyMiner:
                     if 'pnl_pct' in trades.columns and total_trades > 1:
                         ret_mean = trades['pnl_pct'].mean()
                         ret_std = trades['pnl_pct'].std()
-                        sharpe = (ret_mean / ret_std) * (252 ** 0.5) if ret_std > 1e-10 else 0.0
+                        sharpe = (ret_mean / ret_std) * (total_trades ** 0.5) if ret_std > 1e-10 else 0.0
                     elif total_trades > 1:
                         rets = trades['pnl'] / 1000.0
                         ret_mean = rets.mean()
                         ret_std = rets.std()
-                        sharpe = (ret_mean / ret_std) * (252 ** 0.5) if ret_std > 1e-10 else 0.0
+                        sharpe = (ret_mean / ret_std) * (total_trades ** 0.5) if ret_std > 1e-10 else 0.0
                     else:
                         sharpe = 0.0
                 else:

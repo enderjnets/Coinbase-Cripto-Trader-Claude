@@ -151,7 +151,8 @@ def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown,
                    execution_time, strategy_genome=None,
                    oos_pnl=0, oos_trades=0, oos_degradation=0,
                    robustness_score=0, is_overfitted=False,
-                   actual_candles=0, train_candles=0, test_candles=0):
+                   actual_candles=0, train_candles=0, test_candles=0,
+                   oos_win_rate=0, oos_sharpe=0, oos_max_dd=0):
     """
     Envía resultado al coordinator (incluye genoma y métricas OOS)
 
@@ -172,6 +173,9 @@ def submit_result(work_id, pnl, trades, win_rate, sharpe_ratio, max_drawdown,
             'oos_pnl': oos_pnl,
             'oos_trades': oos_trades,
             'oos_degradation': oos_degradation,
+            'oos_win_rate': oos_win_rate,
+            'oos_sharpe': oos_sharpe,
+            'oos_max_dd': oos_max_dd,
             'robustness_score': robustness_score,
             'is_overfitted': is_overfitted,
             # Data quality
@@ -545,6 +549,9 @@ def main():
                         oos_pnl=result.get('oos_pnl', 0),
                         oos_trades=result.get('oos_trades', 0),
                         oos_degradation=result.get('oos_degradation', 0),
+                        oos_win_rate=result.get('oos_win_rate', 0),
+                        oos_sharpe=result.get('oos_sharpe', 0),
+                        oos_max_dd=result.get('oos_max_dd', 0),
                         robustness_score=result.get('robustness_score', 0),
                         is_overfitted=result.get('is_overfitted', False),
                         # Data quality

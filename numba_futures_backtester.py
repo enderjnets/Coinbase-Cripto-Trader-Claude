@@ -957,7 +957,7 @@ if HAS_NUMBA:
 
                 pos_active[s] = 0
 
-        # Compute Sharpe Ratio
+        # Compute Sharpe Ratio (per-trade, scaled by sqrt(num_trades) = t-statistic)
         sharpe_ratio = 0.0
         if num_trades > 1:
             mean_ret = sum_ret / num_trades
@@ -965,7 +965,7 @@ if HAS_NUMBA:
             if var < 1e-10:
                 var = 1e-10
             std = var ** 0.5
-            sharpe_ratio = (mean_ret / std) * (252.0 ** 0.5)
+            sharpe_ratio = (mean_ret / std) * (num_trades ** 0.5)
 
         # Final safety checks
         if total_pnl > MAX_PNL:

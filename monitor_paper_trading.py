@@ -117,12 +117,12 @@ def calculate_running_metrics(trades: List[Dict]) -> Dict:
     wins = sum(1 for p in pnls if p > 0)
     win_rate = (wins / len(pnls) * 100) if pnls else 0
 
-    # Sharpe ratio (annualized, assuming daily)
+    # Sharpe ratio (per-trade, t-statistic: mean/std * sqrt(N))
     import numpy as np
     if len(pnls) > 1:
         mean_ret = np.mean(pnls)
         std_ret = np.std(pnls)
-        sharpe = (mean_ret / std_ret) * (252 ** 0.5) if std_ret > 0 else 0
+        sharpe = (mean_ret / std_ret) * (len(pnls) ** 0.5) if std_ret > 0 else 0
     else:
         sharpe = 0
 

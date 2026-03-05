@@ -45,12 +45,14 @@ MIN_TRAIN_PNL = 100              # Min $100 PnL in training
 MIN_TRAIN_TRADES = 30            # Min 30 trades in training
 MIN_TRAIN_WINRATE = 0.0          # Disabled: many valid strategies report win_rate=0 due to WF aggregation bug
 MIN_TRAIN_SHARPE = 0.5           # Min Sharpe 0.5
+MAX_TRAIN_WINRATE = 0.85         # Max 85% win rate (higher = likely too good to be true)
 
 # OOS Validation (Phase 3A)
 MIN_OOS_PNL = 0                  # OOS must be positive or break-even
-MIN_OOS_TRADES = 10              # Min 10 trades in OOS
+MIN_OOS_TRADES = 20              # Min 20 trades in OOS (was 10, need statistical significance)
 MAX_OOS_DEGRADATION = 0.98       # Max 98% degradation (temporary relaxed)
 MIN_ROBUSTNESS_SCORE = 0         # Min robustness (temporary relaxed)
+MAX_OOS_DRAWDOWN = 0.35          # Max 35% drawdown (relaxed for futures with leverage)
 
 # Cross-Validation (FASE 3D)
 MIN_CV_CONSISTENCY = 0.60        # Min 60% of folds profitable
@@ -202,7 +204,8 @@ class PaperTradingPipeline:
                 r.cv_folds,
                 r.cv_avg_pnl,
                 r.cv_consistency,
-                r.cv_is_consistent
+                r.cv_is_consistent,
+                r.max_drawdown as train_max_dd
             FROM results r
             JOIN work_units w ON r.work_unit_id = w.id
             WHERE r.pnl > ?
@@ -215,7 +218,7 @@ class PaperTradingPipeline:
             ORDER BY
                 r.robustness_score DESC,
                 CASE WHEN r.cv_is_consistent = 1 THEN 0 ELSE 1 END,
-                r.oos_pnl DESC
+                CASE WHEN r.oos_trades > 0 THEN r.oos_pnl / r.oos_trades ELSE 0 END DESC
             LIMIT ?
         """
 
@@ -237,7 +240,8 @@ class PaperTradingPipeline:
             (result_id, train_pnl, train_trades, train_winrate, train_sharpe,
              genome_json, params_json, oos_pnl, oos_trades, oos_degradation,
              robustness_score, is_overfitted,
-             cv_folds, cv_avg_pnl, cv_consistency, cv_is_consistent) = row
+             cv_folds, cv_avg_pnl, cv_consistency, cv_is_consistent,
+             train_max_dd) = row
 
             # Parse JSON
             try:
@@ -255,9 +259,17 @@ class PaperTradingPipeline:
                 continue
             if robustness_score is not None and robustness_score < MIN_ROBUSTNESS_SCORE:
                 continue
-            # Temporarily allow overfitted strategies for review
-            # if is_overfitted:
-            #     continue
+
+            # Filter unrealistic win rates (too good to be true)
+            if train_winrate is not None and train_winrate > 0:
+                # Normalize: if stored as percentage (>1), convert to ratio
+                wr = train_winrate / 100.0 if train_winrate > 1 else train_winrate
+                if wr > MAX_TRAIN_WINRATE:
+                    continue
+
+            # Filter excessive drawdown
+            if train_max_dd is not None and train_max_dd > MAX_OOS_DRAWDOWN:
+                continue
 
             # Check CV criteria (FASE 3D) - optional but preferred
             cv_passed = True
@@ -270,6 +282,9 @@ class PaperTradingPipeline:
 
             # Get contract from params
             contract = params.get('contract', params.get('data_file', 'UNKNOWN'))
+
+            # Calculate PnL per trade for ranking
+            pnl_per_trade = (oos_pnl / oos_trades) if oos_trades and oos_trades > 0 else 0
 
             eligible.append({
                 'result_id': result_id,
@@ -285,6 +300,7 @@ class PaperTradingPipeline:
                 'oos_trades': oos_trades,
                 'oos_degradation': oos_degradation or 0,
                 'robustness_score': robustness_score or 0,
+                'pnl_per_trade': round(pnl_per_trade, 4),
                 # CV metrics (FASE 3D)
                 'cv_folds': cv_folds or 0,
                 'cv_avg_pnl': cv_avg_pnl or 0,
@@ -293,6 +309,8 @@ class PaperTradingPipeline:
                 'cv_passed': cv_passed,
             })
 
+        # Sort by PnL per trade (best risk-adjusted return per trade)
+        eligible.sort(key=lambda s: s['pnl_per_trade'], reverse=True)
         return eligible[:limit]
 
     # ========================================================================
@@ -629,9 +647,11 @@ if __name__ == "__main__":
 
     if args.discover:
         eligible = pipeline.discover_eligible_strategies(limit=10)
-        print(f"\n📋 Found {len(eligible)} eligible strategies:")
+        print(f"\n📋 Found {len(eligible)} eligible strategies (sorted by PnL/trade):")
         for s in eligible:
-            print(f"  - {s['strategy_id']}: OOS PnL=${s['oos_pnl']:.2f}, Robustness={s['robustness_score']:.0f}/100")
+            print(f"  - {s['strategy_id']}: OOS PnL=${s['oos_pnl']:.2f} | "
+                  f"Trades={s['oos_trades']} | PnL/trade=${s['pnl_per_trade']:.2f} | "
+                  f"Robustness={s['robustness_score']:.0f}/100")
 
     elif args.deploy > 0:
         deployed = pipeline.deploy_batch(max_strategies=args.deploy)

@@ -40,11 +40,12 @@ class ProductionReadinessChecklist:
     """
 
     # === THRESHOLDS ===
+    # Sharpe = t-statistic (mean/std * sqrt(N)). >1.96 = 95% significance, >2.58 = 99%
     MIN_TRADES = 100              # Mínimo 100 trades para significancia estadística
     MIN_WIN_RATE = 0.40           # Win rate mínimo 40%
     MAX_WIN_RATE = 0.65           # Win rate máximo 65% (evitar overfitting)
-    MIN_SHARPE = 1.0              # Sharpe ratio mínimo 1.0
-    MAX_SHARPE = 30.0             # Sharpe > 30 = likely artifact or overfitting
+    MIN_SHARPE = 1.5              # t-stat > 1.5 (borderline significant)
+    MAX_SHARPE = 10.0             # t-stat > 10 = suspicious (was 30 with old sqrt(252) bug)
     MIN_SORTINO = 1.5             # Sortino ratio mínimo 1.5
     MAX_DRAWDOWN = 0.20           # Máximo drawdown 20%
     MAX_OVERFIT_SCORE = 0.30      # Máximo 30% degradación OOS
@@ -52,7 +53,7 @@ class ProductionReadinessChecklist:
     MIN_PAPER_DAYS = 30           # Mínimo 30 días de paper trading
     MIN_PAPER_TRADES = 20         # Mínimo 20 trades en paper trading
     SUSPICIOUS_WIN_RATE = 0.80    # Win rate > 80% = flag for review
-    SUSPICIOUS_SHARPE = 30.0      # Sharpe > 30 = flag for review
+    SUSPICIOUS_SHARPE = 8.0       # t-stat > 8 = flag for review (very unusual)
 
     def __init__(
         self,
